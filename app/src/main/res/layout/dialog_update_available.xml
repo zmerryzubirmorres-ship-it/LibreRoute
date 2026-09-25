@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:background="@drawable/bg_menu_popup"
+    android:padding="22dp">
+
+    <FrameLayout
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_update_badge">
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_update"
+            app:tint="@color/m3_primary"
+            android:contentDescription="@null" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/update_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:fontFamily="sans-serif-bold"
+        android:text="@string/update_available_title" />
+
+    <TextView
+        android:id="@+id/update_version_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:textColor="@color/m3_primary"
+        android:textSize="13sp"
+        android:fontFamily="sans-serif-medium"
+        tools:text="Version v1.1.0" />
+
+    <ScrollView
+        android:id="@+id/update_notes_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:maxHeight="220dp"
+        android:background="@drawable/bg_changelog_box"
+        android:padding="12dp"
+        android:scrollbars="vertical"
+        android:fadeScrollbars="false">
+        <TextView
+            android:id="@+id/update_notes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:lineSpacingExtra="3dp"
+            android:lineSpacingMultiplier="1.1"
+            tools:text="### Header" />
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:orientation="vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_download_update"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/action_update_download"
+            android:textColor="@color/m3_on_primary"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            app:icon="@drawable/ic_update"
+            app:iconSize="18dp"
+            app:iconTint="@color/m3_on_primary"
+            app:iconPadding="8dp"
+            app:iconGravity="textStart"
+            app:backgroundTint="@color/m3_primary"
+            app:cornerRadius="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_update_later"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_update_later"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            app:strokeColor="@color/m3_outline_variant"
+            app:cornerRadius="12dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

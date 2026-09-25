@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.SoxMax" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- M3 Primary -->
+        <item name="colorPrimary">@color/m3_primary</item>
+        <item name="colorOnPrimary">@color/m3_on_primary</item>
+        <item name="colorPrimaryContainer">@color/m3_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/m3_on_primary_container</item>
+
+        <!-- M3 Secondary -->
+        <item name="colorSecondary">@color/m3_secondary</item>
+        <item name="colorOnSecondary">@color/m3_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/m3_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/m3_on_secondary_container</item>
+
+        <!-- M3 Tertiary -->
+        <item name="colorTertiary">@color/m3_tertiary</item>
+        <item name="colorOnTertiary">@color/m3_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/m3_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/m3_on_tertiary_container</item>
+
+        <!-- M3 Error -->
+        <item name="colorError">@color/m3_error</item>
+        <item name="colorOnError">@color/m3_on_error</item>
+        <item name="colorErrorContainer">@color/m3_error_container</item>
+        <item name="colorOnErrorContainer">@color/m3_on_error_container</item>
+
+        <!-- M3 Surface -->
+        <item name="colorSurface">@color/m3_surface</item>
+        <item name="colorOnSurface">@color/m3_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/m3_on_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/m3_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/m3_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/m3_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/m3_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/m3_surface_container_highest</item>
+        <item name="colorOutline">@color/m3_outline</item>
+        <item name="colorOutlineVariant">@color/m3_outline_variant</item>
+
+        <!-- System bars: edge-to-edge -->
+        <item name="android:windowBackground">@color/bg_deep</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">?attr/isLightTheme</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">?attr/isLightTheme</item>
+
+        <!-- Component overrides -->
+        <item name="materialSwitchStyle">@style/Widget.Fluxon.Switch</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Fluxon.BottomSheetDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Fluxon.MaterialAlertDialog</item>
+    </style>
+
+    <style name="Widget.Fluxon.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="thumbTint">@color/switch_thumb_selector</item>
+        <item name="trackTint">@color/switch_track_selector</item>
+        <item name="trackDecorationTint">@android:color/transparent</item>
+        <item name="thumbIconTint">@android:color/transparent</item>
+        <item name="thumbIconSize">0dp</item>
+    </style>
+
+    <style name="ThemeOverlay.Fluxon.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Fluxon.BottomSheet.Modal</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Widget.Fluxon.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="backgroundTint">@color/m3_surface_container_low</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Fluxon.BottomSheet</item>
+    </style>
+
+    <style name="ShapeAppearance.Fluxon.BottomSheet" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerSizeTopLeft">28dp</item>
+        <item name="cornerSizeTopRight">28dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="ThemeOverlay.Fluxon.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/m3_surface_container_low</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Fluxon.Dialog</item>
+    </style>
+
+    <style name="ShapeAppearance.Fluxon.Dialog" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
+        <item name="cornerSize">20dp</item>
+    </style>
+</resources>

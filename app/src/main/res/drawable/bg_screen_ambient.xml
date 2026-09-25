@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/bg_deep" />
+        </shape>
+    </item>
+    <!-- M3 Ambient: subtle top-center accent aura -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.5"
+                android:centerY="0.22"
+                android:gradientRadius="750dp"
+                android:startColor="#182563EB"
+                android:centerColor="#082563EB"
+                android:endColor="@android:color/transparent"
+                android:tileMode="clamp" />
+        </shape>
+    </item>
+    <!-- M3 Ambient: bottom subtle secondary aura -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.5"
+                android:centerY="0.92"
+                android:gradientRadius="650dp"
+                android:startColor="#104F7CFF"
+                android:centerColor="#044F7CFF"
+                android:endColor="@android:color/transparent"
+                android:tileMode="clamp" />
+        </shape>
+    </item>
+</layer-list>

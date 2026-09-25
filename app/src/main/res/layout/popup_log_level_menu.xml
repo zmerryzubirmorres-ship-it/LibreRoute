@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_menu_popup"
+    android:clipToOutline="true"
+    android:paddingVertical="6dp"
+    android:minWidth="150dp">
+
+    <!-- DEBUG -->
+    <LinearLayout
+        android:id="@+id/option_level_debug"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_dropdown_dot"
+            android:backgroundTint="@color/m3_primary"
+            android:layout_marginEnd="12dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="DEBUG"
+            android:fontFamily="sans-serif-bold"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/check_level_debug"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="12dp"
+            android:src="@drawable/ic_check"
+            app:tint="@color/m3_primary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="10dp"
+        android:background="@color/m3_outline_variant" />
+
+    <!-- INFO -->
+    <LinearLayout
+        android:id="@+id/option_level_info"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_dropdown_dot"
+            android:backgroundTint="@color/state_running"
+            android:layout_marginEnd="12dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="INFO"
+            android:fontFamily="sans-serif-bold"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/check_level_info"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="12dp"
+            android:src="@drawable/ic_check"
+            app:tint="@color/m3_primary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="10dp"
+        android:background="@color/m3_outline_variant" />
+
+    <!-- WARN -->
+    <LinearLayout
+        android:id="@+id/option_level_warn"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_dropdown_dot"
+            android:backgroundTint="@color/state_connecting"
+            android:layout_marginEnd="12dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="WARN"
+            android:fontFamily="sans-serif-bold"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/check_level_warn"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="12dp"
+            android:src="@drawable/ic_check"
+            app:tint="@color/m3_primary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="10dp"
+        android:background="@color/m3_outline_variant" />
+
+    <!-- ERROR -->
+    <LinearLayout
+        android:id="@+id/option_level_error"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="14dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_dropdown_dot"
+            android:backgroundTint="@color/state_error"
+            android:layout_marginEnd="12dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="ERROR"
+            android:fontFamily="sans-serif-bold"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/check_level_error"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="12dp"
+            android:src="@drawable/ic_check"
+            app:tint="@color/m3_primary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</LinearLayout>

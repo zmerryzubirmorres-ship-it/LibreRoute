@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_screen_ambient">
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp">
+
+        <ImageView
+            android:id="@+id/btn_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_arrow_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            app:tint="@color/text_primary"
+            android:contentDescription="@string/cancel" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/settings_appearance_button_title"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:overScrollMode="never"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Single Category: Отображение -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="16dp"
+                android:text="@string/settings_section_display"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_menu_popup"
+                android:clipToOutline="true">
+
+                <!-- 1. Theme Selection Row (без тумблера, точно такого же размера 68dp) -->
+                <LinearLayout
+                    android:id="@+id/row_theme_toggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="10dp">
+
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/theme_toggle_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_theme_system"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            app:icon="@drawable/ic_theme_auto"
+                            app:iconSize="20dp"
+                            app:iconGravity="textStart"
+                            app:iconPadding="0dp"
+                            android:padding="0dp"
+                            app:cornerRadius="10dp"
+                            app:strokeWidth="1dp"
+                            app:backgroundTint="@color/theme_toggle_bg_selector"
+                            app:strokeColor="@color/theme_toggle_stroke_selector"
+                            app:iconTint="@color/theme_toggle_icon_selector"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:contentDescription="@string/settings_theme_system" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_theme_dark"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            app:icon="@drawable/ic_theme_dark"
+                            app:iconSize="20dp"
+                            app:iconGravity="textStart"
+                            app:iconPadding="0dp"
+                            android:padding="0dp"
+                            app:cornerRadius="10dp"
+                            app:strokeWidth="1dp"
+                            app:backgroundTint="@color/theme_toggle_bg_selector"
+                            app:strokeColor="@color/theme_toggle_stroke_selector"
+                            app:iconTint="@color/theme_toggle_icon_selector"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:contentDescription="@string/settings_theme_dark" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_theme_light"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            app:icon="@drawable/ic_theme_light"
+                            app:iconSize="20dp"
+                            app:iconGravity="textStart"
+                            app:iconPadding="0dp"
+                            android:padding="0dp"
+                            app:cornerRadius="10dp"
+                            app:strokeWidth="1dp"
+                            app:backgroundTint="@color/theme_toggle_bg_selector"
+                            app:strokeColor="@color/theme_toggle_stroke_selector"
+                            app:iconTint="@color/theme_toggle_icon_selector"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:contentDescription="@string/settings_theme_light" />
+
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/m3_outline_variant" />
+
+                <!-- Speed Graph -->
+                <LinearLayout
+                    android:id="@+id/row_speed_graph"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_ping"
+                        app:tint="@color/accent_blue"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/settings_speed_graph_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_speed_graph"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/m3_outline_variant" />
+
+                <!-- Ping -->
+                <LinearLayout
+                    android:id="@+id/row_show_ping"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_speed"
+                        app:tint="@color/accent_blue"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/settings_show_ping_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_show_ping"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/m3_outline_variant" />
+
+                <!-- Memory Monitor -->
+                <LinearLayout
+                    android:id="@+id/row_memory_monitor"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_memory"
+                        app:tint="@color/accent_blue"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/settings_memory_monitor_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_memory_monitor"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/m3_outline_variant" />
+
+                <!-- Speed in Notification -->
+                <LinearLayout
+                    android:id="@+id/row_notify_speed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_speedometer"
+                        app:tint="@color/accent_blue"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/settings_notify_speed_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_notify_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</LinearLayout>

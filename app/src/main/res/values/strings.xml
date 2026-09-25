@@ -1,0 +1,497 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreRoute</string>
+    <string name="version" translatable="false">0.0.1</string>
+
+    <string name="channel_name">VPN Service</string>
+    <string name="notify_title">LibreRoute is running</string>
+    <string name="notify_msg">Tunnel is active</string>
+
+    <string name="prof_default">Default</string>
+
+    <string name="yandex_docs_backend">Yandex.Docs</string>
+    <string name="vyandex_backend">Yandex.Docs (Volga)</string>
+    <string name="max_messenger_backend">MAX Messenger</string>
+    <string name="cups_backend">CUPS</string>
+    <string name="cups_url_hint">Base64 room list or URL</string>
+    <string name="mailru_backend">Mail.ru Docs</string>
+    <string name="mailru_url_hint">Document URL</string>
+    <string name="gdocs_backend">Google Docs</string>
+    <string name="gdocs_url_hint">Document URL or ID</string>
+
+    <string name="starting_transport">Starting transport…</string>
+    <string name="starting_tsocks">Starting tun2socks…</string>
+    <string name="connecting">Connecting…</string>
+    <string name="reconnecting">Reconnecting…</string>
+    <string name="waiting_for_network">Waiting for network…</string>
+    <string name="running">Running</string>
+    <string name="checking_tunnel_traffic">Checking tunnel traffic…</string>
+    <string name="tunnel_traffic_unavailable">No end-to-end connection</string>
+    <string name="stopped">Stopped</string>
+    <string name="view_logs">View Logs</string>
+    <string name="retry">Retry</string>
+
+    <string name="vpn_permission_required">Please grant VPN permission to establish connection</string>
+    <string name="qr_scan_failed">Failed to scan QR code</string>
+    <string name="name_required">Enter a tunnel name</string>
+
+    <string name="add_tunnel">Add</string>
+    <string name="scan_qr">Scan QR</string>
+    <string name="enter_manually">Enter manually</string>
+    <string name="save">Save</string>
+    <string name="clear">Clear</string>
+    <string name="auto_scroll">Auto-scroll</string>
+
+    <string name="select_transport">Transport</string>
+    <string name="debug_mode">Debug mode</string>
+    <string name="tunnel_name">Tunnel name</string>
+    <string name="document_url">Document URL</string>
+    <string name="max_token">MAX token</string>
+    <string name="max_uid">MAX user ID</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="tap_to_connect">Tap to connect</string>
+    <string name="switch_tunnel">Enter manually</string>
+    <string name="add_tunnel_short">Add</string>
+    <string name="no_tunnel">No tunnel</string>
+    <string name="uptime_label">Connected for</string>
+    <string name="select_config">Configurations</string>
+    <string name="search_configs_hint">Search configuration…</string>
+    <string name="total_configs_format">Total configurations: %d</string>
+    <string name="status_connected_badge">Connected</string>
+    <string name="no_configs">No configurations</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_delete">Delete</string>
+    <string name="delete_config_title">Delete configuration?</string>
+    <string name="delete_config_msg">This configuration will be permanently removed.</string>
+    <string name="cancel">Cancel</string>
+    <string name="edit_config">Edit configuration</string>
+    <string name="cannot_delete_active">Stop the VPN before deleting</string>
+    <string name="config_saved">Saved</string>
+    <string name="config_deleted">Deleted</string>
+    <string name="notify_action_stop">Disconnect</string>
+    <string name="notify_msg_idle">Not connected</string>
+    <string name="notify_msg_connecting">Connecting…</string>
+    <string name="notify_msg_starting_transport">Starting transport…</string>
+    <string name="notify_msg_starting_tun2socks">Starting tun2socks…</string>
+    <string name="notify_msg_running">Tunnel is active</string>
+    <string name="notify_msg_error">Error</string>
+    <string name="notify_channel_desc">VPN service status</string>
+    <string name="err_service_not_connected">Service not connected</string>
+    <string name="err_vpn_iface_not_ready">VPN interface is not ready</string>
+    <string name="err_transport_not_started">Transport failed to start</string>
+    <string name="err_tun2socks_not_started">tun2socks failed to start</string>
+    <string name="err_transport_binary_missing">Transport binary not found</string>
+    <string name="err_invalid_fd">Invalid TUN file descriptor</string>
+    <string name="err_pdnsd_missing">pdnsd binary not found</string>
+    <string name="err_tun2socks_missing">tun2socks binary not found</string>
+    <string name="err_sendfd_failed">Failed to pass TUN file descriptor</string>
+    <string name="encryption_key_hint">Encryption key (min 16 chars, optional)</string>
+    <string name="err_encryption_key_short">Encryption key must be at least 16 characters</string>
+
+    <!-- Split Tunneling -->
+    <string name="split_tunneling_title">Split Tunneling</string>
+    <string name="split_tunnel_enable">Split tunneling</string>
+    <string name="split_tunnel_desc">Direct selected traffic through or around VPN</string>
+    <string name="tab_bypass">Bypass</string>
+    <string name="tab_proxy">Proxy</string>
+    <string name="tab_bypass_desc">Selected apps connect directly without VPN. All other apps go through the tunnel.</string>
+    <string name="tab_proxy_desc">Only selected apps connect through VPN. All other apps connect directly.</string>
+    <string name="search_apps_hint">Search apps…</string>
+    <string name="reset_defaults">Reset</string>
+    <string name="select_all">Select all</string>
+    <string name="deselect_all">Clear all</string>
+    <string name="selected_apps_count">Selected: %1$d of %2$d</string>
+    <string name="no_apps_found">No apps found</string>
+
+    <!-- QR Code Sharing -->
+    <string name="action_share_qr">Share QR code</string>
+    <string name="qr_dialog_title">Configuration QR Code</string>
+    <string name="qr_subtitle">Scan with LibreRoute app</string>
+    <string name="btn_copy_json">Copy</string>
+    <string name="btn_share">Share</string>
+    <string name="btn_close">Close</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+
+    <!-- Themes -->
+    <string name="theme_toggle">Theme</string>
+
+    <!-- Logs -->
+    <string name="logs_title">Event Log</string>
+    <string name="logs_copied">Logs copied to clipboard</string>
+    <string name="copy">Copy</string>
+
+    <!-- QR Source Options -->
+    <string name="add_config_title">Add Configuration</string>
+    <string name="add_config_subtitle">Import settings using QR code</string>
+    <string name="scan_with_camera">Scan with Camera</string>
+    <string name="scan_with_camera_desc">Point camera at QR code</string>
+    <string name="pick_from_gallery">Choose from Gallery</string>
+    <string name="pick_from_gallery_desc">Upload photo or screenshot of QR code</string>
+
+    <!-- Encryption Key -->
+    <string name="encryption_key">Encryption key</string>
+    <string name="encryption_key_helper">Min. 16 characters, optional</string>
+
+    <!-- Link Import and Deep Links -->
+    <string name="import_from_link">Import via link</string>
+    <string name="import_from_link_desc">Paste openflux:// link or JSON</string>
+    <string name="import_link_dialog_title">Import Configuration</string>
+    <string name="import_link_dialog_hint">openflux://... or JSON</string>
+    <string name="import_link_dialog_btn">Import</string>
+    <string name="import_link_invalid">Invalid link or configuration format</string>
+    <string name="config_link_copied">Configuration link copied</string>
+    <string name="add_manual_desc">Configure transport parameters manually</string>
+    <string name="logs_lines_count">%d lines</string>
+    <string name="import_confirm_title">Import Configuration</string>
+    <string name="import_confirm_message">Add configuration \"%s\"?</string>
+    <string name="btn_add_and_connect">Add &amp; Connect</string>
+    <string name="btn_add_only">Add only</string>
+
+    <!-- Validation -->
+    <string name="err_invalid_url">Please enter a valid URL (starting with http:// or https://)</string>
+    <string name="err_invalid_yandex_url">URL must be a valid Yandex Disk / Docs link</string>
+    <string name="err_max_token_required">MAX token is required</string>
+    <string name="err_max_uid_required">MAX user ID must be a valid positive number</string>
+    <string name="err_cups_url_required">Cups.online URL is required</string>
+    <string name="err_cups_domain_invalid">URL must be a valid cups.online link</string>
+    <string name="err_mailru_url_required">Mail.ru document URL is required</string>
+    <string name="err_mailru_domain_invalid">URL must be a valid mail.ru link</string>
+    <string name="err_gdocs_url_required">Google Docs URL is required</string>
+    <string name="err_gdocs_domain_invalid">URL must be a valid Google Docs link or document ID</string>
+
+
+    <!-- App Update -->
+    <string name="update_available_title">Update Available</string>
+    <string name="update_version_format">Version %1$s • Current %2$s</string>
+    <string name="action_update_download">Download update</string>
+    <string name="action_update_later">Remind later</string>
+    <string name="update_no_changelog">A new version of LibreRoute is available.</string>
+    <string name="update_checking">Checking for updates...</string>
+    <string name="update_latest_installed">You have the latest version installed (%1$s)</string>
+    <string name="update_error">Failed to check for updates: %1$s</string>
+
+    <!-- Debug Menu -->
+    <string name="debug_menu_title">Debug Menu</string>
+    <string name="debug_menu_subtitle">Test and verify application features</string>
+    <string name="debug_check_update_title">Check for updates now</string>
+    <string name="debug_check_update_desc">Force GitHub API check without waiting 24h</string>
+    <string name="debug_test_update_title">Test update notification</string>
+    <string name="debug_test_update_desc">Open new version v1.2.0 dialog with changelog</string>
+    <string name="debug_reset_timer_title">Reset check timer (24h)</string>
+    <string name="debug_reset_timer_desc">Clear last update check timestamp in preferences</string>
+    <string name="debug_generate_logs_title">Generate test logs</string>
+    <string name="debug_generate_logs_desc">Send [D], [I], [W], [E] messages to event log</string>
+    <string name="debug_toggle_verbose_title">Log debug mode</string>
+    <string name="debug_toggle_verbose_desc">Current level: %s (tap to toggle)</string>
+    <string name="debug_test_delete_title">Test delete dialog</string>
+    <string name="debug_test_delete_desc">Verify stylized deletion confirmation dialog</string>
+    <string name="debug_up_to_date">You have the latest version (%s)</string>
+    <string name="debug_timer_reset_toast">24h check timer reset</string>
+    <string name="debug_logs_generated_toast">Test logs added to event log</string>
+    <string name="debug_click_step_one">1 more tap to open Debug Menu</string>
+    <string name="debug_click_steps_left">%d more taps to open Debug Menu</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_appearance">Styling</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="settings_theme_system">Auto</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_light">Light</string>
+
+    <string name="settings_section_network">Network &amp; Security</string>
+    <string name="settings_split_tunnel_title">Split Tunneling</string>
+    <string name="settings_split_tunnel_bypass">Bypass (%1$d apps)</string>
+    <string name="settings_split_tunnel_proxy">Proxy (%1$d apps)</string>
+    <string name="settings_split_tunnel_none">All apps routed through tunnel</string>
+    <string name="settings_domains_title">Domain Routing (Sites)</string>
+    <string name="settings_domains_summary">Bypass or proxy rules for specific websites</string>
+    <string name="settings_dns_title">DNS Server</string>
+    <string name="settings_dns_dialog_title">Select DNS Server</string>
+    <string name="settings_dns_cloudflare">Cloudflare</string>
+    <string name="settings_dns_google">Google</string>
+    <string name="settings_dns_adguard">AdGuard DNS</string>
+    <string name="settings_dns_quad9">Quad9</string>
+    <string name="settings_dns_xbox">Xbox DNS</string>
+    <string name="settings_dns_custom">Custom DNS</string>
+    <string name="settings_dns_custom_primary_hint">Primary DNS (e.g. 1.1.1.1)</string>
+    <string name="settings_dns_custom_secondary_hint">Secondary DNS (e.g. 8.8.8.8)</string>
+    <string name="settings_mtu_title">Packet MTU Size</string>
+    <string name="settings_mtu_dialog_title">Specify MTU size (1280–1500)</string>
+    <string name="settings_mtu_summary">Current value: %1$d</string>
+    <string name="settings_ipv6_title">IPv6 Tunneling</string>
+    <string name="settings_ipv6_summary">Route IPv6 traffic through tunnel</string>
+
+    <!-- Automation -->
+    <string name="settings_section_automation">Automation &amp; Sharing</string>
+    <string name="settings_failover_title">Failover (Auto-switch on error)</string>
+    <string name="settings_failover_summary">Switch to next available server if connection drops</string>
+    <string name="settings_boot_title">Auto-connect on Boot</string>
+    <string name="settings_boot_summary">Start VPN automatically after device reboot</string>
+    <string name="settings_autoclear_logs_title">Auto-cleanup Event Log</string>
+    <string name="settings_autoclear_logs_summary">Purge event log records older than 24 hours</string>
+    <string name="settings_battery_opt_title">Unrestricted Background</string>
+    <string name="settings_battery_opt_desc_enabled">Unrestricted (battery optimization ignored)</string>
+    <string name="settings_battery_opt_desc_disabled">Optimized by OS (may disconnect in sleep; tap to exempt)</string>
+
+    <!-- DNS Menu -->
+    <string name="dns_menu_title">DNS Settings</string>
+    <string name="dns_use_system_title">Local DNS (System)</string>
+    <string name="dns_use_system_summary">Use DNS server of your current network: %1$s</string>
+    <string name="dns_doh_section">DNS-over-HTTPS (DoH)</string>
+    <string name="dns_doh_title">Enable DoH</string>
+    <string name="dns_doh_summary">Encrypt all DNS queries via secure HTTPS protocol</string>
+    <string name="dns_doh_provider">DoH Provider</string>
+    <string name="dns_servers_section">DNS Servers</string>
+
+    <!-- Domain Rules -->
+    <string name="domain_rules_title">Domain Routing</string>
+    <string name="domain_mode_bypass">Bypass for sites in list</string>
+    <string name="domain_mode_proxy">Tunnel only sites in list</string>
+    <string name="domain_add_hint">Domain (e.g. example.com or .ru)</string>
+    <string name="domain_add_btn">Add</string>
+    <string name="domain_preset_ru">Russian sites (.ru, .рф, ya.ru, vk.com)</string>
+    <string name="domain_preset_blocked">Blocked sites (Instagram, X, etc.)</string>
+    <string name="domain_empty_list">Domain list is empty</string>
+    <string name="domain_added">Domain added</string>
+    <string name="domain_deleted">Domain removed</string>
+
+    <!-- MTU BottomSheet -->
+    <string name="mtu_sheet_title">Packet MTU Size</string>
+    <string name="mtu_sheet_desc">Choose an optimal MTU preset or specify manually:</string>
+    <string name="mtu_preset_1280">1280 (IPv6 min)</string>
+    <string name="mtu_preset_1360">1360 (Mobile networks)</string>
+    <string name="mtu_preset_1400">1400 (Default)</string>
+    <string name="mtu_preset_1420">1420 (Optimal)</string>
+    <string name="mtu_preset_1500">1500 (Ethernet)</string>
+
+    <!-- Notification & Quick Settings -->
+    <string name="action_disconnect">Disconnect</string>
+    <string name="quick_settings_tile_label">LibreRoute</string>
+    <string name="quick_settings_connected">Connected</string>
+    <string name="quick_settings_disconnected">Disconnected</string>
+    <string name="ping_ms_format">%1$d ms</string>
+
+    <string name="settings_section_backup">Backup &amp; Restore</string>
+    <string name="settings_export_backup">Export Configurations</string>
+    <string name="settings_export_backup_summary">Save tunnels and rules to JSON file</string>
+    <string name="settings_import_backup">Import Configurations</string>
+    <string name="settings_import_backup_summary">Restore configurations from JSON file</string>
+    <string name="settings_export_success">Successfully exported configurations: %1$d</string>
+    <string name="settings_import_success">Successfully imported configurations: %1$d</string>
+    <string name="settings_backup_error">Backup error: %1$s</string>
+
+    <string name="settings_section_updates">Updates</string>
+    <string name="settings_auto_update_title">Auto-check updates</string>
+    <string name="settings_auto_update_summary">Periodically check GitHub for new releases</string>
+    <string name="settings_check_update_now">Check for updates now</string>
+    <string name="settings_checking_updates">Checking for updates…</string>
+    <string name="settings_no_updates">You are using the latest version</string>
+
+    <string name="settings_section_about">About &amp; Updates</string>
+    <string name="settings_app_version">Version %1$s (build %2$d)</string>
+    <string name="settings_github_title">Source code on GitHub</string>
+    <string name="settings_github_summary">Project repository</string>
+    <string name="update_source_not_configured">Update source is not configured for this build</string>
+<!-- Unified Split Tunneling (Apps &amp; Sites) -->
+    <string name="split_section_apps">Apps</string>
+    <string name="split_section_sites">Websites</string>
+    <string name="split_sites_mode_bypass">Websites in this list will bypass VPN directly</string>
+    <string name="split_sites_mode_proxy">Only websites in this list will be routed through VPN</string>
+    <string name="split_sites_count">Added: %1$d</string>
+    <string name="split_sites_add">Add</string>
+    <string name="split_sites_presets">Presets</string>
+    <string name="split_sites_clear">Clear</string>
+    <string name="split_sites_clear_title">Clear website list?</string>
+    <string name="split_sites_clear_msg">All added domain rules will be removed.</string>
+    <string name="split_sites_empty_title">Website list is empty</string>
+    <string name="split_sites_empty_subtitle">Add a domain manually or apply a preset</string>
+    <string name="split_sites_add_title">Add Website</string>
+    <string name="split_sites_add_hint">Domain (e.g. instagram.com or .ru)</string>
+    <string name="split_sites_preset_title">Website Presets</string>
+    <string name="split_sites_preset_subtitle">Select a preset to quickly populate rules</string>
+    <string name="split_sites_preset_ru_title">Russian Services</string>
+    <string name="split_sites_preset_ru_desc">Yandex, VK, Gosuslugi, Mail.ru, banks, .ru, .рф</string>
+    <string name="split_sites_preset_ru_badge">646 domains</string>
+    <string name="split_sites_preset_blocked_title">Blocked Resources</string>
+    <string name="split_sites_preset_blocked_desc">Instagram, Twitter/X, Facebook, Rutracker, etc.</string>
+    <string name="split_sites_preset_blocked_badge">30 services</string>
+    <string name="split_sites_preset_applied">Preset applied: %1$s</string>
+    <string name="split_sites_domain_rule">Domain rule</string>
+    <string name="split_sites_invalid_domain">Enter a valid domain name</string>
+    <string name="split_summary_format">Apps: %1$d • Sites: %2$d</string>
+
+    <!-- Styled Backup Import -->
+    <string name="import_sheet_title">Import Configuration</string>
+    <string name="import_sheet_subtitle">Configurations found in backup:</string>
+    <string name="import_sheet_tunnels">Tunnels: %1$d</string>
+    <string name="import_sheet_rules">Split rules: %1$d</string>
+    <string name="import_sheet_warning">Existing configurations with matching names will be updated.</string>
+    <string name="import_sheet_action">Import</string>
+<!-- Extended domain presets -->
+    <string name="split_sites_preset_youtube_title">YouTube &amp; Google Video</string>
+    <string name="split_sites_preset_youtube_desc">youtube.com, googlevideo.com, ytimg.com, youtu.be</string>
+    <string name="split_sites_preset_youtube_badge">182 domains</string>
+    <string name="split_sites_preset_discord_title">Discord &amp; Voice</string>
+    <string name="split_sites_preset_discord_desc">discord.com, discord.gg, discordapp.com, media</string>
+    <string name="split_sites_preset_discord_badge">28 domains</string>
+    <string name="split_sites_preset_ai_title">AI &amp; Neural Networks</string>
+    <string name="split_sites_preset_ai_desc">ChatGPT, OpenAI, Claude, Anthropic, Midjourney, Perplexity</string>
+    <string name="split_sites_preset_ai_badge">63 domains</string>
+    <string name="split_deselect_all">Deselect all</string>
+
+    <!-- New features (Revision 3) -->
+    <string name="split_sites_add_subtitle">Enter domain name (e.g. instagram.com or .com)</string>
+    <string name="split_hide_system_apps">Hide system apps</string>
+
+    <string name="split_sites_clear_sheet_title">Clear domain list?</string>
+    <string name="split_sites_clear_sheet_desc">All added domain rules will be permanently removed.</string>
+    <string name="split_sites_clear_sheet_btn">Clear list</string>
+
+    <string name="import_link_sheet_title">Import Configuration</string>
+    <string name="import_link_sheet_desc">Paste configuration link or JSON config</string>
+    <string name="import_link_sheet_paste">Paste</string>
+    <string name="import_link_sheet_btn">Import</string>
+
+    <string name="settings_bypass_lan_title">Bypass LAN</string>
+    <string name="settings_bypass_lan_desc">Direct access to local devices</string>
+
+    <string name="settings_kill_switch_title">Kill Switch</string>
+    <string name="settings_kill_switch_desc">Block traffic when VPN drops</string>
+    <string name="settings_kill_switch_system">System Always-on VPN</string>
+
+    <string name="settings_hotspot_title">Share Proxy / Hotspot</string>
+    <string name="settings_hotspot_desc">Allow devices in the local network or hotspot to use this phone as a SOCKS5 proxy</string>
+    <string name="hotspot_sheet_title">LAN Proxy Sharing</string>
+    <string name="hotspot_sheet_ip_label">Local IP Address</string>
+    <string name="hotspot_sheet_port_label">SOCKS5 Port</string>
+    <string name="hotspot_sheet_guide">Connect your laptop, TV or device to this phone\'s Wi-Fi hotspot and set SOCKS5 proxy:</string>
+    <string name="hotspot_sheet_copy">Copy Address</string>
+    <string name="hotspot_sheet_copied">Proxy address copied</string>
+
+    <string name="settings_notify_speed_title">Speed in Notification</string>
+    <string name="settings_notify_speed_desc">Show upload and download speed in status notification</string>
+
+    <string name="settings_ip_type_title">IP Protocol Type</string>
+    <string name="settings_ip_type_auto">Auto (Dual-stack IPv4/IPv6)</string>
+    <string name="settings_ip_type_ipv4">IPv4 only</string>
+    <string name="settings_ip_type_ipv6">IPv6 only</string>
+    <string name="settings_ip_type_auto_desc">Automatic dual-stack routing</string>
+    <string name="settings_ip_type_ipv4_desc">Standard IPv4-only routing</string>
+    <string name="settings_ip_type_ipv6_desc">IPv6-only routing</string>
+
+    <string name="settings_socks5_auth_title">SOCKS5 Authentication</string>
+    <string name="settings_socks5_auth_desc">Protect local proxy with RFC 1929 username and password</string>
+    <string name="socks5_sheet_title">SOCKS5 Proxy Settings</string>
+    <string name="socks5_sheet_user_label">Username</string>
+    <string name="socks5_sheet_pass_label">Password (Token)</string>
+    <string name="socks5_sheet_port_label">Port</string>
+    <string name="socks5_sheet_regen">Generate new token</string>
+    <string name="socks5_sheet_copy">Copy Credentials</string>
+    <string name="socks5_sheet_copied">Credentials copied</string>
+
+    <string name="settings_memory_monitor_title">Memory Monitoring</string>
+    <string name="settings_memory_monitor_desc">Show RAM usage on main screen</string>
+    <string name="memory_usage_format">RAM: %1$d MB</string>
+    <string name="settings_show_ping_title">Ping Display</string>
+    <string name="settings_show_ping_desc">Show ping in the configuration badge on the main screen</string>
+
+
+    <string name="settings_backup_exported">Successfully exported configurations: %1$d</string>
+    <string name="settings_auto_boot_title">Auto-connect on Boot</string>
+    <string name="settings_auto_boot_desc">Start VPN automatically after device reboot</string>
+    <string name="settings_failover_desc">Switch to next available server if connection drops</string>
+    <string name="settings_section_logs">Logs &amp; Diagnostics</string>
+    <string name="settings_export_backup_desc">Save tunnels and rules to JSON file</string>
+    <string name="settings_import_backup_desc">Restore configurations from JSON file</string>
+    <string name="settings_auto_clear_logs_title">Auto-cleanup Event Log</string>
+    <string name="settings_auto_clear_logs_desc">Purge event log records older than 24 hours</string>
+    <string name="settings_version_title">Application Version</string>
+    <string name="action_check_ping">Check Ping</string>
+    <string name="notify_ping_format">Ping: %1$d ms</string>
+    <string name="notify_ping_testing">Checking ping…</string>
+    <string name="notify_ping_timeout">Ping: timeout</string>
+    <string name="share_logs_title">Share Event Log</string>
+    <string name="share_logs_as_file">Share (.txt file)</string>
+    <string name="share_logs_copy_text">Copy text</string>
+    <string name="share_logs_empty">Event log is empty</string>
+    <string name="share_logs_chooser_title">Send log file</string>
+
+    <!-- Event Logs & Log Levels -->
+    <string name="settings_event_logs_title">Event Log</string>
+    <string name="settings_event_logs_desc">View diagnostic messages and error traces</string>
+    <string name="log_level">Log Level</string>
+    <string name="log_level_debug">DEBUG</string>
+    <string name="log_level_info">INFO</string>
+    <string name="log_level_warn">WARN</string>
+    <string name="log_level_error">ERROR</string>
+    <string name="log_cat_all">All</string>
+    <string name="log_cat_error">Errors</string>
+    <string name="log_cat_warn">Warnings</string>
+    <string name="log_cat_info">Info</string>
+    <string name="log_cat_debug">Debug</string>
+    <string name="connection_log_level">Connection Log Level</string>
+    <string name="connection_log_level_changed">Connection log level set to %1$s</string>
+    <string name="action_more">More options</string>
+    <string name="autoscroll_enabled">Auto-scroll enabled</string>
+    <string name="autoscroll_disabled">Auto-scroll disabled</string>
+    <string name="logs_cleared">Logs cleared</string>
+    <string name="log_level_debug_sub">Verbose</string>
+    <string name="log_level_info_sub">Standard</string>
+    <string name="log_level_warn_sub">Warnings only</string>
+    <string name="log_level_error_sub">Errors only</string>
+
+    <string name="settings_appearance_button_title">Appearance</string>
+    <string name="settings_appearance_elements_title">Appearance</string>
+    <string name="settings_appearance_elements_desc">Speed graph, notifications, ping and memory</string>
+    <string name="settings_speed_graph_title">Speed Graph</string>
+    <string name="settings_speed_graph_desc">Display traffic sparkline beneath connect button</string>
+    <string name="done">Done</string>
+    <string name="error_open_browser">Unable to open browser</string>
+    <string name="share_logs_error">Failed to export logs: %1$s</string>
+    <string name="qr_generate_error">Failed to generate QR code</string>
+    <string name="qr_save_error">Error saving QR code: %1$s</string>
+    <string name="settings_haptic_title">Haptic Feedback</string>
+    <string name="settings_haptic_desc">Tactile vibration feedback when interacting with controls</string>
+    <string name="settings_language_title">App Language</string>
+    <string name="settings_language_choose">Select interface language</string>
+    <string name="settings_language_system">System Default</string>
+    <string name="settings_language_ru">Русский</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_system_desc">Follows system language</string>
+    <string name="settings_language_ru_desc">Russian interface language</string>
+    <string name="settings_language_en_desc">English interface language</string>
+    <string name="settings_icon_title">App Icon</string>
+    <string name="settings_icon_choose">Select desktop icon style</string>
+    <string name="settings_icon_dark">Dark</string>
+    <string name="settings_icon_light">Light</string>
+    <string name="settings_icon_dark_desc">Dark theme style with azure accents</string>
+    <string name="settings_icon_light_desc">Blue theme style with light accents</string>
+    <string name="settings_section_display">Display</string>
+    <string name="settings_section_personalization">Personalization</string>
+    <string name="battery_opt_prompt_title">Background Operation</string>
+    <string name="battery_opt_prompt_message">To prevent VPN disconnects when the screen is locked, it is recommended to disable battery optimization for LibreRoute.</string>
+    <string name="battery_opt_prompt_action">Configure</string>
+    <string name="battery_opt_prompt_later">Later</string>
+    <string name="battery_opt_disabled">Unrestricted (background active)</string>
+    <string name="battery_opt_enabled">Optimized (tap to disable)</string>
+    <string name="settings_proxy_only_title">Proxy-only mode</string>
+    <string name="settings_proxy_only_desc">Run SOCKS5 proxy without VPN service and status bar key icon</string>
+    <string name="manual_section_general">General</string>
+    <string name="manual_section_transport">Transport Configuration</string>
+    <string name="manual_section_security">Security</string>
+    <string name="manual_section_extra">Extra Parameters</string>
+    <string name="extra_params">OpenFlux parameters</string>
+    <string name="extra_params_hint">e.g. --codec=legacy --mode=l3</string>
+    <string name="extra_params_helper">Additional command-line flags passed directly to OpenFlux core</string>
+    <string name="manual_url_helper">Multiple URLs separated by comma or newline for multi-lane failover</string>
+    <string name="yandex_auth_issue_title">Check Yandex authorization</string>
+    <string name="yandex_auth_issue_message">Document authorization could not be renewed on this phone. Open the document in WebView, sign in or complete any challenge, then retry the connection.</string>
+    <string name="yandex_open_webview">Open WebView</string>
+    <string name="yandex_auth_later">Later</string>
+    <string name="yandex_webview_captcha_intro">Complete the Yandex challenge. Once the document opens, tap Retry connection.</string>
+    <string name="yandex_webview_session_intro">Open the document and sign in to Yandex if needed. Once it loads, tap Retry connection.</string>
+    <string name="yandex_webview_captcha_pending">Complete the Yandex CAPTCHA and wait for the document to open.</string>
+    <string name="yandex_webview_document_pending">The document has not opened yet. Wait for it to load.</string>
+</resources>

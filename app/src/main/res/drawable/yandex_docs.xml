@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Yandex Official Brand Glyph normalized -->
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="0.88"
+        android:scaleY="0.88">
+        <path
+            android:fillColor="#FC3F1D"
+            android:fillType="evenOdd"
+            android:pathData="M16.376,12.644 L21,2 h-3.842 l-4.624,10.644 h3.842 z M13.915,24 v-3.733 c0,-2.822 -0.352,-3.64 -1.407,-5.988 L6.933,2 H3 l7.124,15.709 V24 h3.79 z" />
+    </group>
+</vector>

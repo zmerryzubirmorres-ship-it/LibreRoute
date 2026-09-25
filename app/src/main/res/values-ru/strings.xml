@@ -1,0 +1,497 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreRoute</string>
+    <string name="version" translatable="false">0.0.1</string>
+
+    <string name="channel_name">VPN-сервис</string>
+    <string name="notify_title">LibreRoute работает</string>
+    <string name="notify_msg">Туннель активен</string>
+
+    <string name="prof_default">По умолчанию</string>
+
+    <string name="yandex_docs_backend">Yandex.Docs</string>
+    <string name="vyandex_backend">Yandex.Docs (Volga)</string>
+    <string name="max_messenger_backend">Мессенджер MAX</string>
+    <string name="cups_backend">CUPS</string>
+    <string name="cups_url_hint">Список комнат (Base64) или URL</string>
+    <string name="mailru_backend">Mail.ru Docs</string>
+    <string name="mailru_url_hint">URL документа</string>
+    <string name="gdocs_backend">Google Docs</string>
+    <string name="gdocs_url_hint">URL документа или ID</string>
+
+    <string name="starting_transport">Запуск транспорта…</string>
+    <string name="starting_tsocks">Запуск tun2socks…</string>
+    <string name="connecting">Подключение…</string>
+    <string name="reconnecting">Переподключение…</string>
+    <string name="waiting_for_network">Ожидание сети…</string>
+    <string name="running">Работает</string>
+    <string name="checking_tunnel_traffic">Проверка сквозной связи…</string>
+    <string name="tunnel_traffic_unavailable">Нет сквозной связи</string>
+    <string name="stopped">Остановлено</string>
+    <string name="view_logs">Журнал событий</string>
+    <string name="retry">Повторить</string>
+
+    <string name="vpn_permission_required">Предоставьте разрешение VPN для установки подключения</string>
+    <string name="qr_scan_failed">Не удалось отсканировать QR-код</string>
+    <string name="name_required">Введите имя туннеля</string>
+
+    <string name="add_tunnel">Добавить</string>
+    <string name="scan_qr">Сканировать QR</string>
+    <string name="enter_manually">Ввести вручную</string>
+    <string name="save">Сохранить</string>
+    <string name="clear">Очистить</string>
+    <string name="auto_scroll">Автопрокрутка</string>
+
+    <string name="select_transport">Транспорт</string>
+    <string name="debug_mode">Режим отладки</string>
+    <string name="tunnel_name">Имя туннеля</string>
+    <string name="document_url">URL документа</string>
+    <string name="max_token">MAX токен</string>
+    <string name="max_uid">MAX user ID</string>
+    <string name="on">Вкл</string>
+    <string name="off">Выкл</string>
+    <string name="tap_to_connect">Нажмите для подключения</string>
+    <string name="switch_tunnel">Ввести вручную</string>
+    <string name="add_tunnel_short">Добавить</string>
+    <string name="no_tunnel">Нет туннеля</string>
+    <string name="uptime_label">Время подключения</string>
+    <string name="select_config">Конфигурации</string>
+    <string name="search_configs_hint">Поиск конфигурации…</string>
+    <string name="total_configs_format">Всего конфигураций: %d</string>
+    <string name="status_connected_badge">Подключено</string>
+    <string name="no_configs">Нет конфигураций</string>
+    <string name="action_edit">Изменить</string>
+    <string name="action_delete">Удалить</string>
+    <string name="delete_config_title">Удалить конфигурацию?</string>
+    <string name="delete_config_msg">Конфигурация будет удалена безвозвратно.</string>
+    <string name="cancel">Отмена</string>
+    <string name="edit_config">Редактирование конфигурации</string>
+    <string name="cannot_delete_active">Сначала остановите VPN</string>
+    <string name="config_saved">Сохранено</string>
+    <string name="config_deleted">Удалено</string>
+    <string name="notify_action_stop">Отключить</string>
+    <string name="notify_msg_idle">Не подключено</string>
+    <string name="notify_msg_connecting">Подключение…</string>
+    <string name="notify_msg_starting_transport">Запуск транспорта…</string>
+    <string name="notify_msg_starting_tun2socks">Запуск tun2socks…</string>
+    <string name="notify_msg_running">Туннель активен</string>
+    <string name="notify_msg_error">Ошибка</string>
+    <string name="notify_channel_desc">Статус VPN-сервиса</string>
+    <string name="err_service_not_connected">Сервис не подключён</string>
+    <string name="err_vpn_iface_not_ready">VPN-интерфейс не готов</string>
+    <string name="err_transport_not_started">Сбой запуска транспорта</string>
+    <string name="err_tun2socks_not_started">Сбой запуска tun2socks</string>
+    <string name="err_transport_binary_missing">Не найден исполняемый файл транспорта</string>
+    <string name="err_invalid_fd">Некорректный файловый дескриптор TUN</string>
+    <string name="err_pdnsd_missing">Не найден исполняемый файл pdnsd</string>
+    <string name="err_tun2socks_missing">Не найден исполняемый файл tun2socks</string>
+    <string name="err_sendfd_failed">Не удалось передать файловый дескриптор TUN</string>
+    <string name="encryption_key_hint">Ключ шифрования (от 16 символов, необязательно)</string>
+    <string name="err_encryption_key_short">Ключ шифрования должен содержать не менее 16 символов</string>
+
+    <!-- Split Tunneling -->
+    <string name="split_tunneling_title">Раздельное туннелирование</string>
+    <string name="split_tunnel_enable">Раздельное туннелирование</string>
+    <string name="split_tunnel_desc">Выборочная маршрутизация приложений</string>
+    <string name="tab_bypass">Обход</string>
+    <string name="tab_proxy">Проксировать</string>
+    <string name="tab_bypass_desc">Отмеченные приложения работают напрямую (в обход VPN). Все остальные направляются через туннель.</string>
+    <string name="tab_proxy_desc">Только отмеченные приложения работают через VPN. Все остальные приложения работают напрямую.</string>
+    <string name="search_apps_hint">Поиск приложений…</string>
+    <string name="reset_defaults">По умолчанию</string>
+    <string name="select_all">Выбрать все</string>
+    <string name="deselect_all">Снять выбор</string>
+    <string name="selected_apps_count">Выбрано: %1$d из %2$d</string>
+    <string name="no_apps_found">Приложения не найдены</string>
+
+    <!-- QR Code Sharing -->
+    <string name="action_share_qr">Поделиться QR-кодом</string>
+    <string name="qr_dialog_title">QR-код конфигурации</string>
+    <string name="qr_subtitle">Отсканируйте камерой в приложении LibreRoute</string>
+    <string name="btn_copy_json">Скопировать</string>
+    <string name="btn_share">Поделиться</string>
+    <string name="btn_close">Закрыть</string>
+    <string name="copied_to_clipboard">Скопировано в буфер обмена</string>
+
+    <!-- Themes -->
+    <string name="theme_toggle">Тема оформления</string>
+
+    <!-- Logs -->
+    <string name="logs_title">Журнал событий</string>
+    <string name="logs_copied">Журнал скопирован в буфер обмена</string>
+    <string name="copy">Скопировать</string>
+
+    <!-- QR Source Options -->
+    <string name="add_config_title">Добавить конфигурацию</string>
+    <string name="add_config_subtitle">Импортируйте настройки с помощью QR-кода</string>
+    <string name="scan_with_camera">Сканировать камерой</string>
+    <string name="scan_with_camera_desc">Наведите камеру на QR-код</string>
+    <string name="pick_from_gallery">Выбрать из галереи</string>
+    <string name="pick_from_gallery_desc">Загрузить фото или скриншот QR-кода</string>
+
+    <!-- Encryption Key -->
+    <string name="encryption_key">Ключ шифрования</string>
+    <string name="encryption_key_helper">От 16 символов, необязательно</string>
+
+    <!-- Link Import and Deep Links -->
+    <string name="import_from_link">Импорт по ссылке</string>
+    <string name="import_from_link_desc">Вставьте ссылку openflux:// или JSON</string>
+    <string name="import_link_dialog_title">Импорт конфигурации</string>
+    <string name="import_link_dialog_hint">openflux://... или JSON</string>
+    <string name="import_link_dialog_btn">Импортировать</string>
+    <string name="import_link_invalid">Неверный формат ссылки или конфигурации</string>
+    <string name="config_link_copied">Ссылка на конфигурацию скопирована</string>
+    <string name="add_manual_desc">Настроить параметры транспорта вручную</string>
+    <string name="logs_lines_count">%d строк</string>
+    <string name="import_confirm_title">Импорт конфигурации</string>
+    <string name="import_confirm_message">Добавить конфигурацию «%s»?</string>
+    <string name="btn_add_and_connect">Добавить и подключить</string>
+    <string name="btn_add_only">Только добавить</string>
+
+    <!-- Validation -->
+    <string name="err_invalid_url">Введите корректный URL (начиная с http:// или https://)</string>
+    <string name="err_invalid_yandex_url">URL должен быть ссылкой Яндекс Диска или Документов</string>
+    <string name="err_max_token_required">Введите токен MAX</string>
+    <string name="err_max_uid_required">User ID MAX должен быть положительным числом</string>
+    <string name="err_cups_url_required">Введите URL для cups.online</string>
+    <string name="err_cups_domain_invalid">URL должен относиться к домену cups.online</string>
+    <string name="err_mailru_url_required">Введите URL документа Mail.ru</string>
+    <string name="err_mailru_domain_invalid">URL должен относиться к домену mail.ru</string>
+    <string name="err_gdocs_url_required">Укажите URL документа Google Docs</string>
+    <string name="err_gdocs_domain_invalid">URL должен вести на docs.google.com или содержать ID документа</string>
+
+
+    <!-- App Update -->
+    <string name="update_available_title">Доступно обновление</string>
+    <string name="update_version_format">Версия %1$s • Текущая %2$s</string>
+    <string name="action_update_download">Скачать обновление</string>
+    <string name="action_update_later">Напомнить позже</string>
+    <string name="update_no_changelog">Доступна новая версия приложения LibreRoute.</string>
+    <string name="update_checking">Проверка обновлений...</string>
+    <string name="update_latest_installed">У вас установлена последняя версия (%1$s)</string>
+    <string name="update_error">Не удалось проверить обновления: %1$s</string>
+
+    <!-- Debug Menu -->
+    <string name="debug_menu_title">Debug меню</string>
+    <string name="debug_menu_subtitle">Тестирование и проверка функций приложения</string>
+    <string name="debug_check_update_title">Проверить обновление сейчас</string>
+    <string name="debug_check_update_desc">Принудительный запрос к GitHub API без ожидания 24ч</string>
+    <string name="debug_test_update_title">Тест уведомления об обновлении</string>
+    <string name="debug_test_update_desc">Открыть диалог новой версии v1.2.0 с описанием</string>
+    <string name="debug_reset_timer_title">Сбросить таймер проверки (24ч)</string>
+    <string name="debug_reset_timer_desc">Очистить время последней проверки в настройках</string>
+    <string name="debug_generate_logs_title">Сгенерировать тестовые логи</string>
+    <string name="debug_generate_logs_desc">Отправить сообщения [D], [I], [W], [E] в журнал</string>
+    <string name="debug_toggle_verbose_title">Режим отладки логов</string>
+    <string name="debug_toggle_verbose_desc">Текущий уровень: %s (нажмите для смены)</string>
+    <string name="debug_test_delete_title">Тест диалога удаления</string>
+    <string name="debug_test_delete_desc">Проверить стилизованное подтверждение удаления</string>
+    <string name="debug_up_to_date">У вас установлена последняя версия (%s)</string>
+    <string name="debug_timer_reset_toast">Таймер проверки 24ч сброшен</string>
+    <string name="debug_logs_generated_toast">Тестовые логи добавлены в журнал</string>
+    <string name="debug_click_step_one">Осталось 1 нажатие для входа в меню разработчика</string>
+    <string name="debug_click_steps_left">Осталось нажатий: %d</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_section_appearance">Оформление</string>
+    <string name="settings_theme_title">Тема оформления</string>
+    <string name="settings_theme_system">Авто</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_theme_light">Светлая</string>
+
+    <string name="settings_section_network">Сеть и туннель</string>
+    <string name="settings_split_tunnel_title">Раздельное туннелирование</string>
+    <string name="settings_split_tunnel_bypass">Исключение (%1$d прил.)</string>
+    <string name="settings_split_tunnel_proxy">Проксирование (%1$d прил.)</string>
+    <string name="settings_split_tunnel_none">Все приложения через туннель</string>
+    <string name="settings_domains_title">Маршрутизация доменов (Сайты)</string>
+    <string name="settings_domains_summary">Правила обхода или туннелирования для сайтов</string>
+    <string name="settings_dns_title">DNS-сервер</string>
+    <string name="settings_dns_dialog_title">Выберите DNS-сервер</string>
+    <string name="settings_dns_cloudflare">Cloudflare</string>
+    <string name="settings_dns_google">Google</string>
+    <string name="settings_dns_adguard">AdGuard DNS</string>
+    <string name="settings_dns_quad9">Quad9</string>
+    <string name="settings_dns_xbox">Xbox DNS</string>
+    <string name="settings_dns_custom">Пользовательский DNS</string>
+    <string name="settings_dns_custom_primary_hint">Основной DNS (напр. 1.1.1.1)</string>
+    <string name="settings_dns_custom_secondary_hint">Резервный DNS (напр. 8.8.8.8)</string>
+    <string name="settings_mtu_title">Размер пакета MTU</string>
+    <string name="settings_mtu_dialog_title">Укажите значение MTU (1280–1500)</string>
+    <string name="settings_mtu_summary">Текущее значение: %1$d</string>
+    <string name="settings_ipv6_title">IPv6 туннелирование</string>
+    <string name="settings_ipv6_summary">Маршрутизировать IPv6 трафик через туннель</string>
+
+    <!-- Automation -->
+    <string name="settings_section_automation">Автоматизация и надежность</string>
+    <string name="settings_failover_title">Автопереключение при сбое (Failover)</string>
+    <string name="settings_failover_summary">Переключаться на следующий сервер при обрыве связи</string>
+    <string name="settings_boot_title">Автоподключение при загрузке (Boot)</string>
+    <string name="settings_boot_summary">Запускать VPN автоматически при включении устройства</string>
+    <string name="settings_autoclear_logs_title">Автоочистка журнала событий</string>
+    <string name="settings_autoclear_logs_summary">Очищать устаревшие записи логов каждые 24 часа</string>
+    <string name="settings_battery_opt_title">Работа в фоне без ограничений</string>
+    <string name="settings_battery_opt_desc_enabled">Без ограничений (оптимизация батареи отключена)</string>
+    <string name="settings_battery_opt_desc_disabled">Ограничено системой (нажмите для снятия ограничений)</string>
+
+    <!-- DNS Menu -->
+    <string name="dns_menu_title">Настройки DNS</string>
+    <string name="dns_use_system_title">Локальный DNS (системный)</string>
+    <string name="dns_use_system_summary">Использовать DNS-сервер вашей текущей сети: %1$s</string>
+    <string name="dns_doh_section">DNS-over-HTTPS (DoH)</string>
+    <string name="dns_doh_title">Включить DoH</string>
+    <string name="dns_doh_summary">Шифровать DNS-запросы через защищенный HTTPS-протокол</string>
+    <string name="dns_doh_provider">Провайдер DoH</string>
+    <string name="dns_servers_section">DNS-серверы</string>
+
+    <!-- Domain Rules -->
+    <string name="domain_rules_title">Маршрутизация сайтов</string>
+    <string name="domain_mode_bypass">Обходить для сайтов из списка</string>
+    <string name="domain_mode_proxy">Туннелировать только сайты из списка</string>
+    <string name="domain_add_hint">Домен (напр. example.com или .ru)</string>
+    <string name="domain_add_btn">Добавить</string>
+    <string name="domain_preset_ru">Российские сайты (.ru, .рф, ya.ru, vk.com)</string>
+    <string name="domain_preset_blocked">Заблокированные ресурсы (Instagram, X, etc.)</string>
+    <string name="domain_empty_list">Список сайтов пуст</string>
+    <string name="domain_added">Сайт добавлен</string>
+    <string name="domain_deleted">Сайт удалён</string>
+
+    <!-- MTU BottomSheet -->
+    <string name="mtu_sheet_title">Размер пакета MTU</string>
+    <string name="mtu_sheet_desc">Выберите оптимальный размер MTU или укажите вручную:</string>
+    <string name="mtu_preset_1280">1280 (IPv6 min)</string>
+    <string name="mtu_preset_1360">1360 (Мобильные)</string>
+    <string name="mtu_preset_1400">1400 (Стандарт)</string>
+    <string name="mtu_preset_1420">1420 (Оптимальный)</string>
+    <string name="mtu_preset_1500">1500 (Ethernet)</string>
+
+    <!-- Notification & Quick Settings -->
+    <string name="action_disconnect">Отключить</string>
+    <string name="quick_settings_tile_label">LibreRoute</string>
+    <string name="quick_settings_connected">Подключено</string>
+    <string name="quick_settings_disconnected">Отключено</string>
+    <string name="ping_ms_format">%1$d мс</string>
+
+    <string name="settings_section_backup">Резервное копирование</string>
+    <string name="settings_export_backup">Экспорт конфигураций</string>
+    <string name="settings_export_backup_summary">Сохранить туннели и правила в JSON-файл</string>
+    <string name="settings_import_backup">Импорт конфигураций</string>
+    <string name="settings_import_backup_summary">Восстановить конфигурации из JSON-файла</string>
+    <string name="settings_export_success">Успешно экспортировано конфигураций: %1$d</string>
+    <string name="settings_import_success">Успешно импортировано конфигураций: %1$d</string>
+    <string name="settings_backup_error">Ошибка резервного копирования: %1$s</string>
+
+    <string name="settings_section_updates">Обновления</string>
+    <string name="settings_auto_update_title">Автопроверка обновлений</string>
+    <string name="settings_auto_update_summary">Периодический поиск новых версий на GitHub</string>
+    <string name="settings_check_update_now">Проверить обновления сейчас</string>
+    <string name="settings_checking_updates">Проверка обновлений…</string>
+    <string name="settings_no_updates">У вас установлена самая свежая версия</string>
+
+    <string name="settings_section_about">О приложении</string>
+    <string name="settings_app_version">Версия %1$s (сборка %2$d)</string>
+    <string name="settings_github_title">Исходный код на GitHub</string>
+    <string name="settings_github_summary">Репозиторий проекта</string>
+    <string name="update_source_not_configured">Источник обновлений не настроен для этой сборки</string>
+<!-- Unified Split Tunneling (Apps &amp; Sites) -->
+    <string name="split_section_apps">Приложения</string>
+    <string name="split_section_sites">Сайты</string>
+    <string name="split_sites_mode_bypass">Указанные сайты будут открываться напрямую в обход VPN</string>
+    <string name="split_sites_mode_proxy">Только указанные сайты будут направляться через VPN-туннель</string>
+    <string name="split_sites_count">Добавлено: %1$d</string>
+    <string name="split_sites_add">Добавить</string>
+    <string name="split_sites_presets">Пресеты</string>
+    <string name="split_sites_clear">Очистить</string>
+    <string name="split_sites_clear_title">Очистить список сайтов?</string>
+    <string name="split_sites_clear_msg">Все добавленные правила сайтов будут удалены.</string>
+    <string name="split_sites_empty_title">Список сайтов пуст</string>
+    <string name="split_sites_empty_subtitle">Нажмите «Добавить» для внесения домена</string>
+    <string name="split_sites_add_title">Добавить сайт</string>
+    <string name="split_sites_add_hint">Домен (напр. instagram.com или .ru)</string>
+    <string name="split_sites_preset_title">Пресеты сайтов</string>
+    <string name="split_sites_preset_subtitle">Выберите категорию для быстрого добавления правил</string>
+    <string name="split_sites_preset_ru_title">Российские сервисы</string>
+    <string name="split_sites_preset_ru_desc">Яндекс, ВКонтакте, Госуслуги, Mail.ru, банки, .ru, .рф</string>
+    <string name="split_sites_preset_ru_badge">646 доменов</string>
+    <string name="split_sites_preset_blocked_title">Популярные заблокированные</string>
+    <string name="split_sites_preset_blocked_desc">Instagram, Twitter/X, Facebook, Rutracker, etc.</string>
+    <string name="split_sites_preset_blocked_badge">30 сервисов</string>
+    <string name="split_sites_preset_applied">Пресет добавлен: %1$s</string>
+    <string name="split_sites_domain_rule">Правило домена</string>
+    <string name="split_sites_invalid_domain">Введите корректное доменное имя</string>
+    <string name="split_summary_format">Приложений: %1$d • Сайтов: %2$d</string>
+
+    <!-- Styled Backup Import -->
+    <string name="import_sheet_title">Импорт конфигураций</string>
+    <string name="import_sheet_subtitle">В резервной копии найдено:</string>
+    <string name="import_sheet_tunnels">Туннелей: %1$d</string>
+    <string name="import_sheet_rules">Правил разделения: %1$d</string>
+    <string name="import_sheet_warning">Конфигурации с совпадающими именами будут обновлены.</string>
+    <string name="import_sheet_action">Импортировать</string>
+<!-- Extended domain presets -->
+    <string name="split_sites_preset_youtube_title">YouTube и Google Video</string>
+    <string name="split_sites_preset_youtube_desc">youtube.com, googlevideo.com, ytimg.com, youtu.be</string>
+    <string name="split_sites_preset_youtube_badge">182 домена</string>
+    <string name="split_sites_preset_discord_title">Discord и голосовая связь</string>
+    <string name="split_sites_preset_discord_desc">discord.com, discord.gg, discordapp.com, media</string>
+    <string name="split_sites_preset_discord_badge">28 доменов</string>
+    <string name="split_sites_preset_ai_title">Нейросети и AI</string>
+    <string name="split_sites_preset_ai_desc">ChatGPT, OpenAI, Claude, Anthropic, Midjourney, Perplexity</string>
+    <string name="split_sites_preset_ai_badge">63 домена</string>
+    <string name="split_deselect_all">Снять всё</string>
+
+    <!-- New features (Revision 3) -->
+    <string name="split_sites_add_subtitle">Введите адрес домена (например, instagram.com или .ru)</string>
+    <string name="split_hide_system_apps">Скрыть системные</string>
+
+    <string name="split_sites_clear_sheet_title">Очистить список сайтов?</string>
+    <string name="split_sites_clear_sheet_desc">Все добавленные домены и правила маршрутизации будут безвозвратно удалены.</string>
+    <string name="split_sites_clear_sheet_btn">Очистить список</string>
+
+    <string name="import_link_sheet_title">Импорт конфигурации</string>
+    <string name="import_link_sheet_desc">Вставьте ссылку на конфигурацию или JSON-конфиг</string>
+    <string name="import_link_sheet_paste">Вставить</string>
+    <string name="import_link_sheet_btn">Импортировать</string>
+
+    <string name="settings_bypass_lan_title">Обход локальной сети (LAN)</string>
+    <string name="settings_bypass_lan_desc">Прямой доступ к устройствам LAN</string>
+
+    <string name="settings_kill_switch_title">Kill Switch</string>
+    <string name="settings_kill_switch_desc">Блокировка трафика при разрыве VPN</string>
+    <string name="settings_kill_switch_system">Системный Always-on VPN</string>
+
+    <string name="settings_hotspot_title">Раздача прокси / Хотспот</string>
+    <string name="settings_hotspot_desc">Разрешить устройствам в локальной сети использовать этот телефон как SOCKS5 прокси</string>
+    <string name="hotspot_sheet_title">Раздача прокси по сети</string>
+    <string name="hotspot_sheet_ip_label">Локальный IP-адрес</string>
+    <string name="hotspot_sheet_port_label">Порт SOCKS5</string>
+    <string name="hotspot_sheet_guide">Подключите ноутбук, ТВ или другое устройство к той же сети или точке доступа и укажите SOCKS5 прокси:</string>
+    <string name="hotspot_sheet_copy">Скопировать адрес</string>
+    <string name="hotspot_sheet_copied">Адрес прокси скопирован</string>
+
+    <string name="settings_notify_speed_title">Скорость в уведомлении</string>
+    <string name="settings_notify_speed_desc">Отображать скорость загрузки и отдачи в шторке уведомлений</string>
+
+    <string name="settings_ip_type_title">Тип IP-протокола</string>
+    <string name="settings_ip_type_auto">Автоматически</string>
+    <string name="settings_ip_type_ipv4">Только IPv4</string>
+    <string name="settings_ip_type_ipv6">Только IPv6</string>
+    <string name="settings_ip_type_auto_desc">Автоматическое использование IPv4 и IPv6</string>
+    <string name="settings_ip_type_ipv4_desc">Стандартная маршрутизация только IPv4 адресов</string>
+    <string name="settings_ip_type_ipv6_desc">Маршрутизация исключительно через IPv6 стек</string>
+
+    <string name="settings_socks5_auth_title">SOCKS5-авторизация</string>
+    <string name="settings_socks5_auth_desc">Защита локального прокси RFC 1929 логином и паролем</string>
+    <string name="socks5_sheet_title">Параметры SOCKS5-прокси</string>
+    <string name="socks5_sheet_user_label">Имя пользователя (Логин)</string>
+    <string name="socks5_sheet_pass_label">Пароль (Токен)</string>
+    <string name="socks5_sheet_port_label">Порт</string>
+    <string name="socks5_sheet_regen">Сгенерировать новый токен</string>
+    <string name="socks5_sheet_copy">Скопировать реквизиты</string>
+    <string name="socks5_sheet_copied">Реквизиты скопированы</string>
+
+    <string name="settings_memory_monitor_title">Мониторинг памяти</string>
+    <string name="settings_memory_monitor_desc">Отображать потребление ОЗУ на главном экране</string>
+    <string name="memory_usage_format">ОЗУ: %1$d МБ</string>
+    <string name="settings_show_ping_title">Отображение пинга</string>
+    <string name="settings_show_ping_desc">Показывать пинг в карточке конфигурации на главном экране</string>
+
+
+    <string name="settings_backup_exported">Успешно экспортировано конфигураций: %1$d</string>
+    <string name="settings_auto_boot_title">Автоподключение при загрузке (Boot)</string>
+    <string name="settings_auto_boot_desc">Запускать VPN автоматически при включении устройства</string>
+    <string name="settings_failover_desc">Переключаться на следующий сервер при обрыве связи</string>
+    <string name="settings_section_logs">Резервное копирование и логи</string>
+    <string name="settings_export_backup_desc">Сохранить туннели и правила в JSON-файл</string>
+    <string name="settings_import_backup_desc">Восстановить конфигурации из JSON-файла</string>
+    <string name="settings_auto_clear_logs_title">Автоочистка журнала событий</string>
+    <string name="settings_auto_clear_logs_desc">Очищать устаревшие записи логов каждые 24 часа</string>
+    <string name="settings_version_title">Версия приложения</string>
+    <string name="action_check_ping">Проверить пинг</string>
+    <string name="notify_ping_format">Пинг: %1$d мс</string>
+    <string name="notify_ping_testing">Проверка пинга…</string>
+    <string name="notify_ping_timeout">Ping: timeout</string>
+    <string name="share_logs_title">Поделиться журналом</string>
+    <string name="share_logs_as_file">Поделиться (.txt файлом)</string>
+    <string name="share_logs_copy_text">Скопировать текст</string>
+    <string name="share_logs_empty">Журнал пуст</string>
+    <string name="share_logs_chooser_title">Отправить файл логов</string>
+
+    <!-- Event Logs & Log Levels -->
+    <string name="settings_event_logs_title">Журнал событий</string>
+    <string name="settings_event_logs_desc">Просмотр диагностических сообщений и ошибок</string>
+    <string name="log_level">Уровень логов</string>
+    <string name="log_level_debug">DEBUG</string>
+    <string name="log_level_info">INFO</string>
+    <string name="log_level_warn">WARN</string>
+    <string name="log_level_error">ERROR</string>
+    <string name="log_cat_all">Все</string>
+    <string name="log_cat_error">Ошибки</string>
+    <string name="log_cat_warn">Предупреждения</string>
+    <string name="log_cat_info">Инфо</string>
+    <string name="log_cat_debug">Отладка</string>
+    <string name="connection_log_level">Уровень логов подключения</string>
+    <string name="connection_log_level_changed">Уровень логов подключения: %1$s</string>
+    <string name="action_more">Дополнительно</string>
+    <string name="autoscroll_enabled">Автопрокрутка включена</string>
+    <string name="autoscroll_disabled">Автопрокрутка отключена</string>
+    <string name="logs_cleared">Журнал очищен</string>
+    <string name="log_level_debug_sub">Подробная отладка</string>
+    <string name="log_level_info_sub">Основная информация</string>
+    <string name="log_level_warn_sub">Только предупреждения</string>
+    <string name="log_level_error_sub">Только ошибки</string>
+
+    <string name="settings_appearance_button_title">Внешний вид</string>
+    <string name="settings_appearance_elements_title">Внешний вид</string>
+    <string name="settings_appearance_elements_desc">График, уведомления, пинг, память</string>
+    <string name="settings_speed_graph_title">График скорости</string>
+    <string name="settings_speed_graph_desc">Отображение графика скорости под кнопкой подключения</string>
+    <string name="done">Готово</string>
+    <string name="error_open_browser">Unable to open browser</string>
+    <string name="share_logs_error">Failed to export logs: %1$s</string>
+    <string name="qr_generate_error">Failed to generate QR code</string>
+    <string name="qr_save_error">Error saving QR code: %1$s</string>
+    <string name="settings_haptic_title">Виброотклик</string>
+    <string name="settings_haptic_desc">Тактильный отклик при нажатии элементов</string>
+    <string name="settings_language_title">Язык приложения</string>
+    <string name="settings_language_choose">Выберите язык интерфейса</string>
+    <string name="settings_language_system">Системный (по умолчанию)</string>
+    <string name="settings_language_ru">Русский</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_system_desc">Следует языку вашей системы</string>
+    <string name="settings_language_ru_desc">Русский язык интерфейса</string>
+    <string name="settings_language_en_desc">Английский язык интерфейса</string>
+    <string name="settings_icon_title">Иконка приложения</string>
+    <string name="settings_icon_choose">Выберите стиль иконки на рабочем столе</string>
+    <string name="settings_icon_dark">Тёмная</string>
+    <string name="settings_icon_light">Светлая</string>
+    <string name="settings_icon_dark_desc">Тёмный стиль с лазурным акцентом</string>
+    <string name="settings_icon_light_desc">Синий стиль со светлым акцентом</string>
+    <string name="settings_section_display">Отображение</string>
+    <string name="settings_section_personalization">Персонализация</string>
+    <string name="battery_opt_prompt_title">Работа в фоновом режиме</string>
+    <string name="battery_opt_prompt_message">Для предотвращения разрывов VPN при выключенном экране Android рекомендуется отключить оптимизацию расхода батареи для LibreRoute.</string>
+    <string name="battery_opt_prompt_action">Настроить</string>
+    <string name="battery_opt_prompt_later">Позже</string>
+    <string name="battery_opt_disabled">Ограничения сняты (фоновый режим активен)</string>
+    <string name="battery_opt_enabled">Ограничено системой (нажмите для отключения)</string>
+    <string name="settings_proxy_only_title">Режим только прокси</string>
+    <string name="settings_proxy_only_desc">Локальный SOCKS5 без VPN-службы и значка ключа</string>
+    <string name="manual_section_general">Основное</string>
+    <string name="manual_section_transport">Параметры транспорта</string>
+    <string name="manual_section_security">Безопасность</string>
+    <string name="manual_section_extra">Дополнительные параметры</string>
+    <string name="extra_params">Параметры OpenFlux</string>
+    <string name="extra_params_hint">Например: --codec=legacy --mode=l3</string>
+    <string name="extra_params_helper">Дополнительные флаги командной строки для ядра OpenFlux</string>
+    <string name="manual_url_helper">Несколько URL через запятую или новую строку для многоканальности</string>
+    <string name="yandex_auth_issue_title">Проверьте авторизацию Яндекса</string>
+    <string name="yandex_auth_issue_message">Не удалось обновить авторизацию документа на этом телефоне. Откройте документ в WebView, при необходимости войдите в Яндекс и пройдите проверку. После этого подключение повторится.</string>
+    <string name="yandex_open_webview">Открыть WebView</string>
+    <string name="yandex_auth_later">Позже</string>
+    <string name="yandex_webview_captcha_intro">Пройдите проверку Яндекса. После открытия документа нажмите «Повторить подключение».</string>
+    <string name="yandex_webview_session_intro">Откройте документ и войдите в Яндекс, если потребуется. Когда документ загрузится, нажмите «Повторить подключение».</string>
+    <string name="yandex_webview_captcha_pending">Решите CAPTCHA на странице Яндекса и дождитесь открытия документа.</string>
+    <string name="yandex_webview_document_pending">Документ ещё не открылся. Дождитесь его загрузки.</string>
+</resources>

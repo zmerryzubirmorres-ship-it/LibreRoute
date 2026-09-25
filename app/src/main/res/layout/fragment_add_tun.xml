@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="@drawable/bg_screen_ambient">
+
+    <!-- Top Bar matching Fluxon design -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="12dp">
+
+        <ImageView
+            android:id="@+id/btn_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_arrow_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            app:tint="@color/text_primary"
+            android:contentDescription="@string/cancel" />
+
+        <TextView
+            android:id="@+id/toolbar_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/enter_manually"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:overScrollMode="never"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="36dp">
+
+            <!-- Section 1: General Info -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="16dp"
+                android:text="@string/manual_section_general"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_menu_popup"
+                android:clipToOutline="true"
+                android:padding="16dp">
+
+                <!-- Tunnel Name Input -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/nameContainer"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:boxBackgroundMode="outline"
+                    app:boxBackgroundColor="@color/m3_surface_container_low"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
+                    app:boxStrokeColor="@color/box_stroke_selector"
+                    app:boxStrokeWidth="1dp"
+                    app:boxStrokeWidthFocused="2dp"
+                    app:startIconDrawable="@drawable/ic_edit"
+                    app:startIconTint="@color/accent_blue"
+                    app:endIconMode="clear_text"
+                    app:endIconTint="@color/text_secondary"
+                    app:hintTextColor="@color/m3_primary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/name"
+                        android:layout_width="match_parent"
+                        android:layout_height="54dp"
+                        android:hint="@string/tunnel_name"
+                        android:paddingHorizontal="16dp"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_secondary"
+                        android:inputType="textCapSentences|textNoSuggestions"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:imeOptions="actionNext" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/m3_outline_variant" />
+
+                <!-- Transport Selection Row -->
+                <LinearLayout
+                    android:id="@+id/select_transport_layout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="56dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="8dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:id="@+id/transport_icon"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/yandex_docs"
+                        android:scaleType="fitCenter"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/select_transport"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:id="@+id/selectedTransport"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/yandex_docs_backend"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="@color/text_secondary"
+                        android:importantForAccessibility="no" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Section 2: Transport Configuration -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="16dp"
+                android:text="@string/manual_section_transport"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_menu_popup"
+                android:clipToOutline="true"
+                android:padding="16dp">
+
+                <!-- Yandex / Volga / Cups / Mailru Transport Fields -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/yandexUrlContainer"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:boxBackgroundMode="outline"
+                    app:boxBackgroundColor="@color/m3_surface_container_low"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
+                    app:boxStrokeColor="@color/box_stroke_selector"
+                    app:boxStrokeWidth="1dp"
+                    app:boxStrokeWidthFocused="2dp"
+                    app:startIconDrawable="@drawable/ic_link"
+                    app:startIconTint="@color/accent_blue"
+                    app:endIconMode="clear_text"
+                    app:endIconTint="@color/text_secondary"
+                    app:hintTextColor="@color/m3_primary"
+                    app:helperText="@string/manual_url_helper"
+                    app:helperTextEnabled="true"
+                    app:helperTextTextColor="@color/text_secondary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/documentUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="54dp"
+                        android:hint="@string/document_url"
+                        android:paddingHorizontal="16dp"
+                        android:gravity="center_vertical|start"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_secondary"
+                        android:inputType="textUri|textMultiLine"
+                        android:maxLines="6" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- MAX Transport Fields -->
+                <LinearLayout
+                    android:id="@+id/maxContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/maxTokenContainer"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:boxBackgroundMode="outline"
+                        app:boxBackgroundColor="@color/m3_surface_container_low"
+                        app:boxCornerRadiusBottomEnd="14dp"
+                        app:boxCornerRadiusBottomStart="14dp"
+                        app:boxCornerRadiusTopEnd="14dp"
+                        app:boxCornerRadiusTopStart="14dp"
+                        app:boxStrokeColor="@color/box_stroke_selector"
+                        app:boxStrokeWidth="1dp"
+                        app:boxStrokeWidthFocused="2dp"
+                        app:startIconDrawable="@drawable/ic_lock"
+                        app:startIconTint="@color/accent_blue"
+                        app:endIconMode="clear_text"
+                        app:endIconTint="@color/text_secondary"
+                        app:hintTextColor="@color/m3_primary">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/maxToken"
+                            android:layout_width="match_parent"
+                            android:layout_height="54dp"
+                            android:hint="@string/max_token"
+                            android:paddingHorizontal="16dp"
+                            android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_secondary"
+                            android:inputType="textNoSuggestions|textVisiblePassword"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:imeOptions="actionNext"
+                            android:importantForAutofill="no" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/maxUserIdContainer"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        app:boxBackgroundMode="outline"
+                        app:boxBackgroundColor="@color/m3_surface_container_low"
+                        app:boxCornerRadiusBottomEnd="14dp"
+                        app:boxCornerRadiusBottomStart="14dp"
+                        app:boxCornerRadiusTopEnd="14dp"
+                        app:boxCornerRadiusTopStart="14dp"
+                        app:boxStrokeColor="@color/box_stroke_selector"
+                        app:boxStrokeWidth="1dp"
+                        app:boxStrokeWidthFocused="2dp"
+                        app:startIconDrawable="@drawable/ic_network"
+                        app:startIconTint="@color/accent_blue"
+                        app:endIconMode="clear_text"
+                        app:endIconTint="@color/text_secondary"
+                        app:hintTextColor="@color/m3_primary">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/maxUserId"
+                            android:layout_width="match_parent"
+                            android:layout_height="54dp"
+                            android:hint="@string/max_uid"
+                            android:paddingHorizontal="16dp"
+                            android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_secondary"
+                            android:inputType="number"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:imeOptions="actionDone" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Section 3: Security / Encryption Key -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="16dp"
+                android:text="@string/manual_section_security"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_menu_popup"
+                android:clipToOutline="true"
+                android:padding="16dp">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/encryptionKeyContainer"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:boxBackgroundMode="outline"
+                    app:boxBackgroundColor="@color/m3_surface_container_low"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
+                    app:boxStrokeColor="@color/box_stroke_selector"
+                    app:boxStrokeWidth="1dp"
+                    app:boxStrokeWidthFocused="2dp"
+                    app:startIconDrawable="@drawable/ic_lock"
+                    app:startIconTint="@color/accent_blue"
+                    app:hintTextColor="@color/m3_primary"
+                    app:helperText="@string/encryption_key_helper"
+                    app:helperTextEnabled="true"
+                    app:helperTextTextColor="@color/text_secondary"
+                    app:passwordToggleEnabled="true"
+                    app:passwordToggleTint="@color/text_secondary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/encryptionKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="54dp"
+                        android:hint="@string/encryption_key"
+                        android:paddingHorizontal="16dp"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_secondary"
+                        android:inputType="textPassword"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:imeOptions="actionDone" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <!-- Section 4: Extra Parameters -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:layout_marginStart="16dp"
+                android:text="@string/manual_section_extra"
+                android:textColor="@color/m3_primary"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_menu_popup"
+                android:clipToOutline="true"
+                android:padding="16dp">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/extraParamsContainer"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:boxBackgroundMode="outline"
+                    app:boxBackgroundColor="@color/m3_surface_container_low"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
+                    app:boxStrokeColor="@color/box_stroke_selector"
+                    app:boxStrokeWidth="1dp"
+                    app:boxStrokeWidthFocused="2dp"
+                    app:startIconDrawable="@drawable/ic_terminal"
+                    app:startIconTint="@color/accent_blue"
+                    app:endIconMode="clear_text"
+                    app:endIconTint="@color/text_secondary"
+                    app:hintTextColor="@color/m3_primary"
+                    app:helperText="@string/extra_params_helper"
+                    app:helperTextEnabled="true"
+                    app:helperTextTextColor="@color/text_secondary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/extraParams"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="54dp"
+                        android:hint="@string/extra_params_hint"
+                        android:paddingHorizontal="16dp"
+                        android:gravity="center_vertical|start"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_secondary"
+                        android:inputType="textUri|textMultiLine|textNoSuggestions"
+                        android:maxLines="4" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <!-- Save Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/saveButton"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="24dp"
+                app:backgroundTint="@color/m3_primary"
+                android:text="@string/save"
+                android:textAllCaps="false"
+                android:textColor="@color/colorOnPrimary"
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
+                app:icon="@drawable/ic_check"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:iconTint="@color/colorOnPrimary"
+                app:cornerRadius="16dp" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>

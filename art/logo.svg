@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Exact app deep background -->
+  <rect width="512" height="512" rx="116" fill="#080B12"/>
+  <g transform="translate(256, 256) scale(0.58) translate(-264, -256)">
+    <!-- Main L-Frame in soft azure (#60A5FA) -->
+    <path d="M 194,140
+             L 348,140
+             C 366,140 378,152 378,170
+             C 378,188 366,200 348,200
+             L 242,200
+             C 232,200 224,208 224,218
+             L 224,342
+             C 224,360 210,372 192,372
+             C 174,372 160,360 160,342
+             L 160,172
+             C 160,154 174,140 192,140
+             Z"
+          fill="#60A5FA"/>
+    <!-- Floating mid pill in soft lavender-periwinkle (#A5B4FC) -->
+    <rect x="240" y="242" width="92" height="56" rx="28" fill="#A5B4FC"/>
+  </g>
+</svg>

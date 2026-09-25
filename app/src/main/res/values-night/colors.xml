@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="toolbar_color">#00000000</color>
+
+    <color name="bg_deep">#080B12</color>
+    <color name="bg_card">@color/m3_surface_container_low</color>
+    <color name="bg_card_stroke">@color/m3_outline_variant</color>
+
+    <color name="text_primary">@color/m3_on_surface</color>
+    <color name="text_secondary">@color/m3_on_surface_variant</color>
+    <color name="text_tertiary">#5A6272</color>
+
+    <color name="state_idle">#6B7280</color>
+    <color name="state_connecting">#FBBF24</color>
+    <color name="state_running">#22C55E</color>
+    <color name="state_error">#EF4444</color>
+
+    <color name="accent_blue">#4F7CFF</color>
+
+    <color name="log_green">#4CAF50</color>
+    <color name="log_gray">#888888</color>
+    <color name="log_red">#F44336</color>
+    <color name="log_yellow">#FFC107</color>
+
+    <color name="status_dot_active">#4CAF50</color>
+    <color name="status_dot_idle">#666666</color>
+    <color name="status_dot_error">#F44336</color>
+
+    <color name="color_background">@color/m3_surface</color>
+    <color name="colorEditTextBg">@color/m3_surface_container_low</color>
+    <color name="colorBorder">@color/m3_outline_variant</color>
+    <color name="colorSuccess">#22C55E</color>
+    <color name="colorError">#EF4444</color>
+    <color name="colorPrimary">@color/m3_primary</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">@color/m3_primary</color>
+    <color name="colorOnPrimary">@color/m3_on_primary</color>
+    <color name="colorSurface">@color/m3_surface</color>
+    <color name="colorOnSurface">@color/m3_on_surface</color>
+    <color name="colorTextPrimary">@color/m3_on_surface</color>
+    <color name="colorTextSecondary">@color/m3_on_surface_variant</color>
+    <color name="ic_launcher_background">#080B12</color>
+    <color name="btn_power_bg_start">#1C2333</color>
+    <color name="btn_power_bg_end">#0F1420</color>
+    <color name="btn_power_stroke">#2E3A50</color>
+
+    <!-- M3 Semantic Tokens: Surface (Dark) -->
+    <color name="m3_surface">#0B0F17</color>
+    <color name="m3_surface_dim">#06080E</color>
+    <color name="m3_surface_bright">#1A2234</color>
+    <color name="m3_surface_container_lowest">#04060A</color>
+    <color name="m3_surface_container_low">#0E131F</color>
+    <color name="m3_surface_container">#131A2A</color>
+    <color name="m3_surface_container_high">#1B2438</color>
+    <color name="m3_surface_container_highest">#25314C</color>
+    <color name="m3_on_surface">#F1F5F9</color>
+    <color name="m3_on_surface_variant">#94A3B8</color>
+    <color name="m3_outline">#64748B</color>
+    <color name="m3_outline_variant">#1E293B</color>
+
+    <!-- M3 Semantic Tokens: Primary (Dark) -->
+    <color name="m3_primary">#4F7CFF</color>
+    <color name="m3_on_primary">#051B4D</color>
+    <color name="m3_primary_container">#1E3A8A</color>
+    <color name="m3_on_primary_container">#DBEAFE</color>
+
+    <!-- M3 Semantic Tokens: Secondary (Dark) -->
+    <color name="m3_secondary">#94A3B8</color>
+    <color name="m3_on_secondary">#0F172A</color>
+    <color name="m3_secondary_container">#1E293B</color>
+    <color name="m3_on_secondary_container">#CBD5E1</color>
+
+    <!-- M3 Semantic Tokens: Tertiary (Dark) -->
+    <color name="m3_tertiary">#A78BFA</color>
+    <color name="m3_on_tertiary">#2E1065</color>
+    <color name="m3_tertiary_container">#3B0764</color>
+    <color name="m3_on_tertiary_container">#EDE9FE</color>
+
+    <!-- M3 Semantic Tokens: Error (Dark) -->
+    <color name="m3_error">#F87171</color>
+    <color name="m3_on_error">#450A0A</color>
+    <color name="m3_error_container">#7F1D1D</color>
+    <color name="m3_on_error_container">#FEE2E2</color>
+
+    <!-- M3: Icon tint variety per section (Dark) -->
+    <color name="icon_tint_appearance">#60A5FA</color>
+    <color name="icon_tint_network">#22D3EE</color>
+    <color name="icon_tint_automation">#FBBF24</color>
+    <color name="icon_tint_backup">#A78BFA</color>
+    <color name="icon_tint_updates">#34D399</color>
+    <color name="icon_tint_about">#94A3B8</color>
+    <color name="icon_tint_logs">#A78BFA</color>
+</resources>

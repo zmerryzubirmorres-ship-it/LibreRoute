@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <group
+        android:pivotX="269"
+        android:pivotY="256"
+        android:scaleX="1.75"
+        android:scaleY="1.75">
+
+        <!-- Main L-stem of Fluxon F -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M194,140 L348,140 C366,140 378,152 378,170 C378,188 366,200 348,200 L242,200 C232,200 224,208 224,218 L224,342 C224,360 210,372 192,372 C174,372 160,360 160,342 L160,172 C160,154 174,140 192,140 Z" />
+
+        <!-- Floating mid pill of Fluxon F -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M268,242 L304,242 C319.46,242 332,254.54 332,270 C332,285.46 319.46,298 304,298 L268,298 C252.54,298 240,285.46 240,270 C240,254.54 252.54,242 268,242 Z" />
+
+    </group>
+
+</vector>
