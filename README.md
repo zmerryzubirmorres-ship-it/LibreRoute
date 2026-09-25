@@ -81,7 +81,8 @@ APK этого варианта не включаются.
 Локальные изменения статуса подключения и ограничения нативного ядра описаны
 в [документации диагностики](docs/connection-diagnostics.md).
 
-Сначала соберите Go-ядро из соседнего каталога `OpenFlux` (Go 1.26.8) через
+Сначала соберите Go-ядро из соседнего приватного каталога `LibreRoute-Core`
+(Go 1.26.8) через
 Android NDK с CGO, затем Android-приложение. NDK нужен в том числе для системного
 DNS-резолвера Android: чистая Go-сборка без CGO не разрешает имена сервисов в
 этом процессе. На Windows:
@@ -90,6 +91,9 @@ DNS-резолвера Android: чистая Go-сборка без CGO не р�
 .\build-openflux-core.ps1 -GoExe 'C:\path\to\go.exe'
 .\gradlew.bat assembleDebug
 ```
+
+Если каталог Go-ядра находится не рядом с Android-проектом, передайте его путь
+параметром `-GoRoot`.
 
 Для этой локальной сборки установлен Android SDK Build Tools 36.0.0. Скрипт
 создаёт `app/src/main/jniLibs/arm64-v8a/libopenflux_client.so`; старый

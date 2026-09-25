@@ -1,11 +1,16 @@
 param(
     [string]$GoExe = 'go',
-    [string]$NdkRoot = ''
+    [string]$NdkRoot = '',
+    [string]$GoRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $androidRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$goRoot = Join-Path (Split-Path -Parent $androidRoot) 'OpenFlux'
+$goRoot = if ([string]::IsNullOrWhiteSpace($GoRoot)) {
+    Join-Path (Split-Path -Parent $androidRoot) 'LibreRoute-Core'
+} else {
+    $GoRoot
+}
 $jniRoot = Join-Path $androidRoot 'app\src\main\jniLibs'
 
 if ([string]::IsNullOrWhiteSpace($NdkRoot)) {
@@ -29,7 +34,7 @@ if (-not (Test-Path -LiteralPath $clang) -or -not (Test-Path -LiteralPath $sysro
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $goRoot 'go.mod'))) {
-    throw "OpenFlux Go source is missing: $goRoot"
+    throw "LibreRoute-Core Go source is missing: $goRoot"
 }
 if (-not (Test-Path -LiteralPath $jniRoot)) {
     throw "Android jniLibs directory is missing: $jniRoot"
@@ -59,7 +64,7 @@ try {
             $env:GOARCH = $target.Arch
             $env:CGO_ENABLED = '1'
             $env:CC = '"' + $clang + '" --target=aarch64-linux-android26 --sysroot=' + $sysroot
-            Write-Host "Building OpenFlux Android client for $($target.Abi)..."
+            Write-Host "Building LibreRoute Android client for $($target.Abi)..."
             & $GoExe build -buildmode=pie -trimpath -ldflags '-s -w -checklinkname=0' -o $output .
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output)) {
                 throw "Go build failed for $($target.Abi); existing Android binaries were not changed"
