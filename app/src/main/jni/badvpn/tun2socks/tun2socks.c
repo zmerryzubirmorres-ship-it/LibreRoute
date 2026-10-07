@@ -409,8 +409,8 @@ int main (int argc, char **argv)
 
     if (options.fake_proc) {
         // Fake process name to cheat on Lollipop
-        strcpy(argv[0], "tech.p1neapplexpress.socksmax");
-        prctl(PR_SET_NAME, "tech.p1neapplexpress.socksmax");
+        strcpy(argv[0], "tech.libreroute.socksmax");
+        prctl(PR_SET_NAME, "tech.libreroute.socksmax");
     }
 
     // handle --help and --version

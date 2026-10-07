@@ -1,4 +1,4 @@
-#define LOG_TAG "OpenFluxJNI"
+#define LOG_TAG "LibreRouteJNI"
 
 #include "jni.h"
 #include <android/log.h>
@@ -19,13 +19,13 @@
 #define LOGE(...) do { __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__); } while(0)
 
 extern "C" void
-Java_io_github_p1neapplexpress_openflux_NativeBridge_jniclose(
+Java_io_github_libreroute_NativeBridge_jniclose(
         JNIEnv *env, jobject thiz, jint fd) {
     close(fd);
 }
 
 extern "C" jint
-Java_io_github_p1neapplexpress_openflux_NativeBridge_sendfd(
+Java_io_github_libreroute_NativeBridge_sendfd(
         JNIEnv *env, jobject thiz, jint tun_fd, jstring sock) {
     int fd;
     struct sockaddr_un addr;
@@ -64,22 +64,22 @@ Java_io_github_p1neapplexpress_openflux_NativeBridge_sendfd(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_p1neapplexpress_openflux_NativeBridge_setParentDeathSignal(
+Java_io_github_libreroute_NativeBridge_setParentDeathSignal(
         JNIEnv *env, jclass clazz, jint sig) {
     return (jint) prctl(PR_SET_PDEATHSIG, sig);
 }
 
-// NativeBridge lives in the root package io.github.p1neapplexpress.openflux.
+// NativeBridge lives in the root package io.github.libreroute.
 static const char *classPathName =
-        "io/github/p1neapplexpress/openflux/NativeBridge";
+        "io/github/libreroute/LibreRoute/NativeBridge";
 
 static JNINativeMethod method_table[] = {
         { "jniclose", "(I)V",
-                (void*) Java_io_github_p1neapplexpress_openflux_NativeBridge_jniclose },
+                (void*) Java_io_github_libreroute_NativeBridge_jniclose },
         { "sendfd", "(ILjava/lang/String;)I",
-                (void*) Java_io_github_p1neapplexpress_openflux_NativeBridge_sendfd },
+                (void*) Java_io_github_libreroute_NativeBridge_sendfd },
         { "setParentDeathSignal", "(I)I",
-                (void*) Java_io_github_p1neapplexpress_openflux_NativeBridge_setParentDeathSignal }
+                (void*) Java_io_github_libreroute_NativeBridge_setParentDeathSignal }
 };
 
 static int registerNativeMethods(JNIEnv* env, const char* className,

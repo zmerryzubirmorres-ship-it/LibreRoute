@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calm_back">Назад</string>
+    <string name="calm_message_prepared">Сообщение подготовлено</string>
+    <string name="calm_message_copied">Текст скопирован. Передайте его администратору</string>
+    <string name="calm_share_admin">Передать администратору</string>
+    <string name="calm_copy_message">Скопировать сообщение</string>
+</resources>

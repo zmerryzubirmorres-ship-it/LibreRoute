@@ -17,6 +17,8 @@
         android:background="@drawable/bg_drag_handle"
         android:layout_marginBottom="16dp" />
 
+    <ScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
     <!-- Title Bar -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -355,15 +357,8 @@
                 android:importantForAccessibility="no" />
 
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/m3_outline_variant" />
-
-        <!-- 6. Google Docs -->
         <LinearLayout
-            android:id="@+id/picker_gdocs"
+            android:id="@+id/picker_mqtt"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="64dp"
@@ -378,7 +373,7 @@
             <ImageView
                 android:layout_width="28dp"
                 android:layout_height="28dp"
-                android:src="@drawable/ic_gdocs"
+                android:src="@drawable/ic_split_tunnel"
                 android:importantForAccessibility="no" />
 
             <LinearLayout
@@ -392,7 +387,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/gdocs_backend"
+                    android:text="@string/mqtt_backend"
                     android:textColor="@color/text_primary"
                     android:textSize="15sp"
                     android:fontFamily="sans-serif-medium" />
@@ -401,14 +396,69 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="Документы Google Docs"
+                    android:text="Проверенный в ядре способ; нужен отдельный канал и ключ"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
             </LinearLayout>
 
             <ImageView
-                android:id="@+id/check_gdocs"
+                android:id="@+id/check_mqtt"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_check"
+                app:tint="@color/m3_primary"
+                android:visibility="gone"
+                android:importantForAccessibility="no" />
+
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/picker_jitsi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="64dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:src="@drawable/ic_split_tunnel"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="14dp"
+                android:layout_marginEnd="8dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/jitsi_backend"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Проверенный в ядре способ; нужен отдельный канал и ключ"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/check_jitsi"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_check"
@@ -418,6 +468,9 @@
 
         </LinearLayout>
 
+
     </LinearLayout>
 
+    </LinearLayout>
+    </ScrollView>
 </LinearLayout>

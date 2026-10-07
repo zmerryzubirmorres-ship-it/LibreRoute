@@ -1,0 +1,40 @@
+{
+  "snapshot_hash_version": 2,
+  "snapshot_revision": 7,
+  "authority_id": "authority",
+  "timestamp": 1790856000,
+  "role_scope": "owner",
+  "is_complete": false,
+  "servers": [
+    "s2",
+    "s1"
+  ],
+  "server_nodes": [
+    {
+      "server_id": "s1",
+      "name": "node",
+      "kind": "vds",
+      "status": "stale",
+      "public_key": "test-pin",
+      "last_seen": "2026-10-01T10:00:00Z",
+      "created_at": "2026-09-30T10:00:00Z",
+      "updated_at": "2026-10-01T10:00:00Z"
+    }
+  ],
+  "users": [],
+  "devices": [],
+  "assignments": [],
+  "profiles": [],
+  "per_server_status": {
+    "s1": {
+      "server_id": "s1",
+      "profile_id": "",
+      "desired_revision": 5,
+      "applied_revision": 4,
+      "readiness": false,
+      "last_error": "offline",
+      "last_checked": "2026-10-01T10:00:00Z"
+    }
+  },
+  "snapshot_hash": "c7260c05a0b7a9503294d1d7bfdf41c6e6c8c7cb138f3c514a96ae3c00a2bc3c"
+}

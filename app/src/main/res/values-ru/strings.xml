@@ -16,8 +16,6 @@
     <string name="cups_url_hint">Список комнат (Base64) или URL</string>
     <string name="mailru_backend">Mail.ru Docs</string>
     <string name="mailru_url_hint">URL документа</string>
-    <string name="gdocs_backend">Google Docs</string>
-    <string name="gdocs_url_hint">URL документа или ID</string>
 
     <string name="starting_transport">Запуск транспорта…</string>
     <string name="starting_tsocks">Запуск tun2socks…</string>
@@ -135,11 +133,13 @@
 
     <!-- Link Import and Deep Links -->
     <string name="import_from_link">Импорт по ссылке</string>
-    <string name="import_from_link_desc">Вставьте ссылку openflux:// или JSON</string>
+    <string name="import_from_link_desc">Вставьте ссылку libreroute:// или JSON</string>
     <string name="import_link_dialog_title">Импорт конфигурации</string>
-    <string name="import_link_dialog_hint">openflux://... или JSON</string>
+    <string name="import_link_dialog_hint">libreroute://... или JSON</string>
     <string name="import_link_dialog_btn">Импортировать</string>
     <string name="import_link_invalid">Неверный формат ссылки или конфигурации</string>
+    <string name="invitation_pending_title">Приглашение недоступно</string>
+    <string name="invitation_pending_message">Это приглашение пока нельзя активировать: в этой версии недоступно подтверждение сервера.</string>
     <string name="config_link_copied">Ссылка на конфигурацию скопирована</string>
     <string name="add_manual_desc">Настроить параметры транспорта вручную</string>
     <string name="logs_lines_count">%d строк</string>
@@ -157,8 +157,6 @@
     <string name="err_cups_domain_invalid">URL должен относиться к домену cups.online</string>
     <string name="err_mailru_url_required">Введите URL документа Mail.ru</string>
     <string name="err_mailru_domain_invalid">URL должен относиться к домену mail.ru</string>
-    <string name="err_gdocs_url_required">Укажите URL документа Google Docs</string>
-    <string name="err_gdocs_domain_invalid">URL должен вести на docs.google.com или содержать ID документа</string>
 
 
     <!-- App Update -->
@@ -272,6 +270,9 @@
     <string name="quick_settings_connected">Подключено</string>
     <string name="quick_settings_disconnected">Отключено</string>
     <string name="ping_ms_format">%1$d мс</string>
+    <string name="network_metrics_after_connect">Появится после подключения</string>
+    <string name="network_metrics_waiting">Ожидаем измерения</string>
+    <string name="network_metrics_current">Текущий трафик через туннель</string>
 
     <string name="settings_section_backup">Резервное копирование</string>
     <string name="settings_export_backup">Экспорт конфигураций</string>
@@ -297,6 +298,10 @@
 <!-- Unified Split Tunneling (Apps &amp; Sites) -->
     <string name="split_section_apps">Приложения</string>
     <string name="split_section_sites">Сайты</string>
+    <string name="split_ip_title">IP-адреса и подсети (режим как у сайтов)</string>
+    <string name="split_ip_hint">По одному IP или CIDR в строке, например 203.0.113.0/24</string>
+    <string name="split_ip_save">Сохранить IP-правила</string>
+    <string name="split_ip_invalid">Неверный IP-адрес или CIDR</string>
     <string name="split_sites_mode_bypass">Указанные сайты будут открываться напрямую в обход VPN</string>
     <string name="split_sites_mode_proxy">Только указанные сайты будут направляться через VPN-туннель</string>
     <string name="split_sites_count">Добавлено: %1$d</string>
@@ -348,6 +353,14 @@
     <string name="split_sites_clear_sheet_title">Очистить список сайтов?</string>
     <string name="split_sites_clear_sheet_desc">Все добавленные домены и правила маршрутизации будут безвозвратно удалены.</string>
     <string name="split_sites_clear_sheet_btn">Очистить список</string>
+    <string name="split_tunnel_card_disabled">Выключено (весь трафик через VPN)</string>
+    <string name="split_tunnel_card_empty">Правила не настроены</string>
+    <string name="split_tunnel_mode_bypass_prefix">Обход</string>
+    <string name="split_tunnel_mode_proxy_prefix">Только выбранные</string>
+    <string name="split_tunnel_summary_apps">%1$d прил.</string>
+    <string name="split_tunnel_summary_sites">%1$d сайтов</string>
+    <string name="split_tunnel_summary_ips">%1$d IP</string>
+    <string name="split_tunnel_restarted">Правила туннелирования обновлены, соединение перезапущено</string>
 
     <string name="import_link_sheet_title">Импорт конфигурации</string>
     <string name="import_link_sheet_desc">Вставьте ссылку на конфигурацию или JSON-конфиг</string>
@@ -411,7 +424,7 @@
     <string name="action_check_ping">Проверить пинг</string>
     <string name="notify_ping_format">Пинг: %1$d мс</string>
     <string name="notify_ping_testing">Проверка пинга…</string>
-    <string name="notify_ping_timeout">Ping: timeout</string>
+    <string name="notify_ping_timeout">Пинг: тайм-аут</string>
     <string name="share_logs_title">Поделиться журналом</string>
     <string name="share_logs_as_file">Поделиться (.txt файлом)</string>
     <string name="share_logs_copy_text">Скопировать текст</string>
@@ -481,10 +494,15 @@
     <string name="manual_section_general">Основное</string>
     <string name="manual_section_transport">Параметры транспорта</string>
     <string name="manual_section_security">Безопасность</string>
+    <string name="manual_section_session">Параметры сеанса (Volga)</string>
     <string name="manual_section_extra">Дополнительные параметры</string>
-    <string name="extra_params">Параметры OpenFlux</string>
+    <string name="extra_params">Параметры LibreRoute</string>
+    <string name="session_negotiate_label">Согласовать шифрованный сеанс (Volga; нужен совместимый сервер)</string>
+    <string name="session_batch_label">Максимальный размер пачки</string>
+    <string name="session_linger_label">Максимальная задержка пачки</string>
+    <string name="session_compression_label">Сжатие</string>
     <string name="extra_params_hint">Например: --codec=legacy --mode=l3</string>
-    <string name="extra_params_helper">Дополнительные флаги командной строки для ядра OpenFlux</string>
+    <string name="extra_params_helper">Дополнительные флаги командной строки для ядра LibreRoute</string>
     <string name="manual_url_helper">Несколько URL через запятую или новую строку для многоканальности</string>
     <string name="yandex_auth_issue_title">Проверьте авторизацию Яндекса</string>
     <string name="yandex_auth_issue_message">Не удалось обновить авторизацию документа на этом телефоне. Откройте документ в WebView, при необходимости войдите в Яндекс и пройдите проверку. После этого подключение повторится.</string>
@@ -494,4 +512,63 @@
     <string name="yandex_webview_session_intro">Откройте документ и войдите в Яндекс, если потребуется. Когда документ загрузится, нажмите «Повторить подключение».</string>
     <string name="yandex_webview_captcha_pending">Решите CAPTCHA на странице Яндекса и дождитесь открытия документа.</string>
     <string name="yandex_webview_document_pending">Документ ещё не открылся. Дождитесь его загрузки.</string>
+    <string name="yandex_webview_document_not_ready">Документ или сессия ещё не готовы. Дождитесь загрузки перед проверкой.</string>
+    <string name="yandex_webview_no_cookies">Браузер не получил cookies Яндекса. Убедитесь, что выполнен вход или пройдена проверка.</string>
+    <string name="yandex_webview_save_failed">Не удалось сохранить настройки браузера. Попробуйте ещё раз.</string>
+    <!-- Administration -->
+    <string name="settings_section_admin">Управление конфигурациями</string>
+    <string name="admin_title">Администрирование</string>
+    <string name="admin_home_subtitle">Люди, серверы и приглашения</string>
+    <string name="admin_nav_overview">Обзор</string>
+    <string name="admin_nav_people">Люди</string>
+    <string name="admin_nav_servers">Серверы</string>
+    <string name="jitsi_token_expired">Срок действия Jitsi-токена истёк. Войдите заново в браузере.</string>
+    <string name="admin_subtitle">Конфигурации, допуски, выдача и резерв по SSH</string>
+    <string name="admin_role_none">Нет административных прав</string>
+    <string name="admin_role_none_desc">Наличие VPN-профиля не даёт прав управления сервером</string>
+    <string name="admin_role_pending">Ожидает подтверждения</string>
+    <string name="admin_role_pending_desc">Запрос ADMIN_JOIN_REQUEST отправлен. Ожидается одобрение на сервере</string>
+    <string name="admin_role_owner">Владелец</string>
+    <string name="admin_role_operator">Оператор</string>
+    <string name="admin_role_viewer">Наблюдатель</string>
+    <string name="admin_btn_request_rights">Запросить права администратора</string>
+    <string name="admin_btn_create_profile">Создать профиль</string>
+    <string name="admin_btn_issue_invite">Выдать приглашение</string>
+    <string name="admin_btn_suspend">Приостановить</string>
+    <string name="admin_btn_resume">Возобновить</string>
+    <string name="admin_btn_revoke">Отозвать</string>
+    <string name="admin_btn_revoke_rights">Отозвать права на этом устройстве</string>
+    <string name="admin_channel_document">Документ профиля</string>
+    <string name="admin_channel_vds">SSH: сервер</string>
+    <string name="admin_channel_netcraze">SSH: роутер</string>
+    <string name="admin_managed_configs">Управляемые конфигурации</string>
+    <string name="admin_audit_log">Журнал команд</string>
+    <string name="admin_fingerprint_label">Отпечаток ключа устройства (SHA-256):</string>
+    <string name="admin_pairing_code_label">Одноразовый код сопряжения:</string>
+    <string name="admin_dialog_create_title">Создать управляемый профиль</string>
+    <string name="admin_dialog_issue_title">Приглашение клиента</string>
+    <string name="admin_problem_report_title">Отчёт о проблеме (PROBLEM_REPORT)</string>
+    <string name="admin_confirm_revoke_title">Отозвать профиль?</string>
+    <string name="admin_confirm_revoke_message">Доступ для этого профиля будет навсегда заблокирован на сервере.</string>
+    <string name="admin_confirm_revoke_rights_title">Отозвать права администратора?</string>
+    <string name="admin_confirm_revoke_rights_message">Локальные учётные данные администратора будут удалены. Роль вернётся к NONE.</string>
+    <string name="admin_empty_profiles">Локальных записей управления пока нет</string>
+    <string name="admin_empty_history">Команды ещё не выполнялись</string>
+    <string name="admin_status_ready">Готов</string>
+    <string name="admin_status_suspended">Приостановлен</string>
+    <string name="admin_status_revoked">Отозван</string>
+    <string name="admin_btn_share">Поделиться</string>
+    <string name="admin_btn_apply_test_grant">Симулировать подтверждение допуска</string>
+
+    <string name="mqtt_backend">MQTT · умный дом</string>
+    <string name="jitsi_backend">Jitsi Meet</string>
+    <string name="mqtt_url_hint">wss://broker.emqx.io:8084/mqtt#имя-канала</string>
+    <string name="mqtt_broker_label">MQTT-брокер (WSS)</string>
+    <string name="mqtt_broker_helper">По умолчанию EMQX: wss://broker.emqx.io:8084/mqtt</string>
+    <string name="mqtt_topic_label">Тема канала</string>
+    <string name="mqtt_topic_helper">Уникальное имя, например home-gateway</string>
+    <string name="mqtt_client_id_label">Идентификатор клиента (необязательно)</string>
+    <string name="mqtt_client_id_helper">Оставьте пустым для автоматического iot-client/gateway ID</string>
+    <string name="jitsi_url_hint">https://meet.jit.si/имя-комнаты</string>
+    <string name="service_key_required">Нужен общий ключ минимум из 16 символов на клиенте и сервере</string>
 </resources>

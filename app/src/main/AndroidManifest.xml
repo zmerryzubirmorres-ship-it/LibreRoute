@@ -23,7 +23,7 @@
     </queries>
 
     <application
-        android:name=".OpenFluxApp"
+        android:name=".LibreRouteApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
@@ -48,13 +48,18 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="openflux" />
-                <data android:scheme="fluxon" />
+                <data android:scheme="libreroute" />
+                <data android:scheme="libreroute" />
                 <data android:scheme="paperflux" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
@@ -145,12 +150,35 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".admin.AdminActivity"
+            android:exported="false"
+            android:label="@string/admin_title"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".admin.AdminSetupActivity"
+            android:exported="false"
+            android:label="Первичная привязка"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".admin.RemoteAuthActivity"
+            android:exported="false"
+            android:label="Удалённая авторизация"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".admin.JitsiAuthActivity"
+            android:exported="false"
+            android:label="Jitsi"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".ui.YandexCaptchaActivity"
             android:exported="false"
             android:label="Проверка Яндекса" />
+        <activity android:name=".ui.AccessActivity" android:exported="false" android:label="Добавление доступа" />
+        <activity android:name=".admin.ServerSetupActivity" android:exported="false" android:label="Настройка сервера" />
+        <activity android:name=".admin.ProtocolSetupActivity" android:exported="false" android:label="Протоколы сервера" />
 
         <service
-            android:name=".service.FluxonTileService"
+            android:name=".service.LibreRouteTileService"
             android:icon="@drawable/ic_notification"
             android:label="@string/quick_settings_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
@@ -184,7 +212,7 @@
 
         <!-- SOCKS5-only proxy service (no VpnService, no TUN, no key icon) -->
         <service
-            android:name=".service.FluxonProxyService"
+            android:name=".service.LibreRouteProxyService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

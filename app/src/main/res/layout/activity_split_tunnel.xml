@@ -568,6 +568,31 @@
                     android:layout_height="1dp"
                     android:background="@color/m3_outline_variant" />
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp"
+                    android:paddingTop="8dp"
+                    android:text="@string/split_ip_title"
+                    android:textColor="@color/text_primary" />
+
+                <EditText
+                    android:id="@+id/ip_rules_input"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    android:hint="@string/split_ip_hint"
+                    android:inputType="textMultiLine|textNoSuggestions"
+                    android:minLines="2"
+                    android:maxLines="3" />
+
+                <Button
+                    android:id="@+id/btn_save_ip_rules"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    android:text="@string/split_ip_save" />
+
                 <!-- Sites Recycler & Empty State -->
                 <FrameLayout
                     android:layout_width="match_parent"

@@ -57,7 +57,7 @@
                 android:fontFamily="sans-serif-bold"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="OpenFlux VPN" />
+                tools:text="LibreRoute VPN" />
 
             <TextView
                 android:id="@+id/sheet_config_subtitle"

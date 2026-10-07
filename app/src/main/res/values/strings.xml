@@ -16,8 +16,6 @@
     <string name="cups_url_hint">Base64 room list or URL</string>
     <string name="mailru_backend">Mail.ru Docs</string>
     <string name="mailru_url_hint">Document URL</string>
-    <string name="gdocs_backend">Google Docs</string>
-    <string name="gdocs_url_hint">Document URL or ID</string>
 
     <string name="starting_transport">Starting transport…</string>
     <string name="starting_tsocks">Starting tun2socks…</string>
@@ -135,11 +133,13 @@
 
     <!-- Link Import and Deep Links -->
     <string name="import_from_link">Import via link</string>
-    <string name="import_from_link_desc">Paste openflux:// link or JSON</string>
+    <string name="import_from_link_desc">Paste libreroute:// link or JSON</string>
     <string name="import_link_dialog_title">Import Configuration</string>
-    <string name="import_link_dialog_hint">openflux://... or JSON</string>
+    <string name="import_link_dialog_hint">libreroute://... or JSON</string>
     <string name="import_link_dialog_btn">Import</string>
     <string name="import_link_invalid">Invalid link or configuration format</string>
+    <string name="invitation_pending_title">Invitation unavailable</string>
+    <string name="invitation_pending_message">This invitation cannot be activated yet. Server confirmation is unavailable in this version.</string>
     <string name="config_link_copied">Configuration link copied</string>
     <string name="add_manual_desc">Configure transport parameters manually</string>
     <string name="logs_lines_count">%d lines</string>
@@ -157,8 +157,6 @@
     <string name="err_cups_domain_invalid">URL must be a valid cups.online link</string>
     <string name="err_mailru_url_required">Mail.ru document URL is required</string>
     <string name="err_mailru_domain_invalid">URL must be a valid mail.ru link</string>
-    <string name="err_gdocs_url_required">Google Docs URL is required</string>
-    <string name="err_gdocs_domain_invalid">URL must be a valid Google Docs link or document ID</string>
 
 
     <!-- App Update -->
@@ -272,6 +270,9 @@
     <string name="quick_settings_connected">Connected</string>
     <string name="quick_settings_disconnected">Disconnected</string>
     <string name="ping_ms_format">%1$d ms</string>
+    <string name="network_metrics_after_connect">Появится после подключения</string>
+    <string name="network_metrics_waiting">Ожидаем измерения</string>
+    <string name="network_metrics_current">Текущий трафик через туннель</string>
 
     <string name="settings_section_backup">Backup &amp; Restore</string>
     <string name="settings_export_backup">Export Configurations</string>
@@ -297,6 +298,10 @@
 <!-- Unified Split Tunneling (Apps &amp; Sites) -->
     <string name="split_section_apps">Apps</string>
     <string name="split_section_sites">Websites</string>
+    <string name="split_ip_title">IP addresses and CIDR ranges (same mode as websites)</string>
+    <string name="split_ip_hint">One address or CIDR per line, e.g. 203.0.113.0/24</string>
+    <string name="split_ip_save">Save IP rules</string>
+    <string name="split_ip_invalid">Invalid IP address or CIDR</string>
     <string name="split_sites_mode_bypass">Websites in this list will bypass VPN directly</string>
     <string name="split_sites_mode_proxy">Only websites in this list will be routed through VPN</string>
     <string name="split_sites_count">Added: %1$d</string>
@@ -348,6 +353,14 @@
     <string name="split_sites_clear_sheet_title">Clear domain list?</string>
     <string name="split_sites_clear_sheet_desc">All added domain rules will be permanently removed.</string>
     <string name="split_sites_clear_sheet_btn">Clear list</string>
+    <string name="split_tunnel_card_disabled">Disabled (all traffic via VPN)</string>
+    <string name="split_tunnel_card_empty">No rules configured</string>
+    <string name="split_tunnel_mode_bypass_prefix">Bypass</string>
+    <string name="split_tunnel_mode_proxy_prefix">Only selected</string>
+    <string name="split_tunnel_summary_apps">%1$d apps</string>
+    <string name="split_tunnel_summary_sites">%1$d sites</string>
+    <string name="split_tunnel_summary_ips">%1$d IPs</string>
+    <string name="split_tunnel_restarted">Split tunneling updated, tunnel restarted</string>
 
     <string name="import_link_sheet_title">Import Configuration</string>
     <string name="import_link_sheet_desc">Paste configuration link or JSON config</string>
@@ -481,10 +494,15 @@
     <string name="manual_section_general">General</string>
     <string name="manual_section_transport">Transport Configuration</string>
     <string name="manual_section_security">Security</string>
+    <string name="manual_section_session">Session Negotiation (Volga)</string>
     <string name="manual_section_extra">Extra Parameters</string>
-    <string name="extra_params">OpenFlux parameters</string>
+    <string name="extra_params">LibreRoute parameters</string>
+    <string name="session_negotiate_label">Negotiate encrypted session (Volga; matching server required)</string>
+    <string name="session_batch_label">Maximum batch size</string>
+    <string name="session_linger_label">Maximum batch delay</string>
+    <string name="session_compression_label">Compression</string>
     <string name="extra_params_hint">e.g. --codec=legacy --mode=l3</string>
-    <string name="extra_params_helper">Additional command-line flags passed directly to OpenFlux core</string>
+    <string name="extra_params_helper">Additional command-line flags passed directly to LibreRoute core</string>
     <string name="manual_url_helper">Multiple URLs separated by comma or newline for multi-lane failover</string>
     <string name="yandex_auth_issue_title">Check Yandex authorization</string>
     <string name="yandex_auth_issue_message">Document authorization could not be renewed on this phone. Open the document in WebView, sign in or complete any challenge, then retry the connection.</string>
@@ -494,4 +512,63 @@
     <string name="yandex_webview_session_intro">Open the document and sign in to Yandex if needed. Once it loads, tap Retry connection.</string>
     <string name="yandex_webview_captcha_pending">Complete the Yandex CAPTCHA and wait for the document to open.</string>
     <string name="yandex_webview_document_pending">The document has not opened yet. Wait for it to load.</string>
+    <string name="yandex_webview_document_not_ready">The document or session is not ready yet. Wait for loading before verifying.</string>
+    <string name="yandex_webview_no_cookies">The browser received no Yandex cookies. Make sure you are signed in or challenge is solved.</string>
+    <string name="yandex_webview_save_failed">Failed to save browser settings. Please try again.</string>
+    <!-- Administration -->
+    <string name="settings_section_admin">Configuration Management</string>
+    <string name="admin_title">Administration</string>
+    <string name="admin_home_subtitle">People, servers and invitations</string>
+    <string name="admin_nav_overview">Overview</string>
+    <string name="admin_nav_people">People</string>
+    <string name="admin_nav_servers">Servers</string>
+    <string name="jitsi_token_expired">This Jitsi token has expired. Sign in again in the browser.</string>
+    <string name="admin_subtitle">Configurations, grants, issuance and SSH fallback</string>
+    <string name="admin_role_none">No administrative rights</string>
+    <string name="admin_role_none_desc">Having a VPN profile does not grant server management permissions</string>
+    <string name="admin_role_pending">Pending confirmation</string>
+    <string name="admin_role_pending_desc">ADMIN_JOIN_REQUEST submitted. Awaiting approval on server</string>
+    <string name="admin_role_owner">Owner</string>
+    <string name="admin_role_operator">Operator</string>
+    <string name="admin_role_viewer">Viewer</string>
+    <string name="admin_btn_request_rights">Request administrator rights</string>
+    <string name="admin_btn_create_profile">Create profile</string>
+    <string name="admin_btn_issue_invite">Issue invitation</string>
+    <string name="admin_btn_suspend">Suspend</string>
+    <string name="admin_btn_resume">Resume</string>
+    <string name="admin_btn_revoke">Revoke</string>
+    <string name="admin_btn_revoke_rights">Revoke rights on this device</string>
+    <string name="admin_channel_document">Profile document</string>
+    <string name="admin_channel_vds">SSH: server</string>
+    <string name="admin_channel_netcraze">SSH: router</string>
+    <string name="admin_managed_configs">Managed configurations</string>
+    <string name="admin_audit_log">Audit Log</string>
+    <string name="admin_fingerprint_label">Device key fingerprint (SHA-256):</string>
+    <string name="admin_pairing_code_label">One-time pairing code:</string>
+    <string name="admin_dialog_create_title">Create Managed Profile</string>
+    <string name="admin_dialog_issue_title">Client Invitation</string>
+    <string name="admin_problem_report_title">Problem Report (PROBLEM_REPORT)</string>
+    <string name="admin_confirm_revoke_title">Revoke profile?</string>
+    <string name="admin_confirm_revoke_message">Access for this profile will be permanently blocked on the server.</string>
+    <string name="admin_confirm_revoke_rights_title">Revoke admin rights?</string>
+    <string name="admin_confirm_revoke_rights_message">Local administrative credentials will be deleted. The role will return to NONE.</string>
+    <string name="admin_empty_profiles">No local management records yet</string>
+    <string name="admin_empty_history">No commands executed yet</string>
+    <string name="admin_status_ready">Ready</string>
+    <string name="admin_status_suspended">Suspended</string>
+    <string name="admin_status_revoked">Revoked</string>
+    <string name="admin_btn_share">Share</string>
+    <string name="admin_btn_apply_test_grant">Simulate grant approval</string>
+
+    <string name="mqtt_backend">MQTT · умный дом</string>
+    <string name="jitsi_backend">Jitsi Meet</string>
+    <string name="mqtt_url_hint">wss://broker.emqx.io:8084/mqtt#имя-канала</string>
+    <string name="mqtt_broker_label">MQTT broker (WSS)</string>
+    <string name="mqtt_broker_helper">EMQX by default: wss://broker.emqx.io:8084/mqtt</string>
+    <string name="mqtt_topic_label">Channel topic</string>
+    <string name="mqtt_topic_helper">Unique name, for example home-gateway</string>
+    <string name="mqtt_client_id_label">Client ID (optional)</string>
+    <string name="mqtt_client_id_helper">Leave empty for an automatic iot-client/gateway ID</string>
+    <string name="jitsi_url_hint">https://meet.jit.si/имя-комнаты</string>
+    <string name="service_key_required">Нужен общий ключ минимум из 16 символов на клиенте и сервере</string>
 </resources>

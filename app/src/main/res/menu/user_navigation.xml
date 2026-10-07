@@ -1,0 +1,7 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/nav_home" android:title="Главная" android:icon="@drawable/ic_power" />
+    <!-- Kept as an addressable destination for multi-route deep navigation, hidden from the primary user flow. -->
+    <item android:id="@+id/nav_routes" android:title="Маршруты" android:icon="@drawable/ic_split_tunnel" android:visible="false" />
+    <item android:id="@+id/nav_add" android:title="Добавить" android:icon="@drawable/ic_add" />
+    <item android:id="@+id/nav_settings" android:title="Настройки" android:icon="@drawable/ic_settings" />
+</menu>

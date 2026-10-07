@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Calm Mobile Tunnel tokens shared by native screens and Stitch exports. -->
+    <color name="calm_background">#F5F7FA</color>
+    <color name="calm_surface">#FFFFFF</color>
+    <color name="calm_surface_elevated">#E2E8F0</color>
+    <color name="calm_surface_pressed">#CBD5E1</color>
+    <color name="calm_text_primary">#0F172A</color>
+    <color name="calm_text_secondary">#475569</color>
+    <color name="calm_text_muted">#64748B</color>
+    <color name="calm_outline">#7C8BA0</color>
+    <color name="calm_primary">#2563EB</color>
+    <color name="calm_primary_pressed">#1D4ED8</color>
+    <color name="calm_success">#16A34A</color>
+    <color name="calm_warning">#D97706</color>
+    <color name="calm_error">#DC2626</color>
+    <color name="calm_info">#2563EB</color>
+    <color name="calm_on_primary">#FFFFFF</color>
     <color name="toolbar_color">#00000000</color>
 
     <color name="bg_deep">#F5F7FA</color>

@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenFluxAndroid"
+rootProject.name = "LibreRouteAndroid"
 include(":app")

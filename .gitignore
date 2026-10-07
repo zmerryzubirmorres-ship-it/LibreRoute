@@ -57,7 +57,6 @@ jni/libs/
 *.so.debug
 /app/src/main/obj/
 /app/src/main/libs/
-/app/src/main/jniLibs/arm64-v8a/libopenflux_client.so
 
 CMakeCache.txt
 CMakeFiles/
@@ -108,13 +107,13 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 *.bak
-Fluxon_*_backup*
-Fluxon.apk
-FluxonCore/
+LibreRoute_*_backup*
+LibreRoute.apk
+LibreRouteCore/
 .agents/
 verify_*.py
 myconversation.md
-openflux-linux-*
+libreroute-linux-*
 AUDIT_REPORT.md
 PROJECT.md
 ORIGINAL_REQUEST.md

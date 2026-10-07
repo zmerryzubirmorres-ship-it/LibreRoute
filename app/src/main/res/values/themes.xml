@@ -45,12 +45,12 @@
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">?attr/isLightTheme</item>
 
         <!-- Component overrides -->
-        <item name="materialSwitchStyle">@style/Widget.Fluxon.Switch</item>
-        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Fluxon.BottomSheetDialog</item>
-        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Fluxon.MaterialAlertDialog</item>
+        <item name="materialSwitchStyle">@style/Widget.LibreRoute.Switch</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.LibreRoute.BottomSheetDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.LibreRoute.MaterialAlertDialog</item>
     </style>
 
-    <style name="Widget.Fluxon.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+    <style name="Widget.LibreRoute.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
         <item name="thumbTint">@color/switch_thumb_selector</item>
         <item name="trackTint">@color/switch_track_selector</item>
         <item name="trackDecorationTint">@android:color/transparent</item>
@@ -58,31 +58,31 @@
         <item name="thumbIconSize">0dp</item>
     </style>
 
-    <style name="ThemeOverlay.Fluxon.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
-        <item name="bottomSheetStyle">@style/Widget.Fluxon.BottomSheet.Modal</item>
+    <style name="ThemeOverlay.LibreRoute.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.LibreRoute.BottomSheet.Modal</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <style name="Widget.Fluxon.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+    <style name="Widget.LibreRoute.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
         <item name="backgroundTint">@color/m3_surface_container_low</item>
-        <item name="shapeAppearance">@style/ShapeAppearance.Fluxon.BottomSheet</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.LibreRoute.BottomSheet</item>
     </style>
 
-    <style name="ShapeAppearance.Fluxon.BottomSheet" parent="ShapeAppearance.Material3.Corner.Large">
+    <style name="ShapeAppearance.LibreRoute.BottomSheet" parent="ShapeAppearance.Material3.Corner.Large">
         <item name="cornerSizeTopLeft">28dp</item>
         <item name="cornerSizeTopRight">28dp</item>
         <item name="cornerSizeBottomLeft">0dp</item>
         <item name="cornerSizeBottomRight">0dp</item>
     </style>
 
-    <style name="ThemeOverlay.Fluxon.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+    <style name="ThemeOverlay.LibreRoute.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="colorSurface">@color/m3_surface_container_low</item>
-        <item name="shapeAppearance">@style/ShapeAppearance.Fluxon.Dialog</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.LibreRoute.Dialog</item>
     </style>
 
-    <style name="ShapeAppearance.Fluxon.Dialog" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
+    <style name="ShapeAppearance.LibreRoute.Dialog" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
         <item name="cornerSize">20dp</item>
     </style>
 </resources>

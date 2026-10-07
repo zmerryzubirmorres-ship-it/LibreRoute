@@ -1,17 +1,17 @@
-# Project ProGuard / R8 Rules for Fluxon
+# Project ProGuard / R8 Rules for LibreRoute
 
 # Keep JNI Bridge and native methods
--keepclassmembers class io.github.p1neapplexpress.openflux.NativeBridge {
+-keepclassmembers class io.github.libreroute.NativeBridge {
     public *;
     native <methods>;
 }
--keep class io.github.p1neapplexpress.openflux.NativeBridge { *; }
+-keep class io.github.libreroute.NativeBridge { *; }
 
 # Keep AIDL interfaces
--keep class io.github.p1neapplexpress.openflux.IUnifiedService* { *; }
+-keep class io.github.libreroute.IUnifiedService* { *; }
 
 # Keep Custom Views instantiated in XML
--keep class io.github.p1neapplexpress.openflux.ui.widget.** {
+-keep class io.github.libreroute.ui.widget.** {
     public <init>(android.content.Context);
     public <init>(android.content.Context, android.util.AttributeSet);
     public <init>(android.content.Context, android.util.AttributeSet, int);
@@ -31,9 +31,9 @@
     *** serializer();
 }
 
--keep class io.github.p1neapplexpress.openflux.data.** { *; }
--keep class io.github.p1neapplexpress.openflux.util.AppUpdateChecker$** { *; }
--keep class io.github.p1neapplexpress.openflux.util.ConfigBackupManager$** { *; }
+-keep class io.github.libreroute.data.** { *; }
+-keep class io.github.libreroute.util.AppUpdateChecker$** { *; }
+-keep class io.github.libreroute.util.ConfigBackupManager$** { *; }
 
 # Quickie, ZXing, and ML Kit
 -dontwarn io.github.g00fy2.quickie.**
