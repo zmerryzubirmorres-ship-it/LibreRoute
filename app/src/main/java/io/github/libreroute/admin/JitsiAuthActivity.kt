@@ -75,19 +75,19 @@ class JitsiAuthActivity : AppCompatActivity() {
         root.addView(browser, LinearLayout.LayoutParams(-1, 0, 1f))
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         actions.addView(Button(this).apply {
-            text = "РћС‚РєСЂС‹С‚СЊ РІРЅРµС€РЅРёРј Р±СЂР°СѓР·РµСЂРѕРј"
+            text = "Открыть внешним браузером"
             setOnClickListener {
-                status.text = "РџРѕСЃР»Рµ РІС…РѕРґР° СЃРєРѕРїРёСЂСѓР№С‚Рµ СЃСЃС‹Р»РєСѓ РєРѕРјРЅР°С‚С‹, РІРµСЂРЅРёС‚РµСЃСЊ СЃСЋРґР° Рё РЅР°Р¶РјРёС‚Рµ В«Р’СЃС‚Р°РІРёС‚СЊ СЃСЃС‹Р»РєСѓВ»."
+                status.text = "После входа скопируйте ссылку комнаты, вернитесь сюда и нажмите «Вставить ссылку»."
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(roomUrl))) }
-                    .onFailure { status.text = "РќРµ РЅР°Р№РґРµРЅ Р±СЂР°СѓР·РµСЂ РґР»СЏ РѕС‚РєСЂС‹С‚РёСЏ РєРѕРјРЅР°С‚С‹" }
+                    .onFailure { status.text = "Не найден браузер для открытия комнаты" }
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         actions.addView(Button(this).apply {
-            text = "Р’СЃС‚Р°РІРёС‚СЊ СЃСЃС‹Р»РєСѓ"
+            text = "Вставить ссылку"
             setOnClickListener { importClipboardLink() }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         actions.addView(Button(this).apply {
-            text = "РћС‚РјРµРЅР°"
+            text = "Отмена"
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(actions, LinearLayout.LayoutParams(-1, -2))
@@ -124,12 +124,12 @@ class JitsiAuthActivity : AppCompatActivity() {
         if (!JitsiBrowserHandoff.sameRoom(roomUrl, url.orEmpty())) return
         val token = tokenFromUrl(url) ?: return
         if (JitsiTokenStore.isExpired(token) || token.length !in 32..8192) {
-            status.text = "РўРѕРєРµРЅ Jitsi РёСЃС‚С‘Рє. Р’РѕР№РґРёС‚Рµ РІ РєРѕРјРЅР°С‚Сѓ РµС‰С‘ СЂР°Р·."
+            status.text = "Токен Jitsi истёк. Войдите в комнату ещё раз."
             return
         }
         JitsiTokenStore(this).put(roomUrl, token)
         completed = true
-        status.text = "Р’С…РѕРґ Jitsi РїРѕРґС‚РІРµСЂР¶РґС‘РЅ. Р’РѕР·РІСЂР°С‰Р°РµРјСЃСЏ Рє РїРѕРґРєР»СЋС‡РµРЅРёСЋвЂ¦"
+        status.text = "Вход Jitsi подтверждён. Возвращаемся к подключению…"
         setResult(RESULT_OK)
         finish()
     }
@@ -140,22 +140,22 @@ class JitsiAuthActivity : AppCompatActivity() {
         val handoff = JitsiBrowserHandoff.parseSharedText(shared)
         if (handoff != null) {
             if (!JitsiBrowserHandoff.sameRoom(roomUrl, handoff.roomUrl)) {
-                status.text = "РЎСЃС‹Р»РєР° РѕС‚РЅРѕСЃРёС‚СЃСЏ Рє РґСЂСѓРіРѕР№ РєРѕРјРЅР°С‚Рµ Jitsi."
+                status.text = "Ссылка относится к другой комнате Jitsi."
                 return
             }
             if (JitsiTokenStore.isExpired(handoff.token)) {
-                status.text = "РўРѕРєРµРЅ Jitsi РёСЃС‚С‘Рє. Р’РѕР№РґРёС‚Рµ РІ РєРѕРјРЅР°С‚Сѓ РµС‰С‘ СЂР°Р·."
+                status.text = "Токен Jitsi истёк. Войдите в комнату ещё раз."
                 return
             }
             JitsiTokenStore(this).put(roomUrl, handoff.token)
-            status.text = "JWT Jitsi РїРѕР»СѓС‡РµРЅ. Р’РѕР·РІСЂР°С‰Р°РµРјСЃСЏ Рє РїРѕРґРєР»СЋС‡РµРЅРёСЋвЂ¦"
+            status.text = "JWT Jitsi получен. Возвращаемся к подключению…"
         } else {
             val plainRoom = roomUrlOrNull(shared)
             if (plainRoom == null || !JitsiBrowserHandoff.sameRoom(roomUrl, plainRoom)) {
-                status.text = "Р’ Р±СѓС„РµСЂРµ РЅРµС‚ СЃСЃС‹Р»РєРё СЌС‚РѕР№ РєРѕРјРЅР°С‚С‹. РЎРєРѕРїРёСЂСѓР№С‚Рµ Р°РґСЂРµСЃ РєРѕРјРЅР°С‚С‹ РёР· Р±СЂР°СѓР·РµСЂР°."
+                status.text = "В буфере нет ссылки этой комнаты. Скопируйте адрес комнаты из браузера."
                 return
             }
-            status.text = "РљРѕРјРЅР°С‚Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅР° Р±РµР· JWT. РћСЃС‚Р°РІСЊС‚Рµ Р±СЂР°СѓР·РµСЂ СЃ РѕСЂРіР°РЅРёР·Р°С‚РѕСЂРѕРј РѕС‚РєСЂС‹С‚С‹Рј."
+            status.text = "Комната подтверждена без JWT. Оставьте браузер с организатором открытым."
         }
         completed = true
         setResult(RESULT_OK)

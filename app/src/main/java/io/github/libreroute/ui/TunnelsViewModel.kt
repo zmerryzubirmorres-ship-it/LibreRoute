@@ -430,7 +430,11 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             putExtra(Constants.INTENT_AUTONOMOUS, true)
         }
 
-        if (appSettings.proxyOnlyMode) {
+        // direct-dpi is a local TUN filter; the SOCKS-only service has no TUN
+        // descriptor and the Core intentionally exits when used with it.
+        // Always keep zapret on the VPN service even if proxy-only mode is
+        // enabled for ordinary relay profiles.
+        if (appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)) {
             // ── Proxy-only mode: start LibreRouteProxyService (no VPN key icon) ──
             Logx.i(TAG, "Proxy-only mode: starting LibreRouteProxyService")
             EventBus.dispatch(AppEvent.LogMessage("[I] Режим прокси (без VPN-иконки): запуск LibreRouteProxyService"))

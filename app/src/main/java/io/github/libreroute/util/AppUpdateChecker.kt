@@ -19,6 +19,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import io.github.libreroute.BuildConfig
 import io.github.libreroute.R
 import androidx.lifecycle.LifecycleOwner
@@ -29,6 +31,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -39,6 +43,7 @@ object AppUpdateChecker {
     private const val PREFS_NAME = "libreroute_update_checker"
     private const val KEY_LAST_CHECK_MS = "last_check_ms"
     private const val CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+    private const val UPDATE_DIR = "updates"
 
     private val versionPattern = Regex("^[vV]?(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:[-+][0-9A-Za-z.-]+)?$")
 
@@ -132,8 +137,10 @@ object AppUpdateChecker {
                             !it.name.contains("debug", ignoreCase = true) &&
                             it.browser_download_url.startsWith("$projectUrl/releases/download/")
                     }
+                    // Only offer the in-app installer when the release contains an APK.
+                    // Falling back to the release page would download HTML and produce a
+                    // confusing installer error.
                     val downloadUrl = apkAsset?.browser_download_url
-                        ?: release.html_url.takeIf { it.startsWith("$projectUrl/releases/tag/") }
 
                     withContext(Dispatchers.Main) {
                         if (!activity.isFinishing && !activity.isDestroyed) {
@@ -224,19 +231,52 @@ object AppUpdateChecker {
             notesView.text = activity.getString(R.string.update_no_changelog)
         }
 
-        view.findViewById<View>(R.id.btn_download_update).apply {
+        val downloadButton = view.findViewById<View>(R.id.btn_download_update)
+        downloadButton.apply {
             visibility = if (downloadUrl == null) View.GONE else View.VISIBLE
             if (downloadUrl != null) {
                 setOnClickListener {
                     it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-                    dialog.dismiss()
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (!downloadButton.isEnabled) return@setOnClickListener
+                    downloadButton.isEnabled = false
+                    (downloadButton as? TextView)?.text = activity.getString(R.string.update_downloading)
+                    val scope = (activity as? LifecycleOwner)?.lifecycleScope
+                        ?: return@setOnClickListener
+                    scope.launch {
+                        try {
+                            val apk = withContext(Dispatchers.IO) {
+                                downloadApk(activity, downloadUrl, release.tag_name) { progress ->
+                                    // Keep the dialog responsive while the file is downloaded.
+                                    activity.runOnUiThread {
+                                        (downloadButton as? TextView)?.text = activity.getString(
+                                            R.string.update_downloading_percent,
+                                            progress
+                                        )
+                                    }
+                                }
+                            }
+                            val uri = FileProvider.getUriForFile(
+                                activity,
+                                "${activity.packageName}.fileprovider",
+                                apk
+                            )
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            dialog.dismiss()
+                            activity.startActivity(intent)
+                        } catch (e: Exception) {
+                            Logx.e(TAG, "Failed to download or launch update", e)
+                            downloadButton.isEnabled = true
+                            (downloadButton as? TextView)?.text = activity.getString(R.string.action_update_download)
+                            Toast.makeText(
+                                activity,
+                                activity.getString(R.string.update_download_error),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
-                        activity.startActivity(intent)
-                    } catch (e: Exception) {
-                        Logx.e(TAG, "Failed to launch browser for update", e)
                     }
                 }
             }
@@ -260,6 +300,59 @@ object AppUpdateChecker {
             }
         }
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    /** Downloads the release APK into app-private storage and returns an atomic, complete file. */
+    private fun downloadApk(
+        context: Context,
+        downloadUrl: String,
+        releaseTag: String,
+        onProgress: (Int) -> Unit
+    ): File {
+        val updateDir = File(context.filesDir, UPDATE_DIR).apply { mkdirs() }
+        val safeTag = releaseTag.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val apkFile = File(updateDir, "LibreRoute-$safeTag.apk")
+        val tempFile = File(updateDir, "$safeTag.apk.part")
+        val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            requestMethod = "GET"
+            instanceFollowRedirects = true
+            setRequestProperty("Accept", "application/vnd.android.package-archive")
+            setRequestProperty("User-Agent", "LibreRoute-Android/${BuildConfig.VERSION_NAME}")
+        }
+        try {
+            val response = connection.responseCode
+            if (response !in 200..299) error("HTTP $response")
+            val total = connection.contentLengthLong
+            var downloaded = 0L
+            var lastProgress = -1
+            connection.inputStream.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (total > 0) {
+                            val progress = ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
+                            if (progress != lastProgress) {
+                                lastProgress = progress
+                                onProgress(progress)
+                            }
+                        }
+                    }
+                    output.fd.sync()
+                }
+            }
+            if (!tempFile.isFile || tempFile.length() == 0L) error("Empty APK")
+            if (apkFile.exists() && !apkFile.delete()) error("Cannot replace old APK")
+            if (!tempFile.renameTo(apkFile)) error("Cannot finalize APK")
+            return apkFile
+        } finally {
+            connection.disconnect()
+            if (tempFile.exists()) tempFile.delete()
+        }
     }
 
     /**

@@ -163,6 +163,9 @@
     <string name="update_available_title">Доступно обновление</string>
     <string name="update_version_format">Версия %1$s • Текущая %2$s</string>
     <string name="action_update_download">Скачать обновление</string>
+    <string name="update_downloading">Загрузка обновления...</string>
+    <string name="update_downloading_percent">Загрузка обновления... %1$d%%</string>
+    <string name="update_download_error">Не удалось загрузить обновление. Проверьте соединение и повторите попытку.</string>
     <string name="action_update_later">Напомнить позже</string>
     <string name="update_no_changelog">Доступна новая версия приложения LibreRoute.</string>
     <string name="update_checking">Проверка обновлений...</string>

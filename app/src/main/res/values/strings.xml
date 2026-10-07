@@ -163,6 +163,9 @@
     <string name="update_available_title">Update Available</string>
     <string name="update_version_format">Version %1$s • Current %2$s</string>
     <string name="action_update_download">Download update</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_downloading_percent">Downloading update… %1$d%%</string>
+    <string name="update_download_error">Could not download the update. Check your connection and try again.</string>
     <string name="action_update_later">Remind later</string>
     <string name="update_no_changelog">A new version of LibreRoute is available.</string>
     <string name="update_checking">Checking for updates...</string>

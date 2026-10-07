@@ -398,7 +398,7 @@ class AdminRepository(
                         plan["namespace"]?.jsonPrimitive?.content == confirmedNamespace &&
                         plan["server_public_key"]?.jsonPrimitive?.content == confirmedServerPublicKey
                 }.getOrDefault(false)
-        } ?: error("РРґРµРЅС‚РёС‡РЅРѕСЃС‚СЊ РґРѕР»Р¶РЅР° СЃРѕРІРїР°РґР°С‚СЊ СЃ СЃРѕС…СЂР°РЅС‘РЅРЅС‹Рј РїР»Р°РЅРѕРј, РїРѕР»СѓС‡РµРЅРЅС‹Рј С‡РµСЂРµР· РґРѕРІРµСЂРµРЅРЅС‹Р№ SSH")
+        } ?: error("Идентичность должна совпадать с сохранённым планом, полученным через доверенный SSH")
         require(reviewed.node.host == old.host && reviewed.node.port == old.port &&
             reviewed.node.hostPublicKey == old.hostPublicKey) { "SSH-подключение изменилось после проверки плана" }
         if (localNodeId == confirmedServerId) {
@@ -1740,7 +1740,7 @@ class AdminRepository(
         if (grant.role == AdminRole.OWNER) ensureOwnerControlProfile(newNode, grant, "")
 
         updateCommandStatus(requestEnvelope.opId, AdminCommandRecord.STATUS_APPLIED)
-        return AdminOpResult.Success("РЎРµСЂРІРµСЂ В«${serverName}» СѓСЃРїРµС€РЅРѕ РїСЂРёРІСЏР·Р°РЅ. РџСЂР°РІР° Р’Р»Р°РґРµР»СЊС†Р° РїРѕРґС‚РІРµСЂР¶РґРµРЅС‹!", grantEnvelope)
+        return AdminOpResult.Success("Сервер «${serverName}» успешно привязан. Права Владельца подтверждены!", grantEnvelope)
     }
 
     /**
@@ -1929,7 +1929,7 @@ class AdminRepository(
         saveProfiles(current)
         updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, newProfile.revision)
 
-        return AdminOpResult.Success("РџСЂРѕС„РёР»СЊ В«${name}» СѓСЃРїРµС€РЅРѕ СЃРѕР·РґР°РЅ", responseEnvelope)
+        return AdminOpResult.Success("Профиль «${name}» успешно создан", responseEnvelope)
     }
 
     /**
@@ -2554,7 +2554,7 @@ class AdminRepository(
         _problemReportsFlow.value = currentReports
         saveProblemReports(currentReports)
 
-        EventBus.dispatch(AppEvent.LogMessage("[W] РРЅС†РёРґРµРЅС‚ РєР°С‡РµСЃС‚РІР° СЃРІСЏР·Рё: $code"))
+        EventBus.dispatch(AppEvent.LogMessage("[W] Инцидент качества связи: $code"))
 
         // 2. Transmit to server node if available
         val server = targetServer ?: _serverNodesFlow.value.singleOrNull()
