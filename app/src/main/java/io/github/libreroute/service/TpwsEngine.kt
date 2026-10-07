@@ -3,7 +3,6 @@ package io.github.libreroute.service
 import android.content.Context
 import android.util.Log
 import java.io.File
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -20,7 +19,7 @@ class TpwsEngine(private val context: Context) {
         stop()
         val binary = File(context.applicationInfo.nativeLibraryDir, "libtpws.so")
         require(binary.isFile && binary.canExecute()) { "tpws binary is unavailable" }
-        port = ServerSocket(0, 16, InetAddress.getLoopbackAddress()).use { it.localPort }
+        port = ServerSocket(0, 16, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
         val command = command(binary.absolutePath, port)
         try {
             val p = ProcessBuilder(command).redirectErrorStream(true).start()
@@ -70,7 +69,10 @@ class TpwsEngine(private val context: Context) {
             if (!p.isAlive) return false
             try {
                 Socket().use { socket ->
-                    socket.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), 100)
+                    // tpws is deliberately bound to IPv4 127.0.0.1. Do not use
+                    // InetAddress.getLoopbackAddress() here: on some Android
+                    // builds it resolves to ::1, while tpws has no IPv6 bind.
+                    socket.connect(InetSocketAddress("127.0.0.1", port), 100)
                     // A successful loopback connect is enough here. The native
                     // core performs and validates the SOCKS5 handshake itself.
                     return true
