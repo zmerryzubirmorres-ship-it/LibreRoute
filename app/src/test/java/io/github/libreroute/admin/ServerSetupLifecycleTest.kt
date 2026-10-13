@@ -20,6 +20,44 @@ import java.util.concurrent.atomic.AtomicInteger
 class ServerSetupLifecycleTest {
     private val node = ServerNode(id = "rotation-node", name = "Test", host = "192.0.2.10")
 
+    @Test fun freshApplicationNeverReinstallsDetectedCore() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            for (inventory in listOf(
+                ServerInventory(arch = "x86_64", isCompatible = true, managedNamespaces = listOf("existing-node")),
+                ServerInventory(arch = "x86_64", isCompatible = true, installedLibreRouteVersion = "1.2.43")
+            )) {
+                val store = ViewModelStore()
+                try {
+                    val plans = AtomicInteger(); val installs = AtomicInteger()
+                    val backend = object : ServerInstallationBackend {
+                        override fun plan(node: ServerNode, inventory: ServerInventory, operationId: String): JsonObject {
+                            plans.incrementAndGet(); error("Existing Core must not receive an installation plan")
+                        }
+                        override fun install(node: ServerNode, inventory: ServerInventory, operationId: String,
+                            documentUrl: String, join: AdminEnvelope, pairingCode: String, expectedPlan: JsonObject,
+                            ownerRecovery: Boolean): JsonObject { installs.incrementAndGet(); error("No reinstall") }
+                        override fun status(node: ServerNode, operationId: String): JsonObject = error("No operation")
+                        override fun rollback(node: ServerNode, operationId: String): JsonObject = error("No rollback")
+                    }
+                    val repo = AdminRepository(storage = InMemoryAdminStorage(), installationBackend = backend,
+                        serverInventoryProbe = { inventory })
+                    repo.addServerNode(node)
+                    val vm = ServerSetupViewModel(Application(), repo); store.put("setup", vm)
+                    vm.initialize(node.id, automatic = true); vm.start()
+                    withTimeout(5000) { vm.state.first { !it.busy } }
+                    assertEquals(AdminRole.NONE, repo.getRole(node.id))
+                    repeat(3) { vm.check() }
+                    assertEquals("check", vm.state.value.stage)
+                    assertFalse(vm.state.value.busy)
+                    assertEquals(0, plans.get()); assertEquals(0, installs.get())
+                    assertNull(repo.latestServerInstallation(node.id))
+                    assertEquals(inventory.managedNamespaces.singleOrNull(), vm.node?.managementNamespace)
+                } finally { store.clear() }
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test fun continueExceptionReturnsToResultAndPreservesOperation() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val store = ViewModelStore()

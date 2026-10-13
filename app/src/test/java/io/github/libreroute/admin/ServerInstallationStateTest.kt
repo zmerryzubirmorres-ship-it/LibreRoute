@@ -92,6 +92,32 @@ class ServerInstallationStateTest {
         assertEquals(0, backend.installs)
     }
 
+    @Test fun existingCoreCannotBeSubmittedAsInitialInstallation() {
+        val backend = Backend().apply { updateMode = true }
+        val repo = repo(backend)
+        repo.addServerNode(node)
+        repo.planServerInstallation(node, "existing-core")
+        val result = repo.installServer(node, "existing-core")
+        assertTrue(result is AdminOpResult.Failure)
+        assertEquals(0, backend.installs)
+        assertEquals(ServerInstallOperation.PLANNED, repo.loadServerInstallation("existing-core")?.stage)
+    }
+
+    @Test fun coreAppearingAfterPlanningBlocksInitialUpload() {
+        val backend = Backend()
+        var probes = 0
+        val repo = AdminRepository(keyManager = keys, storage = state, installationBackend = backend,
+            serverInventoryProbe = {
+                if (probes++ == 0) inventory else inventory.copy(managedNamespaces = listOf("existing-node"))
+            })
+        repo.addServerNode(node)
+        repo.planServerInstallation(node, "initial-plan")
+        assertTrue(repo.installServer(node, "initial-plan") is AdminOpResult.Failure)
+        assertEquals(0, backend.installs)
+        assertEquals(ServerInstallOperation.PLANNED, repo.loadServerInstallation("initial-plan")?.stage)
+        assertEquals(AdminRole.NONE, repo.getRole(node.id))
+    }
+
     @Test fun coreUpdateRequiresOwnerAndKeepsTheExistingControlIdentityAndSsh() {
         val backend = Backend(); val repo = repo(backend)
         repo.addServerNode(node)

@@ -904,6 +904,9 @@ class AdminRepository(
         if (original.coordinator) return submitCoreUpdate(node, original)
         if (original.serverId != node.id) return AdminOpResult.Failure("План относится к другому серверу")
         val approvedPlan = json.parseToJsonElement(original.expectedPlan).jsonObject
+        if (approvedPlan["mode"]?.jsonPrimitive?.content == "update" && original.kind != ServerInstallOperation.KIND_CORE_UPDATE) {
+            return AdminOpResult.Failure("Ядро уже установлено. Используйте восстановление прав владельца или отдельное обновление ядра")
+        }
         if (approvedPlan["mode"]?.jsonPrimitive?.content == "update" &&
             approvedPlan["server_id"]?.jsonPrimitive?.content != node.id) {
             return AdminOpResult.Failure("Сначала привяжите SSH-узел к подтверждённому server_id; установка заблокирована")
@@ -923,6 +926,10 @@ class AdminRepository(
             // plan is approved, only inventory may be probed before execution.
             val inventory = probeServer(saved, checkCore = false)
             require(inventory.probeError == null) { "SSH-опрос не завершён" }
+            require(original.kind == ServerInstallOperation.KIND_CORE_UPDATE ||
+                (inventory.managedNamespaces.isEmpty() && inventory.installedLibreRouteVersion.isNullOrBlank())) {
+                "На сервере уже есть ядро. Повторная установка запрещена"
+            }
             val submitting = original.copy(node = saved, documentUrl = resolved, ownerRecovery = ownerRecovery, join = join.toJson(),
                 stage = ServerInstallOperation.SUBMITTING, updatedAt = System.currentTimeMillis())
             saveServerInstallation(submitting)
@@ -1372,6 +1379,8 @@ class AdminRepository(
         val updatedNode = if (inv.probeError == null) {
             serverNode.copy(
                 inventory = inv,
+                managementNamespace = serverNode.managementNamespace
+                    ?: inv.managedNamespaces.singleOrNull(),
                 status = ServerNodeStatus.ONLINE,
                 lastSeenAt = System.currentTimeMillis()
             )

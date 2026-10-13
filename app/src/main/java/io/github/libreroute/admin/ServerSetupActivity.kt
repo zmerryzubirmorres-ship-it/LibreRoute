@@ -262,8 +262,15 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         }
         val current = repo.loadServerInstallation(operationId)
         if (current != null && current.requiresReconciliation) { reconcile(); return }
+        // Local grants/control profiles may be absent in a fresh app install.
+        // That is an access problem, never permission to replace an existing Core.
+        if (!takeoverRecovery && target.inventory?.let(::hasInstalledCore) == true) {
+            mutableState.value = SetupState(stage = if (isAlreadyManaged(target.id, target.inventory!!)) "result" else "check")
+            return
+        }
         operationId = UUID.randomUUID().toString()
-        mutableState.value = SetupState(stage = "install", busy = true, summary = "Готовим установку…")
+        mutableState.value = SetupState(stage = if (takeoverRecovery) "recovery" else "install", busy = true,
+            summary = if (takeoverRecovery) "Готовим восстановление прав владельца…" else "Готовим установку…")
         InstallationLog.append(getApplication(), "install_prepare", "host=${target.host} operation_id=$operationId")
         viewModelScope.launch {
             try {
@@ -337,9 +344,7 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
     }
 
     private fun isAlreadyManaged(serverId: String, inventory: ServerInventory): Boolean {
-        val installed = inventory.managedNamespaces.isNotEmpty() ||
-            !inventory.installedLibreRouteVersion.isNullOrBlank()
-        if (!installed) return false
+        if (!hasInstalledCore(inventory)) return false
         val access = repo.getServerAccess(serverId)
         if (access.state != AdminAccessState.ACTIVE || access.role != AdminRole.OWNER) return false
         return repo.managedProfilesFlow.value.any {
@@ -349,6 +354,9 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
                 it.status == ManagedProfile.STATUS_READY
         }
     }
+
+    private fun hasInstalledCore(inventory: ServerInventory): Boolean =
+        inventory.managedNamespaces.isNotEmpty() || !inventory.installedLibreRouteVersion.isNullOrBlank()
 
     fun setNamespace(value: String) {
         if (mutableState.value.busy) return
@@ -369,8 +377,8 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
     fun install() {
         val target = node ?: return
         val current = mutableState.value
-        if (current.busy && current.stage != "install") mutableState.value = current.copy(stage = "install")
-        else mutableState.value = current.copy(stage = "install", busy = true, error = null, summary = "Устанавливаем LibreRoute…")
+        mutableState.value = current.copy(stage = if (takeoverRecovery) "recovery" else "install", busy = true,
+            error = null, summary = if (takeoverRecovery) "Восстанавливаем доступ к установленному ядру…" else "Устанавливаем LibreRoute…")
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 if (takeoverRecovery) repo.recoverOwnerServer(target, operationId, document)
@@ -445,7 +453,7 @@ class ServerSetupActivity : AppCompatActivity() {
         scrollPosition.beforeRebuild()
         content.removeAllViews()
         val nodeName = vm.node?.name.orEmpty()
-        val title = when (state.stage) { "install", "plan", "recovery_plan" -> "Установка"; "result" -> "Результат"; else -> "Проверка сервера" }
+        val title = when (state.stage) { "install", "plan" -> "Установка"; "recovery", "recovery_plan" -> "Восстановление доступа"; "result" -> "Результат"; else -> "Проверка сервера" }
         content.addView(CalmViews.row(this, title, nodeName))
         if (state.busy) {
             content.addView(ProgressBar(this))
@@ -462,7 +470,7 @@ class ServerSetupActivity : AppCompatActivity() {
         when (state.stage) {
             "check" -> renderCheck()
             "plan", "recovery_plan" -> action("Продолжить") { vm.install() }
-            "install" -> {
+            "install", "recovery" -> {
                 content.addView(ProgressBar(this))
                 content.addView(CalmViews.row(this, "Установка", "Подождите завершения проверки сервера"))
             }
@@ -506,10 +514,23 @@ class ServerSetupActivity : AppCompatActivity() {
                 override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { vm.setNamespace(namespaces[position]) }
             })
         }
-        val access = vm.node?.id?.let { AdminRepository.getInstance(this).getServerAccess(it) }
         when {
-            namespaces.isNotEmpty() && (access?.state != AdminAccessState.ACTIVE || access.role != AdminRole.OWNER) ->
-                action("Восстановить права владельца") { vm.requestOwnerRecovery() }
+            namespaces.isNotEmpty() -> {
+                content.addView(CalmViews.row(this, "Ядро уже установлено",
+                    "Повторная установка не требуется. Чтобы начать управление из этого приложения, восстановите права владельца или примите приглашение администратора."))
+                action("Восстановить права владельца") {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Восстановить доступ к серверу?")
+                        .setMessage("Будут восстановлены права владельца для этого приложения через SSH. Установленное ядро и настройки сохранятся. Для восстановления передаётся служебная сборка; обновление ядра выполняется отдельно.")
+                        .setNegativeButton("Отмена", null)
+                        .setPositiveButton("Восстановить") { _, _ -> vm.requestOwnerRecovery() }.show()
+                }
+            }
+            !inventory.installedLibreRouteVersion.isNullOrBlank() -> {
+                content.addView(CalmViews.row(this, "Ядро уже установлено",
+                    "Не удалось определить управляемую установку. Повторная установка заблокирована; требуется восстановление управления сервером."))
+                action("Повторить проверку") { vm.restartProbe() }
+            }
             else -> action(if (namespaces.isEmpty()) "Установить LibreRoute" else "Продолжить настройку") { vm.check() }
         }
     }
@@ -622,6 +643,5 @@ class ServerSetupActivity : AppCompatActivity() {
         finish()
     }
 }
-
 
 

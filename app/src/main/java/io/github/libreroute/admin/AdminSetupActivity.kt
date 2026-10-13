@@ -128,7 +128,11 @@ class AdminSetupActivity : AppCompatActivity() {
                                 is ConnectedServer -> {
                                     drafts.putString("password", null); drafts.putString("private_key", null)
                                     draftFields["private_key"]?.text?.clear(); draftFields["password"]?.text?.clear()
-                                    toast("SSH-доступ проверен. Сервер добавлен."); askAdminProfileName(value.id)
+                                    toast("SSH-доступ проверен. Сервер добавлен.")
+                                    val inventory = AdminRepository.getInstance(this@AdminSetupActivity).getServerNode(value.id)?.inventory
+                                    if (inventory != null && (inventory.managedNamespaces.isNotEmpty() || !inventory.installedLibreRouteVersion.isNullOrBlank()))
+                                        launchServerSetup(value.id)
+                                    else askAdminProfileName(value.id)
                                 }
                                 is GrantImported -> {
                                     when (val imported = value.result) {
