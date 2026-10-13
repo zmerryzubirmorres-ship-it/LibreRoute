@@ -8,6 +8,16 @@ import org.junit.Test
 import java.util.Base64
 
 class ServiceRouteEndpointTest {
+    @Test fun validatesJazzGuestLinksIndependentlyOfJitsi() {
+        assertEquals(TransportType.jazz, TransportType.from("jazz"))
+        for (url in listOf("https://salutejazz.ru/call/Room/password", "https://jazz.sber.ru:443/call/Room/password/")) {
+            assertTrue(ServiceRouteEndpoint.isValid(TransportType.jazz, url))
+            assertFalse(ServiceRouteEndpoint.isValid(TransportType.jitsi, url))
+        }
+        for (url in listOf("http://salutejazz.ru/call/room/password", "https://evil.test/call/room/password", "https://salutejazz.ru/call/room", "https://salutejazz.ru/call/room/password?jwt=x", "https://salutejazz.ru:444/call/room/password", "https://salutejazz.ru/call/room/password%2Fx", "https://salutejazz.ru/call/room/password#secret")) {
+            assertFalse(ServiceRouteEndpoint.isValid(TransportType.jazz, url))
+        }
+    }
     @Test fun extractsJitsiJwtOnlyFromRoomHash() {
         val token = "aaa.bbb.ccc"
         assertTrue(JitsiTokenStore.fromFragment("jwt=\"$token\"&x=1") == token)

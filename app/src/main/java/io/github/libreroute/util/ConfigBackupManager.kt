@@ -37,6 +37,9 @@ object ConfigBackupManager {
         val domainMode: Int? = null,
         val domains: List<String> = emptyList(),
         val ipRules: List<String> = emptyList(),
+        val zapretProfiles: io.github.libreroute.data.ZapretProfileState? = null,
+        val siteRouting: io.github.libreroute.data.SiteRoutingState? = null,
+        val appRouting: io.github.libreroute.data.AppRoutingState? = null,
     )
 
     suspend fun exportBackup(context: Context, uri: Uri, password: String): Result<Int> = withContext(Dispatchers.IO) {
@@ -59,6 +62,9 @@ object ConfigBackupManager {
                 domainMode = domainPrefs.mode,
                 domains = domainPrefs.domains.toList(),
                 ipRules = IpRulesPreferences(context).rules.toList(),
+                zapretProfiles = ZapretProfilePreferences(context).load(),
+                siteRouting = SiteRoutingPreferences(context).load(),
+                appRouting = AppRoutingPreferences(context).load(),
             )
 
             val jsonString = BackupEncryption.encrypt(json.encodeToString(backup), password)
@@ -86,7 +92,10 @@ object ConfigBackupManager {
             val plaintext = if (BackupEncryption.isEncrypted(content)) BackupEncryption.decrypt(content, password) else content
             val backup = json.decodeFromString<LibreRouteBackup>(plaintext)
             require(backup.version in 1..2) { "Неподдерживаемая версия данных резервной копии" }
-            if (backup.tunnels.isEmpty() && backup.bypassApps.isEmpty() && backup.proxyApps.isEmpty() && backup.domains.isEmpty() && backup.ipRules.isEmpty()) {
+            backup.zapretProfiles?.validate()
+            backup.siteRouting?.validate(backup.zapretProfiles ?: ZapretProfilePreferences(context).load())
+            backup.appRouting?.validate(backup.zapretProfiles ?: ZapretProfilePreferences(context).load())
+            if (backup.tunnels.isEmpty() && backup.bypassApps.isEmpty() && backup.proxyApps.isEmpty() && backup.domains.isEmpty() && backup.ipRules.isEmpty() && backup.zapretProfiles == null && backup.siteRouting == null && backup.appRouting == null) {
                 throw IllegalArgumentException("Backup file is empty or invalid")
             }
             backup
@@ -97,6 +106,12 @@ object ConfigBackupManager {
         runCatching {
             val repo = TunnelRepository(context)
             require(backup.version in 1..2 && backup.tunnels.size <= 10_000) { "Неподдерживаемая резервная копия" }
+            backup.zapretProfiles?.validate()
+            val effectiveProfiles = backup.zapretProfiles ?: ZapretProfilePreferences(context).load()
+            val effectiveSites = backup.siteRouting ?: SiteRoutingPreferences(context).load()
+            effectiveSites.validate(effectiveProfiles)
+            val effectiveApps = backup.appRouting ?: AppRoutingPreferences(context).load()
+            effectiveApps.validate(effectiveProfiles)
             require(backup.ipRules.all(IpRulesPreferences::isValid)) { "Некорректные IP-правила в резервной копии" }
             require(backup.domains.all(DomainRulesPreferences::isValidDomain)) { "Некорректные домены в резервной копии" }
             require(backup.domainMode == null || backup.domainMode in 0..1) { "Некорректный режим доменных правил" }
@@ -125,6 +140,10 @@ object ConfigBackupManager {
                 throw IllegalArgumentException("Invalid IP rules in backup")
             }
 
+            // Old backups do not overwrite profiles introduced in a newer app.
+            backup.zapretProfiles?.let { ZapretProfilePreferences(context).store(it) }
+            backup.siteRouting?.let { SiteRoutingPreferences(context).store(it, effectiveProfiles) }
+            backup.appRouting?.let { AppRoutingPreferences(context).store(it, effectiveProfiles) }
             importedCount
         }
     }

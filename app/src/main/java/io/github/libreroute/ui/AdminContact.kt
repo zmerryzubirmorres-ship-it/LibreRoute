@@ -29,19 +29,10 @@ object AdminContact {
     }
 
     fun show(context: Context, reason: Reason, routeName: String? = null) {
-        val text = message(reason, routeName)
-        val screen = CalmDetailDialog(context, context.getString(R.string.calm_message_prepared))
-        screen.text(text)
-        screen.action(context.getString(R.string.calm_share_admin)) {
-            val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-            runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.calm_share_admin))) }
-                .onFailure { Toast.makeText(context, "Скопируйте текст и передайте его администратору", Toast.LENGTH_LONG).show() }
-        }
-        screen.action(context.getString(R.string.calm_copy_message), secondary = true) {
-            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("LibreRoute", text))
-            Toast.makeText(context, R.string.calm_message_copied, Toast.LENGTH_LONG).show()
-        }
-        screen.show()
+        val host = context as? androidx.fragment.app.FragmentActivity ?: return
+        if (host.supportFragmentManager.findFragmentByTag("admin-contact") != null) return
+        AdminContactDialogFragment().apply {
+            arguments = android.os.Bundle().apply { putString("message", message(reason, routeName)) }
+        }.show(host.supportFragmentManager, "admin-contact")
     }
 }

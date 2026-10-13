@@ -48,6 +48,14 @@ class AddTunFragment : BaseFragment() {
     private val vm: TunnelsViewModel by activityViewModels()
     private val addEditVm: AddEditTunnelViewModel by viewModels()
     private var transport = TransportType.yandex
+    private var selectTransport: ((TransportType) -> Unit)? = null
+    private val dialogs by lazy { DialogScreens(this) { key, _ ->
+        if (key == "transport") selectTransport?.let { showTransportBottomSheet(transport, it) }
+    } }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("transport", transport.name)
+        super.onSaveInstanceState(outState)
+    }
     private var editing: Tunnel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,8 +144,14 @@ class AddTunFragment : BaseFragment() {
 
         fun updateTransportUi(type: TransportType) {
             transport = type
+            docUrl.transformationMethod = if (type == TransportType.jazz) android.text.method.PasswordTransformationMethod.getInstance() else null
             encryptionKeyContainer.helperText = null
             when (type) {
+                TransportType.channelGroup -> {
+                    transportIcon.setImageResource(R.drawable.ic_split_tunnel)
+                    transportLabel.text = "Объединённые каналы"
+                    maxContainer.isVisible = false; yandexContainer.isVisible = false; mqttContainer.isVisible = false
+                }
                 TransportType.directDpi -> {
                     transportIcon.setImageResource(R.drawable.ic_split_tunnel)
                     transportLabel.text = "Прямой обход DPI · zapret"
@@ -145,13 +159,13 @@ class AddTunFragment : BaseFragment() {
                     yandexContainer.isVisible = false
                     mqttContainer.isVisible = false
                 }
-                TransportType.mqtt, TransportType.jitsi -> {
+                TransportType.mqtt, TransportType.jitsi, TransportType.jazz -> {
                     transportIcon.setImageResource(R.drawable.ic_split_tunnel)
-                    transportLabel.text = getString(if (type == TransportType.mqtt) R.string.mqtt_backend else R.string.jitsi_backend)
+                    transportLabel.text = getString(if (type == TransportType.mqtt) R.string.mqtt_backend else if (type == TransportType.jazz) R.string.jazz_backend else R.string.jitsi_backend)
                     maxContainer.isVisible = false
-                    yandexContainer.isVisible = type == TransportType.jitsi
+                    yandexContainer.isVisible = type == TransportType.jitsi || type == TransportType.jazz
                     mqttContainer.isVisible = type == TransportType.mqtt
-                    yandexContainer.hint = getString(R.string.jitsi_url_hint)
+                    yandexContainer.hint = getString(if (type == TransportType.jazz) R.string.jazz_url_hint else R.string.jitsi_url_hint)
                     if (type == TransportType.mqtt && mqttBroker.text.isNullOrBlank()) {
                         mqttBroker.setText(ServiceRouteEndpoint.DEFAULT_MQTT_BROKER)
                     }
@@ -218,6 +232,7 @@ class AddTunFragment : BaseFragment() {
             updateTransportUi(initialTransport)
 
             when (initialTransport) {
+                TransportType.channelGroup -> Unit
                 TransportType.directDpi -> Unit
                 TransportType.yandex, TransportType.vyandex -> {
                     val urlsVal = argValue(t.transportConnPayload, "--urls")
@@ -228,7 +243,7 @@ class AddTunFragment : BaseFragment() {
                     maxToken.setText(argValue(t.transportConnPayload, "--maxToken"))
                     maxUid.setText(argValue(t.transportConnPayload, "--maxUid"))
                 }
-                TransportType.cups, TransportType.mailru, TransportType.jitsi -> {
+                TransportType.cups, TransportType.mailru, TransportType.jitsi, TransportType.jazz -> {
                     docUrl.setText(argValue(t.transportConnPayload, "--url"))
                 }
                 TransportType.mqtt -> {
@@ -260,7 +275,7 @@ class AddTunFragment : BaseFragment() {
             }
             val isNegotiated = t.transportConnPayload.any { it == "--session-negotiate" || it == "--session-negotiate=true" }
             sessionCheck.isChecked = isNegotiated
-            sessionOptions.isVisible = isNegotiated && initialTransport in setOf(TransportType.vyandex, TransportType.mqtt, TransportType.jitsi)
+            sessionOptions.isVisible = isNegotiated && initialTransport in setOf(TransportType.vyandex, TransportType.mqtt, TransportType.jitsi, TransportType.jazz)
             fun value(flag: String, fallback: String): String {
                 val eqPrefix = "$flag="
                 for (item in t.transportConnPayload) {
@@ -289,7 +304,13 @@ class AddTunFragment : BaseFragment() {
             updateTransportUi(TransportType.yandex)
         }
 
+        savedInstanceState?.getString("transport")?.let { saved ->
+            runCatching { TransportType.valueOf(saved) }.getOrNull()?.let { updateTransportUi(it); addEditVm.setTransport(it) }
+        }
+        selectTransport = { selected -> updateTransportUi(selected); addEditVm.setTransport(selected) }
+        dialogs.restore()
         transportLayout.setOnClickListener {
+            if (transport == TransportType.channelGroup) return@setOnClickListener
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             showTransportBottomSheet(transport) { selected ->
                 updateTransportUi(selected)
@@ -393,12 +414,14 @@ class AddTunFragment : BaseFragment() {
         bindOption(R.id.picker_max, TransportType.max)
         bindOption(R.id.picker_cups, TransportType.cups)
         bindOption(R.id.picker_mailru, TransportType.mailru)
-        bindOption(R.id.picker_mqtt, TransportType.mqtt)
+        sheetView.findViewById<View>(R.id.picker_mqtt).isVisible = false
         bindOption(R.id.picker_jitsi, TransportType.jitsi)
+        bindOption(R.id.picker_jazz, TransportType.jazz)
+        sheetView.findViewById<View>(R.id.check_jazz)?.isVisible = current == TransportType.jazz
         sheetView.findViewById<View>(R.id.check_mqtt)?.isVisible = current == TransportType.mqtt
         sheetView.findViewById<View>(R.id.check_jitsi)?.isVisible = current == TransportType.jitsi
 
-        dialog.show()
+        dialogs.show(dialog, "transport", Bundle())
     }
 
     private fun argValue(payload: List<String>, key: String): String {
@@ -410,5 +433,6 @@ class AddTunFragment : BaseFragment() {
         return if (idx >= 0 && idx + 1 < payload.size) payload[idx + 1] else ""
     }
 
+    override fun onDestroyView() { dialogs.detach(); selectTransport = null; super.onDestroyView() }
     override fun onNewEvent(ev: AppEvent) = Unit
 }

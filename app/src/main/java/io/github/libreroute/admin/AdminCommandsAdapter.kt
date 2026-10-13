@@ -45,6 +45,9 @@ class AdminCommandsAdapter : ListAdapter<AdminCommandRecord, AdminCommandsAdapte
 
         holder.tvType.text = cmd.commandType.uppercase()
         holder.tvChannel.text = when (cmd.channel) {
+            "auto" -> "Автоматически"
+            "active_transport" -> "Текущее подключение"
+            "direct_ssh" -> "Прямой SSH к серверу"
             "document" -> context.getString(R.string.admin_channel_document)
             "ssh_vds" -> context.getString(R.string.admin_channel_vds)
             "ssh_netcraze" -> context.getString(R.string.admin_channel_netcraze)

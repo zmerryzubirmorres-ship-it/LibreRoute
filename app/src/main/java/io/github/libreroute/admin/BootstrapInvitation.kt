@@ -6,7 +6,20 @@ import java.util.Base64
 import java.util.UUID
 
 @Serializable
-data class EnrollmentRoute(val server_id: String, val transport: String = "vyandex", val url: String = "")
+data class EnrollmentRoute(val server_id: String, val transport: String = "vyandex", val url: String = "",
+    val allocation_mode: String = "manual", val jazz_policy_id: String = "", val client_channel_schema: Int = 0,
+    val channel_group_plan: ChannelGroupPlan? = null) {
+    fun validateGroupTemplate() {
+        if (transport != "channel-group") {
+            require(channel_group_plan == null) { "Группа требует объединённого подключения" }
+            return
+        }
+        val plan = requireNotNull(channel_group_plan) { "Добавьте каналы группы" }
+        plan.validate()
+        require(plan.lanes.size in 2..4 && url.isEmpty() && allocation_mode == "manual" &&
+            jazz_policy_id.isEmpty() && client_channel_schema == 0) { "Для группы нужны 2–4 подготовленных канала" }
+    }
+}
 
 data class BootstrapInvitation(
     val enrollmentId: String, val token: String, val profileId: String,

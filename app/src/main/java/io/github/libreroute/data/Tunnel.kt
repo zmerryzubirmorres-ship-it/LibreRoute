@@ -9,4 +9,8 @@ data class Tunnel(
     val transportType: String,
     val transportConnPayload: List<String>,
     val encryptionKey: String? = null,
+    /** A route hint; administrative authority still requires a verified server grant. */
+    val serverId: String? = null,
+    /** Signed server profile identity, used to preserve the route when restoring again. */
+    val managedProfileId: String? = null,
 )

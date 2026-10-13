@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="invite_profile_label">Для профиля: %1$s</string>
+    <string name="invite_assignment_label">Назначение: %1$s</string>
+    <string name="invite_qr_description">QR подключения</string>
+    <string name="invite_qr_loading">Создаём QR…</string>
+    <string name="invite_qr_enlarge">Нажмите на QR, чтобы увеличить</string>
+    <string name="invite_qr_failed">Не удалось создать QR. Подключение можно передать кнопками «Копировать» или «Поделиться».</string>
+    <string name="invite_show_link">Показать строку подключения</string>
+    <string name="invite_hide_link">Скрыть строку подключения</string>
+    <string name="invite_copy">Копировать</string>
+    <string name="invite_close">Закрыть</string>
+    <string name="invite_copied">Строка подключения скопирована</string>
+    <string name="invite_share_title">Поделиться приглашением</string>
+    <string name="invite_share_failed">Не удалось открыть отправку приглашения. Попробуйте скопировать строку подключения.</string>
+    <string name="invite_qr_full_failed">Не удалось создать QR. Вернитесь к приглашению и скопируйте строку подключения.</string>
+</resources>

@@ -65,7 +65,7 @@ class VpnServiceController(private val service: VpnService) {
 
         val route = intent.getStringExtra(Constants.INTENT_ROUTE)
 
-        val perApp = intent.getBooleanExtra(Constants.INTENT_PER_APP, false)
+        var perApp = intent.getBooleanExtra(Constants.INTENT_PER_APP, false)
 
         val appBypass = intent.getBooleanExtra(Constants.INTENT_APP_BYPASS, false)
 
@@ -86,6 +86,11 @@ class VpnServiceController(private val service: VpnService) {
         val ipType = intent.getIntExtra(Constants.INTENT_IP_TYPE, AppSettings.IP_TYPE_AUTO)
         val directDpi = intent.getStringExtra(Constants.INTENT_TRANSPORT_TYPE)
             ?.let { it.equals("direct-dpi", true) || it.equals("directDpi", true) } == true
+        val appRulesEnabled = io.github.libreroute.util.AppRoutingPreferences(service).load().enabled
+        require(!appRulesEnabled || Build.VERSION.SDK_INT >= 29) { "Правила приложений требуют Android 10 или новее" }
+        // All apps enter one VPN in both relay and standalone zapret modes.
+        // Legacy exclusions must not bypass the common default or an explicit rule.
+        perApp = false
 
         val isNumericIp = { ip: String? ->
             if (ip.isNullOrBlank()) false

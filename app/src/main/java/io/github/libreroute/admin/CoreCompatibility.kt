@@ -9,7 +9,8 @@ data class CoreCompatibility(
     val version: String = "",
     @SerialName("build_id") val buildId: String = "",
     @SerialName("api_revision") val apiRevision: Int = 0,
-    val capabilities: List<String> = emptyList()
+    val capabilities: List<String> = emptyList(),
+    val arch: String = ""
 ) {
     companion object {
         /** Minimum Core version shipped in this APK's install artifacts. */

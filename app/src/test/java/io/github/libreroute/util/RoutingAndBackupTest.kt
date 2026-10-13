@@ -5,6 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -119,6 +120,7 @@ class RoutingAndBackupTest {
         assertTrue(parsed.domains.isEmpty())
         assertTrue(parsed.bypassApps.isEmpty())
         assertTrue(parsed.proxyApps.isEmpty())
+        assertNull(parsed.zapretProfiles)
     }
 
     @Test
@@ -134,7 +136,9 @@ class RoutingAndBackupTest {
             proxyApps = emptyList(),
             domainMode = DomainRulesPreferences.MODE_BYPASS,
             domains = listOf("gosuslugi.ru", "sberbank.ru", "yandex.ru"),
-            ipRules = listOf("10.0.0.0/8", "192.168.0.0/16", "1.1.1.1/32")
+            ipRules = listOf("10.0.0.0/8", "192.168.0.0/16", "1.1.1.1/32"),
+            zapretProfiles = io.github.libreroute.data.ZapretProfileState()
+                .save(io.github.libreroute.data.ZapretProfile("custom", "Мой профиль", blockQuic = false)).select("custom")
         )
 
         val serialized = json.encodeToString(original)
@@ -149,6 +153,9 @@ class RoutingAndBackupTest {
         assertTrue(restored.domains.contains("gosuslugi.ru"))
         assertEquals(3, restored.ipRules.size)
         assertTrue(restored.ipRules.contains("192.168.0.0/16"))
+        assertEquals(original.zapretProfiles, restored.zapretProfiles)
+        assertEquals(false, restored.zapretProfiles?.active?.blockQuic)
+        assertEquals(io.github.libreroute.data.ZapretProfile.DEFAULT, restored.zapretProfiles?.rollback()?.active)
     }
 
     @Test

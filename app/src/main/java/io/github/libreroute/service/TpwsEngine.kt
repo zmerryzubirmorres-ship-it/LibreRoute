@@ -15,12 +15,12 @@ class TpwsEngine(private val context: Context) {
     var port: Int = 0
         private set
 
-    fun start(): Int {
+    fun start(profile: io.github.libreroute.data.ZapretProfile = io.github.libreroute.data.ZapretProfile.DEFAULT): Int {
         stop()
         val binary = File(context.applicationInfo.nativeLibraryDir, "libtpws.so")
         require(binary.isFile && binary.canExecute()) { "tpws binary is unavailable" }
         port = ServerSocket(0, 16, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
-        val command = command(binary.absolutePath, port)
+        val command = profile.command(binary.absolutePath, port)
         try {
             val p = ProcessBuilder(command).redirectErrorStream(true).start()
             process = p
@@ -57,12 +57,6 @@ class TpwsEngine(private val context: Context) {
         drainThread = null
         port = 0
     }
-
-    internal fun command(binary: String, port: Int): List<String> = listOf(
-        binary, "--socks", "--bind-addr=127.0.0.1", "--port=$port",
-        "--maxconn=1024", "--filter-tcp=80,443", "--split-pos=1,midsld",
-        "--tlsrec=sni", "--methodeol"
-    )
 
     private fun waitForSocks(port: Int, p: Process): Boolean {
         repeat(100) {

@@ -45,6 +45,24 @@ import java.util.UUID
 
 class SettingsActivity : AppCompatActivity() {
 
+    private val dialogs by lazy { DialogScreens(this) { key, args ->
+        when (key) {
+            "mtu" -> showMtu()
+            "backup_password" -> args.getString("uri")?.let { requestBackup(Uri.parse(it), args.getBoolean("export")) }
+            "backup_preview" -> args.getString("uri")?.let { uri ->
+                backupDraft.prepared?.let { showBackupPreview(Uri.parse(uri), it) } ?: requestBackup(Uri.parse(uri), false)
+            }
+            "showIpTypeBottomSheet" -> showIpTypeBottomSheet()
+            "showHotspotBottomSheet" -> showHotspotBottomSheet()
+            "showSocks5AuthBottomSheet" -> showSocks5AuthBottomSheet()
+            "showLanguageBottomSheet" -> showLanguageBottomSheet()
+            "showAppIconBottomSheet" -> showAppIconBottomSheet()
+        }
+    } }
+    private val backupDraft by viewModels<BackupDraftViewModel>()
+    private val backupOperation by viewModels<ScreenOperationViewModel>()
+    private data class BackupReady(val uri: Uri, val backup: ConfigBackupManager.LibreRouteBackup)
+    private data class BackupFinished(val export: Boolean, val count: Int)
     private val vm: SettingsViewModel by viewModels()
     private lateinit var appSettings: AppSettings
     private lateinit var themePrefs: ThemePreferences
@@ -76,25 +94,7 @@ class SettingsActivity : AppCompatActivity() {
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         if (uri != null) {
-            promptBackupPassword(export = true) { password -> lifecycleScope.launch {
-                val result = ConfigBackupManager.exportBackup(this@SettingsActivity, uri, password)
-                result.fold(
-                    onSuccess = { count ->
-                        Toast.makeText(
-                            this@SettingsActivity,
-                            getString(R.string.settings_backup_exported, count),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
-                    onFailure = { error ->
-                        Toast.makeText(
-                            this@SettingsActivity,
-                            getString(R.string.settings_backup_error, error.localizedMessage ?: "Unknown error"),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                )
-            } }
+            requestBackup(uri, true)
         }
     }
 
@@ -102,12 +102,31 @@ class SettingsActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            promptBackupPassword(export = false) { password -> showStyledImportBottomSheet(uri, password) }
+            requestBackup(uri, false)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                backupOperation.state.collect { state ->
+                    state.result?.let { result ->
+                        backupOperation.consumed()
+                        result.onSuccess { value ->
+                            when (value) {
+                                is BackupReady -> { backupDraft.prepared = value.backup; showBackupPreview(value.uri, value.backup) }
+                                is BackupFinished -> {
+                                    backupDraft.prepared = null
+                                    updateSplitTunnelSummary()
+                                    Toast.makeText(this@SettingsActivity, getString(if (value.export) R.string.settings_backup_exported else R.string.settings_import_success, value.count), Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }.onFailure { Toast.makeText(this@SettingsActivity, getString(R.string.settings_backup_error, it.localizedMessage ?: "Ошибка"), Toast.LENGTH_LONG).show() }
+                    }
+                }
+            }
+        }
         themePrefs = ThemePreferences(this)
         themePrefs.applyTheme()
 
@@ -136,6 +155,7 @@ class SettingsActivity : AppCompatActivity() {
         setupUpdates()
         setupAbout()
         observeViewModel()
+        dialogs.restore()
     }
 
     override fun onResume() {
@@ -270,10 +290,14 @@ class SettingsActivity : AppCompatActivity() {
 
 
     private fun setupNetwork() {
+        findViewById<View>(R.id.row_zapret_profiles).setOnClickListener {
+            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
+            startActivity(Intent(this, ZapretProfilesActivity::class.java))
+        }
         // 1. Split Tunneling
         findViewById<View>(R.id.row_split_tunnel).setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            startActivity(Intent(this, SplitTunnelActivity::class.java))
+            startActivity(Intent(this, TrafficRulesActivity::class.java))
         }
         updateSplitTunnelSummary()
 
@@ -287,9 +311,7 @@ class SettingsActivity : AppCompatActivity() {
         // 3. MTU BottomSheet
         findViewById<View>(R.id.row_mtu).setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            MtuBottomSheetDialog(this, appSettings.mtu) { newMtu ->
-                vm.setMtu(newMtu)
-            }.show()
+            showMtu()
         }
 
         // 4. IP Type
@@ -662,18 +684,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun updateSplitTunnelSummary() {
-        val installed = packageManager.getInstalledApplications(0).map { it.packageName }.toSet()
-        val appCount = if (splitPrefs.mode == SplitTunnelPreferences.MODE_BYPASS) {
-            splitPrefs.bypassApps.count { it in installed }
-        } else {
-            splitPrefs.proxyApps.count { it in installed }
-        }
-        val domainPrefs = DomainRulesPreferences(this)
-        val domainCount = domainPrefs.domains.size
-        textSplitTunnelSummary.text = when {
-            appCount == 0 && domainCount == 0 -> getString(R.string.settings_split_tunnel_none)
-            else -> getString(R.string.split_summary_format, appCount, domainCount)
-        }
+        textSplitTunnelSummary.setText(R.string.routing_summary)
     }
 
     private fun updateDnsSummary() {
@@ -716,6 +727,10 @@ class SettingsActivity : AppCompatActivity() {
             AppSettings.IP_TYPE_IPV6 -> getString(R.string.settings_ip_type_ipv6)
             else -> getString(R.string.settings_ip_type_auto)
         }
+    }
+
+    private fun showMtu() {
+        dialogs.show(MtuBottomSheetDialog(this, appSettings.mtu) { vm.setMtu(it) }, "mtu")
     }
 
     private fun showIpTypeBottomSheet() {
@@ -765,7 +780,7 @@ class SettingsActivity : AppCompatActivity() {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             dialog.dismiss()
         }
-        dialog.show()
+        dialogs.show(dialog, "showIpTypeBottomSheet", Bundle())
     }
 
     private fun showHotspotBottomSheet() {
@@ -793,7 +808,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogs.show(dialog, "showHotspotBottomSheet", Bundle())
     }
 
     private fun showSocks5AuthBottomSheet() {
@@ -822,17 +837,34 @@ class SettingsActivity : AppCompatActivity() {
             dialog.dismiss()
         }
 
-        dialog.show()
+        dialogs.show(dialog, "showSocks5AuthBottomSheet", Bundle())
     }
 
-    private fun promptBackupPassword(export: Boolean, onPassword: (String) -> Unit) {
+    private fun requestBackup(uri: Uri, export: Boolean) {
+        if (backupOperation.state.value.running) return
+        val request = "$export:$uri"
+        if (backupDraft.request != request) { backupDraft.request = request; backupDraft.password = "" }
+        promptBackupPassword(uri, export) { password ->
+            val app = applicationContext
+            if (export) backupOperation.run { BackupFinished(true, ConfigBackupManager.exportBackup(app, uri, password).getOrThrow()) }
+            else showStyledImportBottomSheet(uri, password)
+        }
+    }
+
+    private fun promptBackupPassword(uri: Uri, export: Boolean, onPassword: (String) -> Unit) {
         val input = android.widget.EditText(this).apply {
             hint = if (export) "Пароль копии (не менее 8 символов)" else "Пароль копии; для старого JSON оставьте пустым"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             isSaveEnabled = false
+            setText(backupDraft.password)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { backupDraft.password = s?.toString().orEmpty() }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
         }
         val dialog = MaterialAlertDialogBuilder(this).setTitle(if (export) "Защищённая резервная копия" else "Открыть резервную копию")
-            .setView(input).setNegativeButton("Отмена", null).setPositiveButton(if (export) "Сохранить" else "Открыть", null).create()
+            .setView(input).setNegativeButton("Отмена") { _, _ -> backupDraft.password = "" }.setPositiveButton(if (export) "Сохранить" else "Открыть", null).create()
         dialog.setOnShowListener {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val password = input.text.toString()
@@ -840,67 +872,29 @@ class SettingsActivity : AppCompatActivity() {
                 input.text.clear(); dialog.dismiss(); onPassword(password)
             }
         }
-        dialog.show()
+        dialogs.show(dialog, "backup_password", Bundle().apply { putString("uri", uri.toString()); putBoolean("export", export) }) { if (!isChangingConfigurations) backupDraft.password = "" }
     }
 
     private fun showStyledImportBottomSheet(uri: Uri, password: String = "") {
-        lifecycleScope.launch {
-            val peek = ConfigBackupManager.peekBackup(this@SettingsActivity, uri, password)
-            peek.fold(
-                onSuccess = { backup ->
-                    val dialog = BottomSheetDialog(this@SettingsActivity)
-                    val view = layoutInflater.inflate(R.layout.bottom_sheet_import_backup, null)
-                    dialog.setContentView(view)
+        val app = applicationContext
+        backupOperation.run { BackupReady(uri, ConfigBackupManager.peekBackup(app, uri, password).getOrThrow()) }
+    }
 
-                    val textTunnels = view.findViewById<TextView>(R.id.text_import_tunnels_count)
-                    val textRules = view.findViewById<TextView>(R.id.text_import_rules_count)
-                    val btnCancel = view.findViewById<View>(R.id.btn_cancel_import)
-                    val btnConfirm = view.findViewById<View>(R.id.btn_confirm_import)
-
-                    textTunnels.text = getString(R.string.import_sheet_tunnels, backup.tunnels.size)
-                    val rulesCount = backup.bypassApps.size + backup.proxyApps.size + backup.domains.size
-                    textRules.text = getString(R.string.import_sheet_rules, rulesCount)
-
-                    btnCancel.setOnClickListener {
-                        dialog.dismiss()
-                    }
-
-                    btnConfirm.setOnClickListener {
-                        it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-                        dialog.dismiss()
-                        lifecycleScope.launch {
-                            val applyResult = ConfigBackupManager.applyBackup(this@SettingsActivity, backup)
-                            applyResult.fold(
-                                onSuccess = { count ->
-                                    updateSplitTunnelSummary()
-                                    Toast.makeText(
-                                        this@SettingsActivity,
-                                        getString(R.string.settings_import_success, count),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                onFailure = { err ->
-                                    Toast.makeText(
-                                        this@SettingsActivity,
-                                        getString(R.string.settings_backup_error, err.localizedMessage ?: "Import failed"),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            )
-                        }
-                    }
-
-                    dialog.show()
-                },
-                onFailure = { error ->
-                    Toast.makeText(
-                        this@SettingsActivity,
-                        getString(R.string.settings_backup_error, error.localizedMessage ?: "Invalid file"),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            )
+    private fun showBackupPreview(uri: Uri, backup: ConfigBackupManager.LibreRouteBackup) {
+        val dialog = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_import_backup, null)
+        dialog.setContentView(view)
+        view.findViewById<TextView>(R.id.text_import_tunnels_count).text = getString(R.string.import_sheet_tunnels, backup.tunnels.size)
+        view.findViewById<TextView>(R.id.text_import_rules_count).text = getString(R.string.import_sheet_rules, backup.bypassApps.size + backup.proxyApps.size + backup.domains.size)
+        view.findViewById<View>(R.id.btn_cancel_import).setOnClickListener { backupDraft.prepared = null; dialog.dismiss() }
+        view.findViewById<View>(R.id.btn_confirm_import).setOnClickListener {
+            if (backupOperation.state.value.running) return@setOnClickListener
+            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
+            dialog.dismiss()
+            val app = applicationContext
+            backupOperation.run { BackupFinished(false, ConfigBackupManager.applyBackup(app, backup).getOrThrow()) }
         }
+        dialogs.show(dialog, "backup_preview", Bundle().apply { putString("uri", uri.toString()) })
     }
 
     private fun updateLanguageSummary() {
@@ -976,7 +970,7 @@ class SettingsActivity : AppCompatActivity() {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             dialog.dismiss()
         }
-        dialog.show()
+        dialogs.show(dialog, "showLanguageBottomSheet", Bundle())
     }
 
     private fun updateAppIconSummary() {
@@ -1033,6 +1027,6 @@ class SettingsActivity : AppCompatActivity() {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             dialog.dismiss()
         }
-        dialog.show()
+        dialogs.show(dialog, "showAppIconBottomSheet", Bundle())
     }
 }

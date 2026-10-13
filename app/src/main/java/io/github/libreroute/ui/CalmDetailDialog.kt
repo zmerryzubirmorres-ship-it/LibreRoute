@@ -18,6 +18,7 @@ class CalmDetailDialog(context: Context, title: String) : Dialog(context, R.styl
         orientation = LinearLayout.VERTICAL
         setPadding(CalmViews.dp(context, 16), 0, CalmViews.dp(context, 16), CalmViews.dp(context, 24))
     }
+    val scrollView = ScrollView(context).apply { id = DialogScreens.stateId("detail-scroll"); addView(content) }
     init {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -25,7 +26,7 @@ class CalmDetailDialog(context: Context, title: String) : Dialog(context, R.styl
         }
         root.fitsSystemWindows = true
         root.addView(CalmViews.header(context, title) { dismiss() })
-        root.addView(ScrollView(context).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
     }
     fun text(value: String) {

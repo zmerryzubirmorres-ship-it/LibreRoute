@@ -115,7 +115,13 @@ class JitsiAuthActivity : AppCompatActivity() {
                 captureToken(url)
             }
         }
-        browser.loadUrl(roomUrl)
+        completed = savedInstanceState?.getBoolean("completed") ?: false
+        savedInstanceState?.getString("status")?.let { status.text = it }
+        val browserState = savedInstanceState?.getBundle("browser")
+        if (browserState == null || browser.restoreState(browserState) == null) browser.loadUrl(roomUrl)
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { if (browser.canGoBack()) browser.goBack() else finish() }
+        })
     }
 
     private fun captureToken(url: String?) {
@@ -160,6 +166,15 @@ class JitsiAuthActivity : AppCompatActivity() {
         completed = true
         setResult(RESULT_OK)
         finish()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("completed", completed)
+        if (::browser.isInitialized) {
+            outState.putString("status", status.text.toString())
+            outState.putBundle("browser", Bundle().also { browser.saveState(it) })
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {

@@ -45,8 +45,8 @@ android {
         applicationId = "io.github.libreroute"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.2.4"
+        versionCode = 33
+        versionName = "1.2.29"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"$updateRepository\"")
         buildConfigField("String", "BUNDLED_CORE_VERSION", "\"$bundledCoreVersion\"")
 
@@ -189,7 +189,10 @@ tasks.register("verifyCoreArtifacts") {
 
         val workspaceRoot = rootProject.projectDir.parentFile
         val coreRoot = File(workspaceRoot, "LibreRoute-Core")
-        val sourceFiles = coreRoot.walkTopDown().onEnter { it.name != ".git" }.filter { f ->
+        val sourceFiles = coreRoot.walkTopDown().onEnter {
+            it.name !in setOf(".git", "bin", "build", "dist", "github_output", "output", "DerivedData") &&
+                !it.name.startsWith(".tmp") && it.relativeTo(coreRoot).invariantSeparatorsPath != "deploy/vds89"
+        }.filter { f ->
             f.isFile && ((f.extension == "go" && !f.name.endsWith("_test.go")) ||
                 f.name in setOf("go.mod", "go.sum") || f.extension in setOf("ps1", "sh"))
         }.toList() + listOf("core-artifacts.ps1", "build-libreroute-core.ps1", "app/build.gradle.kts")

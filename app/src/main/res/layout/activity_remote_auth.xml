@@ -1,33 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:fitsSystemWindows="true" android:background="@drawable/bg_screen_ambient">
-  <LinearLayout android:id="@+id/top_bar" android:layout_width="match_parent" android:layout_height="56dp" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="12dp">
-    <ImageView android:id="@+id/btn_back" android:layout_width="48dp" android:layout_height="48dp" android:padding="8dp" android:src="@drawable/ic_arrow_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" app:tint="@color/text_primary" android:contentDescription="@string/cancel" />
-    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="8dp" android:text="Авторизация на сервере" android:textColor="@color/text_primary" android:textSize="18sp" android:fontFamily="sans-serif-medium" android:id="@+id/browser_title" />
-    <ImageView android:id="@+id/btn_reload" android:layout_width="48dp" android:layout_height="48dp" android:padding="8dp" android:src="@drawable/ic_refresh" android:background="?android:attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" app:tint="@color/text_primary" android:contentDescription="@string/retry" />
-  </LinearLayout>
-  <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="12dp" android:layout_marginBottom="6dp" app:cardCornerRadius="16dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/bg_card">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp">
-      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-        <TextView android:id="@+id/tv_target_info" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Выбранный сервер" android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="sans-serif-medium" />
-        <TextView android:id="@+id/tv_tunnel_badge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Подключаемся" android:textSize="11sp" android:textColor="@color/state_connecting" android:background="@drawable/bg_remote_badge" android:paddingHorizontal="8dp" android:paddingVertical="3dp" />
-      </LinearLayout>
-      <TextView android:id="@+id/tv_session_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Подготавливаем страницу авторизации" android:textColor="@color/text_secondary" android:textSize="12sp" />
-      <TextView android:id="@+id/tv_incident_banner" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:visibility="gone" android:background="@color/m3_surface_container_high" android:padding="6dp" android:textColor="@color/state_error" android:textSize="12sp" android:text="Обнаружен инцидент: требуется решить CAPTCHA" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:fitsSystemWindows="true" android:background="@color/m3_surface" android:focusableInTouchMode="true">
+    <LinearLayout android:id="@+id/top_bar" android:layout_width="match_parent" android:layout_height="48dp"
+        android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="8dp">
+        <ImageView android:id="@+id/btn_back" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp"
+            android:src="@drawable/ic_arrow_back" android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true" android:focusable="true" app:tint="@color/text_primary" android:contentDescription="@string/browser_back" />
+        <TextView android:id="@+id/browser_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="4dp" android:text="Авторизация на сервере" android:textColor="@color/text_primary"
+            android:textSize="18sp" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
-  </com.google.android.material.card.MaterialCardView>
-  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="12dp" android:gravity="center_vertical" android:orientation="horizontal">
-    <EditText android:id="@+id/browser_address" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:inputType="textUri" android:imeOptions="actionGo" android:singleLine="true" android:selectAllOnFocus="true" android:enabled="false" android:textSize="14sp" android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:hint="Адрес страницы" android:contentDescription="Адрес страницы" />
-    <Button android:id="@+id/browser_go" android:layout_width="wrap_content" android:layout_height="52dp" android:enabled="false" android:text="Перейти" />
-  </LinearLayout>
-  <ProgressBar android:id="@+id/progress_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:visibility="gone" />
-  <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="@color/bg_deep">
-    <WebView android:id="@+id/web_view" android:layout_width="match_parent" android:layout_height="match_parent" />
-    <TextView android:id="@+id/tv_error_view" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:padding="24dp" android:visibility="gone" android:textColor="@color/text_secondary" android:textSize="14sp" android:text="Ошибка загрузки страницы" android:background="@color/bg_card" />
-  </FrameLayout>
-  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp" android:gravity="center_vertical">
-    <Button android:id="@+id/btn_retry_page" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="52dp" android:text="Повторить" android:enabled="false" android:textSize="14sp" android:textAllCaps="false" android:visibility="gone" />
-    <Button android:id="@+id/btn_manual_fallback" style="@style/Widget.MaterialComponents.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="52dp" android:text="Ввести авторизацию вручную" android:textSize="14sp" android:textAllCaps="false" />
-    <Button android:id="@+id/btn_send_auth" style="@style/Widget.MaterialComponents.Button" android:layout_width="match_parent" android:layout_height="52dp" android:text="Передать авторизацию" android:textSize="14sp" android:textAllCaps="false" />
-    <com.google.android.material.button.MaterialButton android:id="@+id/btn_return_server" android:layout_width="match_parent" android:layout_height="52dp" android:text="Вернуться к серверу" android:textAllCaps="false" style="?attr/materialButtonOutlinedStyle" />
-  </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="4dp" android:paddingBottom="6dp">
+        <com.google.android.material.card.MaterialCardView android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+            app:cardCornerRadius="24dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/m3_surface_container_low"
+            app:strokeWidth="1dp" app:strokeColor="@color/m3_outline_variant">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical">
+                <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="14dp" android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_globe" app:tint="@color/text_secondary" android:importantForAccessibility="no" />
+                <EditText android:id="@+id/browser_address" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+                    android:background="@null" android:padding="0dp" android:inputType="textUri" android:imeOptions="actionGo|flagNoExtractUi"
+                    android:singleLine="true" android:selectAllOnFocus="true" android:enabled="false" android:textSize="14sp"
+                    android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary"
+                    android:hint="@string/browser_address" android:contentDescription="@string/browser_address" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/browser_go" style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="48dp" android:layout_height="48dp" android:minWidth="0dp" android:padding="12dp"
+                    android:insetTop="0dp" android:insetBottom="0dp" android:enabled="false" android:contentDescription="@string/browser_go"
+                    app:icon="@drawable/ic_browser_go" app:iconSize="24dp" app:iconPadding="0dp" app:iconGravity="textStart" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <ImageView android:id="@+id/btn_reload" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp"
+            android:src="@drawable/ic_refresh" android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true" android:focusable="true" app:tint="@color/text_primary" android:contentDescription="@string/browser_reload" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+        android:paddingHorizontal="16dp" android:paddingBottom="8dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/tv_target_info" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:text="Выбранный сервер" android:textColor="@color/text_primary" android:textSize="12sp"
+                android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/tv_tunnel_badge" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginStart="8dp" android:text="Подключаемся" android:textSize="11sp" android:textColor="@color/state_connecting"
+                android:background="@drawable/bg_remote_badge" android:paddingHorizontal="8dp" android:paddingVertical="3dp" />
+        </LinearLayout>
+        <TextView android:id="@+id/tv_session_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="3dp" android:text="Подготавливаем страницу авторизации" android:textColor="@color/text_secondary" android:textSize="12sp" />
+        <TextView android:id="@+id/tv_incident_banner" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:visibility="gone" android:background="@color/m3_error_container"
+            android:padding="8dp" android:textColor="@color/m3_on_error_container" android:textSize="12sp" />
+    </LinearLayout>
+    <ProgressBar android:id="@+id/progress_bar" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="2dp" android:progressTint="@color/m3_primary"
+        android:progressBackgroundTint="@color/m3_outline_variant" android:visibility="invisible" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="@color/m3_surface_container_lowest">
+        <WebView android:id="@+id/web_view" android:layout_width="match_parent" android:layout_height="match_parent" />
+        <TextView android:id="@+id/tv_error_view" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:gravity="center" android:padding="24dp" android:visibility="gone" android:textColor="@color/text_secondary"
+            android:textSize="16sp" android:text="Ошибка загрузки страницы" android:background="@color/m3_surface" />
+    </FrameLayout>
+    <LinearLayout android:id="@+id/browser_actions" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingHorizontal="12dp" android:paddingTop="4dp" android:paddingBottom="4dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_retry_page" style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent" android:layout_height="48dp" android:text="Повторить загрузку" android:enabled="false"
+            android:textAllCaps="false" android:visibility="gone" app:cornerRadius="16dp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_send_auth" android:layout_width="match_parent"
+            android:layout_height="52dp" android:text="Передать авторизацию" android:textSize="14sp" android:textAllCaps="false" app:cornerRadius="16dp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_manual_fallback" style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="Ввести вручную"
+                android:textSize="13sp" android:textAllCaps="false" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/btn_return_server" style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:text="Вернуться к серверу"
+                android:textSize="13sp" android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

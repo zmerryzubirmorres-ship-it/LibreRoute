@@ -1,0 +1,7 @@
+<resources>
+    <string name="browser_address">Адрес страницы</string>
+    <string name="browser_go">Перейти по адресу</string>
+    <string name="browser_back">Назад</string>
+    <string name="browser_reload">Обновить страницу</string>
+    <string name="browser_stop">Остановить загрузку</string>
+</resources>

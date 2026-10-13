@@ -39,6 +39,7 @@ object InstallationLog {
     }
 
     private fun redact(value: String): String = value
+        .replace(Regex("(?i)https://(?:salutejazz\\.ru|jazz\\.sber\\.ru)(?::443)?/call/[^\\s\\\"<>]+"), "<jazz-room-redacted>")
         .replace(Regex("(?i)(password|passphrase|private_key|private_key_path|browser_cookies|join|pairing_code|payload|secret)[=:]\\s*[^,} ]+"), "$1=<redacted>")
         .replace(Regex("(?i)(authorization|cookie):\\s*[^,} ]+"), "$1=<redacted>")
 }

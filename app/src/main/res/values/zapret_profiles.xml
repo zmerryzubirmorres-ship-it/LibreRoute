@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="zapret_profiles_title">Профили zapret</string>
+    <string name="zapret_profiles_summary">Настройки обхода DPI и возврат к предыдущему профилю</string>
+    <string name="zapret_selected">Выбран: %1$s</string>
+    <string name="zapret_apply_hint">Выбранный профиль используется в подключении «Прямой обход DPI · zapret» для правил «Через туннель» и трафика вне списков при включённом общем тумблере. Правила «Через zapret» используют свои назначенные профили, «Напрямую» — прямой доступ. Настройки действуют без VPN-сервера. После изменения переподключитесь.</string>
+    <string name="zapret_connection_summary">Без VPN-сервера · правила приложений и сайтов</string>
+    <string name="zapret_add">Добавить профиль</string>
+    <string name="zapret_rollback">Вернуть предыдущий профиль</string>
+    <string name="zapret_select">Выбрать</string>
+    <string name="zapret_is_selected">Выбран</string>
+    <string name="zapret_copy">Создать копию</string>
+    <string name="zapret_copy_name">%1$s — копия</string>
+    <string name="zapret_edit">Изменить</string>
+    <string name="zapret_delete">Удалить профиль</string>
+    <string name="zapret_edit_title">Настройки профиля zapret</string>
+    <string name="zapret_name">Название профиля</string>
+    <string name="zapret_split">Разделение первого запроса</string>
+    <string-array name="zapret_split_choices">
+        <item>Первый байт и середина домена</item>
+        <item>Первый байт</item>
+        <item>Середина домена</item>
+        <item>Без разделения</item>
+    </string-array>
+    <string name="zapret_tls">Разделять TLS-запись</string>
+    <string name="zapret_method">Добавлять перенос перед HTTP-методом</string>
+    <string name="zapret_host">Менять регистр заголовка Host</string>
+    <string name="zapret_disorder">Менять порядок отправки фрагментов</string>
+    <string name="zapret_quic">Отключать QUIC</string>
+    <string name="zapret_quic_hint">zapret здесь обрабатывает TCP. Отключение QUIC помогает браузеру использовать HTTPS через TCP. Если разделение выключено, порядок фрагментов не меняется.</string>
+    <string name="zapret_save">Сохранить</string>
+</resources>

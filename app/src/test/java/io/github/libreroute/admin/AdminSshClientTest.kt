@@ -9,6 +9,51 @@ import kotlinx.serialization.json.jsonObject
 
 class AdminSshClientTest {
 
+    @Test fun uploadRetriesOnlyFailedDialWithIdenticalEnvelope() {
+        var calls = 0
+        val requests = mutableListOf<String>()
+        val envelope = uploadEnvelope()
+        val client = AdminSshClient(context = createMockContext(), commandExecutor = { _, request ->
+            calls++
+            requests += request
+            if (calls == 1) 1 to "SSH administrative request failed: ssh dial example:2202: i/o timeout"
+            else 0 to AdminEnvelope(subtype = AdminEnvelope.SUBTYPE_RESPONSE, profileId = envelope.profileId,
+                opId = envelope.opId, sender = "server").toJson()
+        })
+        assertTrue(client.executeAdminEnvelope(envelope, uploadHost(), AdminChannel.DIRECT_SSH) is AdminOpResult.Success)
+        assertEquals(2, calls)
+        assertEquals(requests[0], requests[1])
+    }
+
+    @Test fun uploadDoesNotRetryAnUnknownRemoteResult() {
+        var calls = 0
+        val client = AdminSshClient(context = createMockContext(), commandExecutor = { _, _ ->
+            calls++
+            1 to "SSH administrative request failed: remote administrative command failed: i/o timeout"
+        })
+        assertTrue(client.executeAdminEnvelope(uploadEnvelope(), uploadHost(), AdminChannel.DIRECT_SSH) is AdminOpResult.Failure)
+        assertEquals(1, calls)
+    }
+
+    @Test fun applyIsNeverRetriedEvenWhenDialFails() {
+        var calls = 0
+        val client = AdminSshClient(context = createMockContext(), commandExecutor = { _, _ ->
+            calls++
+            1 to "SSH administrative request failed: ssh dial example:2202: i/o timeout"
+        })
+        assertTrue(client.executeAdminEnvelope(uploadEnvelope("apply"), uploadHost(), AdminChannel.DIRECT_SSH) is AdminOpResult.Failure)
+        assertEquals(1, calls)
+    }
+
+    private fun uploadEnvelope(action: String = "put_chunk") = AdminEnvelope(
+        subtype = AdminEnvelope.SUBTYPE_COMMAND, profileId = "control", sender = "owner",
+        payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+            "{\"op\":\"core-update\",\"core_update\":{\"action\":\"$action\"}}".toByteArray()))
+
+    private fun uploadHost() = SshHostConfig(host = "89.167.49.64", port = 2202, username = "root",
+        authType = SshAuthType.KEY, privateKeyPath = "/path/to/key",
+        hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI-test")
+
     @Test
     fun testNetcrazeSubnetIpValidation() {
         val client = AdminSshClient(context = createMockContext())

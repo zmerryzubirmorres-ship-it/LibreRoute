@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/bg_screen_ambient">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:gravity="center_vertical" android:paddingHorizontal="12dp">
+        <ImageView android:id="@+id/btn_back" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_arrow_back" app:tint="@color/text_primary" android:contentDescription="@string/cancel" android:background="?android:attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/site_rules_title" android:textSize="18sp" android:textColor="@color/text_primary" />
+    </LinearLayout>
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/site_enabled" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/site_enabled" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/site_rules_hint" android:textColor="@color/text_secondary" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/site_add" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/site_add" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/site_profiles" style="?attr/materialButtonOutlinedStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/zapret_profiles_title" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp" android:text="@string/site_dns_hint" android:textColor="@color/text_secondary" />
+            <LinearLayout android:id="@+id/site_rules" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

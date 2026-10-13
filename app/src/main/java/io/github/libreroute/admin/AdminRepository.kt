@@ -11,6 +11,7 @@ import io.github.libreroute.util.Logx
 import io.github.libreroute.util.SecurePreferences
 import io.github.libreroute.util.JitsiTokenStore
 import io.github.libreroute.util.TunnelLinkParser
+import io.github.libreroute.service.NativeProcessSupervisor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -31,6 +33,7 @@ import kotlinx.coroutines.withContext
 interface AdminStorage {
     fun getString(key: String, default: String?): String?
     fun putString(key: String, value: String?)
+    fun putStringCommitted(key: String, value: String?) = putString(key, value)
     fun remove(key: String)
     fun getLong(key: String, default: Long): Long = getString(key, null)?.toLongOrNull() ?: default
     fun putLong(key: String, value: Long) = putString(key, value.toString())
@@ -39,6 +42,7 @@ interface AdminStorage {
 class SecurePrefsAdminStorage(private val prefs: SecurePreferences) : AdminStorage {
     override fun getString(key: String, default: String?): String? = prefs.getString(key, default)
     override fun putString(key: String, value: String?) = prefs.putString(key, value)
+    override fun putStringCommitted(key: String, value: String?) = prefs.putStringCommitted(key, value)
     override fun remove(key: String) = prefs.remove(key)
 }
 
@@ -71,7 +75,9 @@ class AdminRepository(
     private val documentSyncRunner: ((docUrl: String, profileId: String, secretKey: String, env: AdminEnvelope, serverKey: String) -> AdminEnvelope)? = null,
     private val currentTimeSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
     private val installationBackend: ServerInstallationBackend? = null,
-    private val serverInventoryProbe: ((ServerNode) -> ServerInventory)? = null
+    private val serverInventoryProbe: ((ServerNode) -> ServerInventory)? = null,
+    private val jazzRoomCreator: () -> String = { JazzGuestRoomClient().createRoom() },
+    private val coreArtifactProvider: ((String) -> Pair<java.io.File, kotlinx.serialization.json.JsonObject>)? = null
 ) {
 
     companion object {
@@ -138,6 +144,9 @@ class AdminRepository(
         encodeDefaults = true
         coerceInputValues = true
     }
+
+    private val jazzSetupLock = Any()
+    private val protocolInventoryCache = ProtocolInventoryCache<List<ManagedProfile>>()
 
     /** Persist the latest access operation so rotation/process recreation can show its result. */
     fun saveAccessOperation(record: AccessOperationRecord) {
@@ -340,7 +349,7 @@ class AdminRepository(
             if (it.stage == ServerInstallOperation.SUBMITTING) it.copy(stage = ServerInstallOperation.UNKNOWN,
                 error = "Результат установки неизвестен. Проверьте сохранённую операцию через SSH") else it
         }
-        persistInstallationOperations()
+        if (_installationOperations.value != operations) persistInstallationOperations()
         _protocolOperations.value = storage.getString(KEY_PROTOCOL_OPERATIONS, null)?.let {
             runCatching { json.decodeFromString<List<ProtocolInstallationOperation>>(it) }.getOrNull()
         }.orEmpty().map {
@@ -452,7 +461,7 @@ class AdminRepository(
         require(inventory.probeError == null) { "SSH-опрос не завершён" }
         val saved = getServerNode(node.id) ?: node
         val prior = loadServerInstallation(operationId)
-        if (prior != null) {
+        if (prior != null && prior.planHash.isNotBlank()) {
             require(prior.serverId == node.id && prior.stage == ServerInstallOperation.PLANNED) {
                 "Предыдущую операцию необходимо проверить; повторная установка запрещена"
             }
@@ -477,10 +486,61 @@ class AdminRepository(
     }
 
     /** Updating a known managed node requires its current OWNER and preserves its identity. */
-    fun planCoreUpdate(node: ServerNode, operationId: String): kotlinx.serialization.json.JsonObject {
+    fun planCoreUpdate(node: ServerNode, operationId: String, channel: AdminChannel = AdminChannel.AUTO): kotlinx.serialization.json.JsonObject {
+        require(getRole(node.id) == AdminRole.OWNER) { "Для обновления ядра нужны действующие права владельца сервера" }
+        require(latestServerInstallation(node.id)?.requiresReconciliation != true) { "Сначала проверьте результат предыдущей операции" }
+        val namespace = node.managementNamespace ?: ("node-" + node.id.replace("-", "").take(32))
+        val intent = ServerInstallOperation(operationId, node.id, namespace, node, "{}", "",
+            getActiveGrant(node.id)?.profileId.orEmpty(), keyManager.getFingerprint(), kind = ServerInstallOperation.KIND_CORE_UPDATE, channel = channel)
+        saveServerInstallation(intent)
+        val deadline = System.nanoTime() + 240L * 1_000_000_000L
+        return try {
+            val plan = prepareCoreUpdatePlan(node,operationId,channel)
+            check(updateCancellation[operationId]?.get() != true) { "Подготовка отменена до отправки" }
+            check(System.nanoTime() < deadline) { "Время подготовки истекло. Проверьте соединение и начните новую попытку" }
+            plan
+        } catch (error: Exception) {
+            val current = loadServerInstallation(operationId) ?: intent
+            saveServerInstallation(current.copy(stage = if (updateCancellation[operationId]?.get() == true)
+                ServerInstallOperation.CANCELLED_BEFORE_SUBMIT else ServerInstallOperation.FAILED_BEFORE_SUBMIT, error = error.message))
+            throw error
+        }
+    }
+
+    private fun prepareCoreUpdatePlan(node: ServerNode, operationId: String, channel: AdminChannel): kotlinx.serialization.json.JsonObject {
         require(getRole(node.id) == AdminRole.OWNER) { "Для обновления ядра нужны действующие права владельца сервера" }
         require(latestServerInstallation(node.id)?.requiresReconciliation != true) { "Сначала проверьте результат предыдущей операции" }
         val pinned = getPinnedServerPublicKey(node.id) ?: error("Ключ сервера не закреплён")
+        val core = if (installationBackend != null) null else getClusterSnapshot(channel, node).getOrThrow().coreInfo
+        if (installationBackend == null || coreArtifactProvider != null) {
+            val resolvedChannel = resolveAdminChannel(channel, node)
+            val isSsh = resolvedChannel in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)
+            val needsBaselineFix = core?.capabilities?.contains(CoreUpdateClient.CONFIGURATION_BASELINE) != true
+            require(!needsBaselineFix || isSsh) {
+                "В этом ядре проверка состояния делает план обновления устаревшим. Для перехода на ${CoreCompatibility.REQUIRED_VERSION} выберите «Прямой SSH к серверу». Затем обновления снова доступны через текущее подключение."
+            }
+            val bootstrap = core?.capabilities?.contains(CoreUpdateClient.CAPABILITY) != true || needsBaselineFix
+            if (bootstrap) require(resolvedChannel in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)) {
+                "Старое ядро впервые обновляется через SSH; затем можно использовать текущее подключение"
+            }
+            val (_, manifest) = coreArtifact(core?.arch.orEmpty().ifBlank { node.inventory?.arch.orEmpty() })
+            val profile = getActiveGrant(node.id)?.profileId ?: error("Нет действующего допуска")
+            val namespace = node.managementNamespace ?: ("node-" + node.id.replace("-", "").take(32))
+            val intent = ServerInstallOperation(operationId, node.id, namespace, node, "{}", "", profile,
+                keyManager.getFingerprint(), kind = ServerInstallOperation.KIND_CORE_UPDATE, coordinator = true,
+                bootstrapManifest = if (bootstrap) manifest.toString() else null, channel = if (bootstrap) resolvedChannel else channel)
+            saveServerInstallation(intent)
+            return try {
+                val plan = coreUpdateCall(node, intent.channel, operationId, "", "plan", buildJsonObject { put("signed_manifest", manifest) })
+                requireCoreUpdatePlanIdentity(plan, node.id, pinned, profile, operationId, namespace)
+                saveServerInstallation(intent.copy(namespace = plan.string("namespace"), expectedPlan = plan.toString(), planHash = plan.string("plan_hash")))
+                plan
+            } catch (error: Exception) {
+                saveServerInstallation(intent.copy(stage = ServerInstallOperation.FAILED_BEFORE_SUBMIT, error = error.message))
+                throw error
+            }
+        }
+        require(resolveAdminChannel(channel, node) in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)) { "Сначала обновите старое ядро через SSH: сервер ещё не поддерживает обновление через выбранный канал" }
         val plan = planServerInstallation(node, operationId)
         require(plan["mode"]?.jsonPrimitive?.content == "update") { "Обновление допустимо только для существующей установки" }
         require(plan["server_id"]?.jsonPrimitive?.content == node.id &&
@@ -566,9 +626,10 @@ class AdminRepository(
         _installationOperations.value.lastOrNull { it.serverId == serverId }
 
     private fun persistInstallationOperations() {
-        storage.putString(KEY_INSTALL_OPERATIONS, json.encodeToString(_installationOperations.value))
+        storage.putStringCommitted(KEY_INSTALL_OPERATIONS, json.encodeToString(_installationOperations.value))
     }
 
+    @Synchronized
     private fun saveServerInstallation(operation: ServerInstallOperation) {
         val list = _installationOperations.value.toMutableList()
         val index = list.indexOfFirst { it.operationId == operation.operationId }
@@ -594,29 +655,94 @@ class AdminRepository(
         val list = _protocolOperations.value.toMutableList()
         val index = list.indexOfFirst { it.operationId == operation.operationId }
         if (index < 0) list.add(operation) else list[index] = operation
+        storage.putStringCommitted(KEY_PROTOCOL_OPERATIONS, json.encodeToString(list))
         _protocolOperations.value = list
-        persistProtocolOperations()
     }
+
+    /** Reuse a saved room, including after process death or an uncertain server response. */
+    fun createAndInstallJazz(node: ServerNode, channel: AdminChannel = AdminChannel.AUTO): AdminOpResult =
+        synchronized(jazzSetupLock) {
+            val existing = latestProtocolInstallation(node.id, "jazz")
+            if (existing != null && (existing.endpoint.isNotBlank() || existing.requiresReconciliation ||
+                    existing.stage == ProtocolInstallationOperation.READY)) {
+                return@synchronized installProtocol(node, "jazz", existing.endpoint, channel)
+            }
+            checkCoreCompatibility(node, channel, setOf("protocol-create-v2", "jazz-datachannel-v1",
+                "worker-backend-readiness-v1")).exceptionOrNull()?.let {
+                return@synchronized AdminOpResult.Failure(it.message.orEmpty(), it)
+            }
+            val endpoint = try {
+                jazzRoomCreator().also {
+                    if (!io.github.libreroute.util.ServiceRouteEndpoint.isValid(io.github.libreroute.data.TransportType.jazz, it))
+                        throw JazzRoomCreationException("СберДжаз вернул некорректную ссылку комнаты")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: JazzRoomCreationException) {
+                return@synchronized AdminOpResult.Failure(e.message.orEmpty())
+            } catch (_: Exception) {
+                return@synchronized AdminOpResult.Failure("Не удалось создать комнату СберДжаза. Проверьте интернет и повторите позже.")
+            }
+            val operation = ProtocolInstallationOperation(
+                operationId = UUID.randomUUID().toString(), serverId = node.id, transport = "jazz",
+                profileId = "libreroute-jazz-${UUID.randomUUID().toString().take(8)}", endpoint = endpoint
+            )
+            try {
+                // Commit the encrypted room before any server mutation, even if the Activity is gone.
+                saveProtocolInstallation(operation)
+            } catch (_: Exception) {
+                return@synchronized AdminOpResult.Failure("Не удалось сохранить комнату СберДжаза. Настройка сервера не запускалась.")
+            }
+            installProtocol(node, "jazz", endpoint, channel)
+        }
 
     /** Installs exactly one transport using a durable idempotency key. */
     fun installProtocol(
         node: ServerNode,
         transport: String,
         endpoint: String = "",
-        channel: AdminChannel = AdminChannel.DIRECT_SSH
+        channel: AdminChannel = AdminChannel.AUTO
+    ): AdminOpResult = if (transport.equals("jazz", true)) synchronized(jazzSetupLock) {
+        installProtocolInternal(node, transport, endpoint, channel)
+    } else installProtocolInternal(node, transport, endpoint, channel)
+
+    private fun installProtocolInternal(
+        node: ServerNode, transport: String, endpoint: String, channel: AdminChannel
     ): AdminOpResult {
         val normalized = transport.lowercase().let { if (it == "yandex") "vyandex" else it }
-        require(normalized in setOf("vyandex", "mqtt", "jitsi")) { "Неподдерживаемый протокол: $transport" }
+        require(normalized in setOf("vyandex", "mqtt", "jitsi", "jazz")) { "Неподдерживаемый протокол: $transport" }
+        if (!io.github.libreroute.data.TransportType.isAvailable(normalized))
+            return AdminOpResult.Failure("MQTT исключён из доступных протоколов")
+        if (!canPerform(node.id, "install")) return AdminOpResult.Failure("Недостаточно прав для настройки протокола")
+        val localOperation = latestProtocolInstallation(node.id, normalized)
+        // A local ready route needs no inventory read. An uncertain operation
+        // still goes through reconciliation before reporting success.
+        if (localOperation?.requiresReconciliation != true && _managedProfilesFlow.value.any {
+                it.profileType != ManagedProfile.PROFILE_TYPE_CONTROL && it.isReady &&
+                    (it.serverId == node.id || node.id in it.allowedServerIds) && it.transportType == normalized &&
+                    (endpoint.isBlank() || it.serverConfigs[node.id]?.documentUrl == endpoint) &&
+                    hasMaterializedProtocolTunnel(it)
+            }) return AdminOpResult.Success("Настройки подключения сохранены. Для проверки связи выберите его и нажмите «Подключить».")
         val required = setOf("protocol-create-v2") + when (normalized) {
             "vyandex" -> CoreCompatibility.REQUIRED_CAPABILITIES
             "mqtt" -> setOf("mqtt-wss-readiness-v1", "worker-backend-readiness-v1")
             "jitsi" -> setOf("worker-backend-readiness-v1")
+            "jazz" -> setOf("jazz-datachannel-v1", "worker-backend-readiness-v1")
             else -> emptySet()
         }
         checkCoreCompatibility(node, channel, required).exceptionOrNull()?.let {
             return AdminOpResult.Failure(it.message.orEmpty(), it)
         }
         val existing = latestProtocolInstallation(node.id, normalized)
+        if (getServerNode(node.id)?.coreObservation?.info?.supports(setOf("protocol-config-restore-v1")) == true) {
+            val restored = restoreServerProtocols(node, channel, checkCompatibility = false).getOrElse {
+                return AdminOpResult.Failure(it.message.orEmpty(), it)
+            }
+            if (restored.any { it.transportType == normalized &&
+                    (endpoint.isBlank() || it.serverConfigs[node.id]?.documentUrl == endpoint) }) {
+                return AdminOpResult.Success("Подключение восстановлено с сервера. Выберите его и нажмите «Подключить».")
+            }
+        }
         if (existing?.stage == ProtocolInstallationOperation.READY) {
             val profile = _managedProfilesFlow.value.firstOrNull {
                 it.id == existing.profileId && it.isReady &&
@@ -718,7 +844,7 @@ class AdminRepository(
                 sessionNegotiated = operation.transport == "vyandex",
                 allowedServerIds = listOf(node.id),
                 allowedProtocols = listOf(operation.transport),
-                channel = AdminChannel.DIRECT_SSH,
+                channel = AdminChannel.AUTO,
                 hostConfig = node.toSshHostConfig(),
                 profileIdOverride = operation.profileId,
                 operationIdOverride = operation.operationId,
@@ -741,25 +867,41 @@ class AdminRepository(
     }
 
     private fun hasMaterializedProtocolTunnel(profile: ManagedProfile): Boolean {
-        val ctx = context ?: return true // Unit-test repositories have no Android tunnel store.
-        return runCatching { TunnelRepository(ctx).load().any {
-            it.name == profile.name && it.transportType.equals(profile.transportType, true) &&
+        val store = customTunnelStore ?: context?.let(::TunnelRepository) ?: return true
+        return runCatching { store.load().any {
+            (it.managedProfileId == profile.id || it.name == profile.name) &&
+                (it.serverId == profile.serverId || it.serverId == null) && it.transportType.equals(profile.transportType, true) &&
                 it.transportConnPayload.contains("--url")
         } }.getOrDefault(false)
     }
 
     /** A server capability alone is not an administrator connection. */
     fun isProtocolReady(serverId: String, transport: String): Boolean =
-        _managedProfilesFlow.value.any { profile ->
+        io.github.libreroute.data.TransportType.isAvailable(transport) && _managedProfilesFlow.value.any { profile ->
             profile.profileType != ManagedProfile.PROFILE_TYPE_CONTROL &&
                 (profile.serverId == serverId || serverId in profile.allowedServerIds) &&
                 profile.transportType == transport &&
                 profile.isReady && hasMaterializedProtocolTunnel(profile)
         }
 
+    /** UI projection: decrypt the store once, off the main thread. */
+    fun readyProtocolTransports(serverId: String, tunnels: List<Tunnel>): Set<String> =
+        _managedProfilesFlow.value.filter { profile ->
+            profile.profileType != ManagedProfile.PROFILE_TYPE_CONTROL && profile.isReady &&
+                io.github.libreroute.data.TransportType.isAvailable(profile.transportType) &&
+                (profile.serverId == serverId || serverId in profile.allowedServerIds) &&
+                tunnels.any { tunnel ->
+                    (tunnel.managedProfileId == profile.id ||
+                        (tunnel.managedProfileId == null && tunnel.name == profile.name)) &&
+                        tunnel.serverId == serverId && tunnel.transportType == profile.transportType &&
+                        tunnel.transportConnPayload.contains("--url")
+                }
+        }.map { it.transportType }.toSet()
+
     fun installServer(node: ServerNode, operationId: String, documentUrl: String = "", ownerRecovery: Boolean = false): AdminOpResult {
         val original = loadServerInstallation(operationId)
             ?: return AdminOpResult.Failure("Сначала подготовьте и подтвердите план установки")
+        if (original.coordinator) return submitCoreUpdate(node, original)
         if (original.serverId != node.id) return AdminOpResult.Failure("План относится к другому серверу")
         val approvedPlan = json.parseToJsonElement(original.expectedPlan).jsonObject
         if (approvedPlan["mode"]?.jsonPrimitive?.content == "update" &&
@@ -800,14 +942,228 @@ class AdminRepository(
     fun checkServerInstallation(node: ServerNode, operationId: String): AdminOpResult = runCatching {
         val operation = loadServerInstallation(operationId) ?: error("Операция не найдена локально")
         require(operation.serverId == node.id) { "Операция относится к другому серверу" }
+        if (operation.coordinator) return checkCoreUpdate(node, operation)
         reconcileInstallationReceipt(operation, installationClient().status(getServerNode(node.id) ?: node, operationId))
     }.getOrElse { AdminOpResult.Failure(it.message ?: "Не удалось проверить сохранённую операцию") }
 
-    fun rollbackServerInstallation(node: ServerNode, operationId: String): AdminOpResult = runCatching {
-        val operation = loadServerInstallation(operationId) ?: error("Операция не найдена локально")
+    fun rollbackServerInstallation(node: ServerNode, operationId: String, channel: AdminChannel? = null): AdminOpResult = runCatching {
+        var operation = loadServerInstallation(operationId) ?: error("Операция не найдена локально")
         require(operation.serverId == node.id) { "Операция относится к другому серверу" }
+        if (operation.coordinator) {
+            if (channel != null) {
+                operation = operation.copy(channel = resolveAdminChannel(channel, node))
+                saveServerInstallation(operation)
+            }
+            coreUpdateCall(node, operation.channel, operationId, operation.planHash, "rollback")
+            return checkCoreUpdate(node, operation)
+        }
         reconcileInstallationReceipt(operation, installationClient().rollback(getServerNode(node.id) ?: node, operationId))
     }.getOrElse { AdminOpResult.Failure(it.message ?: "Откат не подтверждён. SSH-подключение сохранено") }
+
+    private val updateCancellation = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
+    private val adminConnections = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun adminConnectionKey(serverId: String, channel: AdminChannel,
+                                   carrier: NativeProcessSupervisor.AdminCarrier? = NativeProcessSupervisor.activeAdminCarrier): String =
+        if (channel == AdminChannel.ACTIVE_TRANSPORT) "$serverId:$channel:${carrier?.path.orEmpty()}"
+        else "$serverId:$channel"
+
+    fun serverMutationBlockReason(serverId: String, channel: AdminChannel = AdminChannel.AUTO): String? = when {
+        latestServerInstallation(serverId)?.requiresReconciliation == true -> "Сначала проверьте результат предыдущей операции"
+        getRole(serverId) !in setOf(AdminRole.OWNER, AdminRole.OPERATOR) -> "Нет прав"
+        adminConnections[adminConnectionKey(serverId, resolveAdminChannel(channel, getServerNode(serverId)))] == false -> "Нет связи с сервером"
+        else -> null
+    }
+
+    fun cancelCoreUpdatePreparation(operationId: String) {
+        updateCancellation.getOrPut(operationId) { java.util.concurrent.atomic.AtomicBoolean() }.set(true)
+        val operation = loadServerInstallation(operationId) ?: return
+        if (operation.stage == ServerInstallOperation.PLANNED) saveServerInstallation(operation.copy(
+            stage = ServerInstallOperation.CANCELLED_BEFORE_SUBMIT, error = "Подготовка отменена до отправки"))
+    }
+
+    private fun coreArtifact(arch: String): Pair<java.io.File, kotlinx.serialization.json.JsonObject> =
+        coreArtifactProvider?.invoke(arch) ?: ServerInstaller(requireNotNull(context)).coreArtifact(arch)
+
+    private fun coreUpdateCall(node: ServerNode, channel: AdminChannel, id: String, hash: String,
+                               action: String, fields: kotlinx.serialization.json.JsonObject = buildJsonObject { }): kotlinx.serialization.json.JsonObject {
+        val request = buildJsonObject { put("action", action); put("operation_id", id); put("plan_hash", hash) }
+        val payload = buildJsonObject {
+            put("op", "core-update"); put("server_id", node.id)
+            put("core_update", kotlinx.serialization.json.JsonObject(request + fields))
+        }
+        val operation = loadServerInstallation(id)
+        val bootstrap = operation?.bootstrapManifest?.let { raw ->
+            val signed = json.parseToJsonElement(raw).jsonObject
+            val manifest = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(signed.getValue("payload").jsonPrimitive.content), Charsets.UTF_8)).jsonObject
+            // Status/rollback need no local artifact if the verified helper is already staged.
+            val artifact = if (action in setOf("plan", "begin")) coreArtifact(manifest.string("arch")).first.absolutePath else null
+            SSHUpdateBootstrap(signed, artifact)
+        } ?: sshUpdateArtifactManifest(channel, action, node.sshUser, fields["plan"]?.jsonObject)?.let { signed ->
+            // The existing signed helper stages raw 1-MiB ranges and seeds the
+            // SAME coordinator operation after checking its immutable plan.
+            // Do not apply the document's 8-KiB RPC limit to root/systemd SSH.
+            val target = fields.getValue("plan").jsonObject.getValue("manifest").jsonObject
+            SSHUpdateBootstrap(signed, coreArtifact(target.string("arch")).first.absolutePath)
+        }
+
+        val namespace = operation?.namespace ?: node.managementNamespace
+        val response = executeAdminApiCommand(payload.toString(), targetServer = node.copy(managementNamespace = namespace),
+            channel = channel, updateBootstrap = bootstrap, recordInHistory = action !in setOf("put_chunk", "put_batch")) { it.jsonObject }.getOrThrow()
+        require(response.string("operation_id") == id && response.string("server_id") == node.id &&
+            response.string("server_public_key") == getPinnedServerPublicKey(node.id) &&
+            response.string("control_profile_id") == getActiveGrant(node.id)?.profileId &&
+            (hash.isEmpty() || response.string("plan_hash") == hash)) { "Ответ обновления относится к другой операции или серверу" }
+        return response
+    }
+
+    private fun coreUpdateClient(node: ServerNode, operation: ServerInstallOperation): CoreUpdateClient {
+        // A failed ACK must not make AUTO replay later chunks through SSH.
+        val channel = resolveAdminChannel(operation.channel, node)
+        return CoreUpdateClient(
+        call = { action, fields -> coreUpdateCall(node, channel, operation.operationId, operation.planHash, action, fields) },
+        checkpoint = { response ->
+            val current = loadServerInstallation(operation.operationId) ?: operation
+            saveServerInstallation(current.copy(receipt = response.toString(), serverStage = response.string("stage"),
+                receivedBytes = response["received_bytes"]?.jsonPrimitive?.longOrNull ?: 0,
+                totalBytes = response["size"]?.jsonPrimitive?.longOrNull ?: 0, updatedAt = System.currentTimeMillis()))
+        },
+        cancelled = { updateCancellation[operation.operationId]?.get() == true },
+        beforeSubmit = { saveServerInstallation((loadServerInstallation(operation.operationId) ?: operation).copy(stage = ServerInstallOperation.SUBMITTING, error = null)) },
+        // True document record writes and independent SSH helpers remain serial.
+        uploadWindow = if (coreUpdateHasLiveCarrier(channel, node.id)) 4 else 1,
+        useReliableBatches = coreUpdateHasLiveCarrier(channel, node.id),
+        recoverableUploadFailure = { it is UnknownAdminOperation },
+        binaryUpload = if (context != null && coreUpdateHasLiveCarrier(channel, node.id)) { artifact, plan, deadline ->
+            uploadCoreBinary(node, operation, artifact, plan, deadline)
+        } else null
+        )
+    }
+
+    private fun uploadCoreBinary(node: ServerNode, operation: ServerInstallOperation, artifact: java.io.File,
+                                 plan: kotlinx.serialization.json.JsonObject, deadline: Long): kotlinx.serialization.json.JsonObject {
+        val carrier = NativeProcessSupervisor.activeAdminCarrier
+            ?.takeIf { it.ready && it.serverId == node.id }
+            ?: throw UnknownAdminOperation("Канал передачи сборки потерян")
+        val pinned = getPinnedServerPublicKey(node.id) ?: error("Ключ сервера не закреплён")
+        var opening: AdminEnvelope? = null
+        val started = System.currentTimeMillis()
+        val result = AdminCarrierClient(requireNotNull(context), keyManager).uploadBinary(artifact, plan, pinned, deadline,
+            authorize = { challenge ->
+                val grant = verifiedGrantForServer(node.id)?.takeIf { it.role == AdminRole.OWNER }
+                    ?: throw ConfirmedAdminRejection("Для передачи сборки нужны права владельца")
+                requireCoreUpdatePlanIdentity(plan, node.id, pinned, grant.profileId, operation.operationId, operation.namespace)
+                val manifest = plan.getValue("manifest").jsonObject
+                val fields = buildJsonObject {
+                    put("op", "core-update-stream-open"); put("challenge", challenge.getValue("challenge"))
+                    put("server_id", node.id); put("operation_id", operation.operationId); put("plan_hash", operation.planHash)
+                    put("manifest_hash", manifest.getValue("sha256")); put("size", manifest.getValue("size"))
+                }
+                val envelope = AdminEnvelope(subtype = AdminEnvelope.SUBTYPE_COMMAND, profileId = grant.profileId,
+                    rev = grant.revision, sender = keyManager.getFingerprint(),
+                    payload = Base64.getUrlEncoder().withoutPadding().encodeToString(fields.toString().toByteArray(Charsets.UTF_8)))
+                keyManager.signEnvelope(envelope).also { opening = it }.toJson()
+            },
+            acceptReady = { raw ->
+                val envelope = AdminEnvelope.fromJson(raw) ?: error("Некорректное подтверждение потока")
+                val confirmed = confirmServerResponse(AdminOpResult.Success("Поток открыт", envelope), requireNotNull(opening), node.id)
+                if (confirmed is AdminOpResult.Failure) throw confirmed.throwable ?: UnknownAdminOperation(confirmed.error)
+                val body = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(envelope.payload), Charsets.UTF_8)).jsonObject
+                body.getValue("data").jsonObject
+            },
+            checkpoint = { response ->
+                val current = loadServerInstallation(operation.operationId) ?: operation
+                saveServerInstallation(current.copy(receipt = response.toString(), serverStage = response.string("stage"),
+                    receivedBytes = response.getValue("received_bytes").jsonPrimitive.content.toLong(),
+                    totalBytes = response.getValue("size").jsonPrimitive.content.toLong(), updatedAt = System.currentTimeMillis()))
+            }, cancelled = { updateCancellation[operation.operationId]?.get() == true }, carrier = carrier)
+        context?.let { InstallationLog.append(it, "core_update_stream",
+            "operation_id=${operation.operationId} transport=${carrier.transport} elapsed_ms=${System.currentTimeMillis() - started} durable_bytes=${result.getValue("received_bytes")}") }
+        return result
+    }
+
+    private fun coreUpdateHasLiveCarrier(channel: AdminChannel, serverId: String): Boolean =
+        NativeProcessSupervisor.activeAdminCarrier?.let {
+            it.ready && it.serverId == serverId && (channel == AdminChannel.ACTIVE_TRANSPORT ||
+                channel == AdminChannel.DOCUMENT && it.transport in setOf("vyandex", "yandex"))
+        } == true
+
+    private fun submitCoreUpdate(node: ServerNode, operation: ServerInstallOperation): AdminOpResult = runCatching {
+        require(node.id == operation.serverId && getRole(node.id) == AdminRole.OWNER) { "Нет прав владельца выбранного сервера" }
+        require(operation.stage !in setOf(ServerInstallOperation.FAILED_BEFORE_SUBMIT, ServerInstallOperation.CANCELLED_BEFORE_SUBMIT, ServerInstallOperation.READY)) {
+            "Эта попытка завершена. Для новой попытки подготовьте новый план"
+        }
+        val plan = json.parseToJsonElement(operation.expectedPlan).jsonObject
+        val artifact = coreArtifact(plan.getValue("manifest").jsonObject.string("arch")).first
+        check(updateCancellation[operation.operationId]?.get() != true) { "Подготовка отменена до отправки" }
+        // This checkpoint precedes begin, including a lost begin ACK.
+        coreUpdateOutcome(operation, coreUpdateClient(node, operation).submit(plan, artifact))
+    }.getOrElse { error ->
+        val current = loadServerInstallation(operation.operationId) ?: operation
+        val stage = if (current.stage == ServerInstallOperation.PLANNED) ServerInstallOperation.FAILED_BEFORE_SUBMIT else
+            if (current.stage == ServerInstallOperation.CANCELLED_BEFORE_SUBMIT) current.stage else ServerInstallOperation.UNKNOWN
+        saveServerInstallation(current.copy(stage = stage, error = error.message))
+        AdminOpResult.Failure(error.message ?: "Обновление не подтверждено", error)
+    }
+
+    /** Explicitly continue receiving/prepared after status, using the original plan and ID. */
+    fun continueCoreUpdate(node: ServerNode, operationId: String, channel: AdminChannel? = null): AdminOpResult {
+        var operation = loadServerInstallation(operationId) ?: return AdminOpResult.Failure("Операция не найдена")
+        if (channel != null) {
+            val actual = resolveAdminChannel(channel, node)
+            if (operation.bootstrapManifest != null && actual !in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)) {
+                return AdminOpResult.Failure("Эта переходная попытка обновления использует SSH. Выберите «Прямой SSH к серверу».")
+            }
+            operation = operation.copy(channel = actual)
+            saveServerInstallation(operation)
+        }
+        if (!operation.coordinator) {
+            require(operation.serverStage == "receiving" && operation.serverId == node.id) { "Сначала проверьте состояние передачи" }
+            saveServerInstallation(operation.copy(stage = ServerInstallOperation.PLANNED))
+            return installServer(node,operationId,operation.documentUrl,operation.ownerRecovery)
+        }
+        updateCancellation.remove(operationId)
+        return submitCoreUpdate(node, operation)
+    }
+
+    /** An authorized alternate carrier may inspect and confirm the SAME operation. */
+    fun checkCoreUpdateOverChannel(node: ServerNode, operationId: String, channel: AdminChannel): AdminOpResult {
+        val operation = loadServerInstallation(operationId) ?: return AdminOpResult.Failure("Операция не найдена")
+        require(operation.coordinator && operation.serverId == node.id)
+        saveServerInstallation(operation.copy(channel = channel))
+        return checkCoreUpdate(node, operation.copy(channel = channel))
+    }
+
+    private fun checkCoreUpdate(node: ServerNode, operation: ServerInstallOperation): AdminOpResult = runCatching {
+        updateCancellation.remove(operation.operationId)
+        val plan = json.parseToJsonElement(operation.expectedPlan).jsonObject
+        coreUpdateOutcome(operation, coreUpdateClient(node, operation).reconcile(plan))
+    }.getOrElse { AdminOpResult.Failure(it.message ?: "Не удалось проверить обновление", it) }
+
+    private fun coreUpdateOutcome(operation: ServerInstallOperation, response: kotlinx.serialization.json.JsonObject): AdminOpResult {
+        val current = loadServerInstallation(operation.operationId) ?: operation
+        val serverStage = response.string("stage")
+        val localStage = when (serverStage) {
+            "committed" -> {
+                val target = json.parseToJsonElement(operation.expectedPlan).jsonObject.getValue("manifest").jsonObject
+                val info = response.getValue("runtime").jsonObject
+                require(info.string("build_id") == target.string("sha256") && info.string("version") == target.string("version")) {
+                    "Старая или другая сборка не подтверждает обновление"
+                }
+                getServerNode(operation.serverId)?.let { node -> updateServerNode(node.copy(
+                    coreObservation = CoreObservation(json.decodeFromJsonElement<CoreCompatibility>(info), System.currentTimeMillis()))) }
+                ServerInstallOperation.READY
+            }
+            "rolled_back", "cancelled" -> ServerInstallOperation.ROLLED_BACK
+            "recovery_required" -> ServerInstallOperation.RECOVERY_REQUIRED
+            else -> ServerInstallOperation.UNKNOWN
+        }
+        saveServerInstallation(current.copy(stage = localStage, receipt = response.toString(), serverStage = serverStage,
+            error = if (localStage in setOf(ServerInstallOperation.READY, ServerInstallOperation.ROLLED_BACK)) null else coreUpdateStageLabel(serverStage)))
+        return if (localStage == ServerInstallOperation.READY) AdminOpResult.Success("Новая сборка и выбранный канал управления проверены")
+            else if (localStage == ServerInstallOperation.ROLLED_BACK) AdminOpResult.Success("Попытка обновления завершена; прежнее ядро и настройки сохранены")
+            else AdminOpResult.Failure(coreUpdateStageLabel(serverStage), UnknownAdminOperation(coreUpdateStageLabel(serverStage)))
+    }
 
     private fun reconcileInstallationReceipt(operation: ServerInstallOperation,
                                             response: kotlinx.serialization.json.JsonObject): AdminOpResult {
@@ -832,7 +1188,7 @@ class AdminRepository(
                 "recovery_required" -> ServerInstallOperation.RECOVERY_REQUIRED
                 else -> ServerInstallOperation.UNKNOWN
             }
-            saveServerInstallation(operation.copy(stage = stage, error = "Состояние на сервере: $status",
+            saveServerInstallation(operation.copy(stage = stage, serverStage = field("stage").orEmpty(), error = "Состояние на сервере: $status",
                 updatedAt = System.currentTimeMillis()))
             if (status == "rolled_back") restoreInstallationAccessAfterRollback(operation)
             return if (status == "rolled_back") AdminOpResult.Success("Откат подтверждён; SSH-подключение сохранено")
@@ -1082,11 +1438,13 @@ class AdminRepository(
         if (serverId == null && _serverNodesFlow.value.size > 1) return false
         val grant = verifiedGrantForServer(serverId) ?: return false
         val readOperations = setOf("list", "list-users", "list-devices", "list-assignments", "list-invitations",
-            "get-cluster-snapshot", "list-auth-incidents", "get-auth-session-status", "list-admins")
+            "get-cluster-snapshot", "get-protocol-configurations", "list-auth-incidents", "get-auth-session-status", "list-admins", "get-jazz-room-pool", "get-jazz-access-operation")
         val mutation = operation !in readOperations
+        if (operation == "get-protocol-configurations" && grant.role == AdminRole.VIEWER) return false
+        if (operation == "core-update" && grant.role != AdminRole.OWNER) return false
         if (grant.role == AdminRole.VIEWER && mutation) return false
         if (grant.role == AdminRole.OPERATOR && operation in setOf("revoke", "rotate-key", "grant", "issue-admin-invite", "approve-admin-request",
-                "confirm-owner-transfer", "complete-owner-transfer", "revoke-admin", "renew-admin-grant", "install", "rollback", "delete-service")) return false
+                "confirm-owner-transfer", "complete-owner-transfer", "revoke-admin", "renew-admin-grant", "install", "rollback", "delete-service", "set-jazz-room-policy")) return false
         if (grant.scope.isEmpty() || (serverId ?: grant.serverId)?.let { it in grant.scope || "server:$it" in grant.scope } == true)
             return grant.role in setOf(AdminRole.OWNER, AdminRole.OPERATOR, AdminRole.VIEWER)
         return "*" in grant.scope || operation in grant.scope ||
@@ -1787,16 +2145,20 @@ class AdminRepository(
         hostConfig: SshHostConfig? = null,
         profileIdOverride: String? = null,
         operationIdOverride: String? = null,
-        jitsiToken: String = ""
+        jitsiToken: String = "",
+        channelGroupPlan: ChannelGroupPlan? = null
     ): AdminOpResult {
         val endpointTransport = runCatching { io.github.libreroute.data.TransportType.from(transportType) }.getOrNull()
-        val validDocumentUrl = if (documentUrl.isBlank() && endpointTransport in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi)) {
+        val validDocumentUrl = if (channelGroupPlan != null && transportType == "channel-group") {
+            runCatching { channelGroupPlan.validate() }.isSuccess
+        } else if (documentUrl.isBlank() && endpointTransport in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi)) {
             // Broker/topic are resolved by the server preset; no user-facing URL is needed.
             true
         } else runCatching {
             val parsed = java.net.URI(documentUrl)
             when (endpointTransport) {
                 io.github.libreroute.data.TransportType.mqtt,
+                io.github.libreroute.data.TransportType.jazz,
                 io.github.libreroute.data.TransportType.jitsi ->
                     io.github.libreroute.util.ServiceRouteEndpoint.isValid(endpointTransport!!, documentUrl)
                 else -> parsed.scheme == "https" && parsed.userInfo == null && parsed.port == -1 &&
@@ -1807,7 +2169,7 @@ class AdminRepository(
         if (!validDocumentUrl) {
             return AdminOpResult.Failure("Укажите корректный endpoint выбранного транспорта или выберите серверный preset")
         }
-        if (channel != AdminChannel.DOCUMENT && hostConfig == null) {
+        if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && hostConfig == null) {
             return AdminOpResult.Failure("Параметры SSH-сервера не настроены")
         }
         val serverId = legacyCommandServerId(hostConfig, allowedServerIds)
@@ -1838,6 +2200,10 @@ class AdminRepository(
 
         val command = buildJsonObject {
             put("op", "create")
+            channelGroupPlan?.let { plan ->
+                put("channel_group_plan", json.encodeToJsonElement(plan))
+                put("device_pub", getRecipientDevicePublicKey())
+            }
             serverId?.let { put("server_id", it) }
             put("profile_id", profileId)
             // The worker uses its name as a file/service identifier. Keep the
@@ -1902,8 +2268,7 @@ class AdminRepository(
         )
 
         val sshResult = confirmServerResponse(
-            if (channel == AdminChannel.DOCUMENT) executeDocumentCommand(signed, serverId)
-            else sshClient.executeAdminEnvelope(signed, hostConfig!!, channel), signed, serverId)
+            executeAdministrativeRequest(signed, getServerNode(serverId.orEmpty()) ?: policyServerForLegacy(serverId, hostConfig), channel), signed, serverId)
         if (sshResult is AdminOpResult.Failure) {
             updateCommandStatus(signed.opId,
                 if (sshResult.throwable is ConfirmedAdminRejection) AdminCommandRecord.STATUS_FAILED
@@ -1932,18 +2297,141 @@ class AdminRepository(
         return AdminOpResult.Success("Профиль «${name}» успешно создан", responseEnvelope)
     }
 
+    fun installChannelGroup(node: ServerNode, plan: ChannelGroupPlan, channel: AdminChannel = AdminChannel.AUTO): AdminOpResult {
+        runCatching { plan.validate(); require(plan.lanes.size >= 2) { "Добавьте хотя бы два канала" } }.exceptionOrNull()?.let {
+            return AdminOpResult.Failure(it.message.orEmpty(), it)
+        }
+        if (!canPerform(node.id, "install")) return AdminOpResult.Failure("Недостаточно прав для настройки каналов")
+        checkCoreCompatibility(node, channel, setOf("channel-group-ordered-v1")).exceptionOrNull()?.let {
+            return AdminOpResult.Failure(it.message.orEmpty(), it)
+        }
+        val key = "channel_group_operation_${node.id}"
+        val previous = storage.getString(key, null)?.let { json.decodeFromString<PendingChannelGroup>(it) }
+        if (previous != null && previous.plan != plan && previous.stage in setOf("submitting", "unknown")) {
+            return AdminOpResult.Failure("Сначала завершите предыдущую настройку с теми же ссылками")
+        }
+        if (previous?.plan == plan && previous.stage == "ready" && _managedProfilesFlow.value.any { it.id == previous.profileId && hasMaterializedProtocolTunnel(it) }) {
+            return AdminOpResult.Success("Объединённое подключение уже сохранено")
+        }
+        val op = previous?.takeIf { it.plan == plan && it.stage != "failed" }
+            ?: PendingChannelGroup(plan, "libreroute-group-${UUID.randomUUID().toString().take(8)}", UUID.randomUUID().toString())
+        storage.putString(key, json.encodeToString(op.copy(stage = "submitting")))
+        val result = createManagedProfile(
+            name = "Объединённые каналы — ${node.name}", transportType = "channel-group", sessionNegotiated = false,
+            allowedServerIds = listOf(node.id), allowedProtocols = listOf("channel-group"), channel = channel,
+            hostConfig = node.toSshHostConfig(), profileIdOverride = op.profileId, operationIdOverride = op.operationId,
+            channelGroupPlan = plan
+        )
+        val stage = when (result) {
+            is AdminOpResult.Success -> "ready"
+            is AdminOpResult.Failure -> if (result.throwable is ConfirmedAdminRejection) "failed" else "unknown"
+        }
+        storage.putString(key, json.encodeToString(op.copy(stage = stage)))
+        return result
+    }
+
     /**
      * Materializes the generated route returned in the authenticated create
      * response. The secret is written only through the encrypted tunnel store.
      */
     private fun materializeProvisionedTunnel(profile: ManagedProfile, response: AdminEnvelope) {
-        val ctx = context ?: return
+        val store = customTunnelStore ?: context?.let(::TunnelRepository) ?: return
         val tunnel = provisionedTunnel(profile, response)
-        val store = TunnelRepository(ctx)
-        val existing = store.load().filterNot {
-            it.name == profile.name && it.transportType.equals(profile.transportType, true)
+        upsertRestoredTunnels(store, listOf(tunnel.copy(managedProfileId = profile.id)))
+    }
+
+    /** Reads current settings without replaying create or issuing a new identity. */
+    fun restoreServerProtocolsAutomatically(node: ServerNode, channel: AdminChannel = AdminChannel.AUTO,
+                                          checkCompatibility: Boolean = true): Result<List<ManagedProfile>> {
+        if (!canPerform(node.id, "get-protocol-configurations"))
+            return Result.failure(IllegalStateException("Недостаточно прав для восстановления подключений"))
+        return protocolInventoryCache.read(node.id) { restoreServerProtocolsInternal(node, channel, checkCompatibility) }
+    }
+
+    fun restoreServerProtocols(node: ServerNode, channel: AdminChannel = AdminChannel.AUTO,
+                               checkCompatibility: Boolean = true): Result<List<ManagedProfile>> =
+        protocolInventoryCache.read(node.id, force = true) { restoreServerProtocolsInternal(node, channel, checkCompatibility) }
+
+    private fun restoreServerProtocolsInternal(node: ServerNode, channel: AdminChannel,
+                                               checkCompatibility: Boolean): Result<List<ManagedProfile>> = runCatching {
+        require(canPerform(node.id, "get-protocol-configurations")) { "Недостаточно прав для восстановления подключений" }
+        if (checkCompatibility) checkCoreCompatibility(node, channel, setOf("protocol-config-restore-v1")).getOrThrow()
+        val payload = buildJsonObject {
+            put("op", "get-protocol-configurations"); put("server_id", node.id)
+            put("device_pub", getRecipientDevicePublicKey())
+        }.toString()
+        val routes = executeAdminApiCommand(payload, targetServer = node, channel = channel) { data ->
+            val body = data.jsonObject
+            require(body["server_id"]?.jsonPrimitive?.content == node.id) { "Настройки относятся к другому серверу" }
+            json.decodeFromJsonElement<List<RouteCandidate>>(body.getValue("routes"))
+        }.getOrThrow()
+        require(routes.map { it.profile_instance_id }.distinct().size == routes.size) { "Сервер вернул повторяющиеся профили" }
+        routes.forEach { route ->
+            require(route.server_id == node.id && route.profile_instance_id.isNotBlank() &&
+                route.status == "ready" && route.transport in setOf("vyandex", "mqtt", "jazz", "jitsi", "channel-group") &&
+                route.url.isNotBlank() && route.secret_key.length >= 16) { "Некорректные настройки установленного протокола" }
         }
-        store.save(existing + TunnelLinkParser.ensureLocalKeyFile(ctx, tunnel))
+        val availableRoutes = routes.filter { io.github.libreroute.data.TransportType.isAvailable(it.transport) }
+        val tunnels = availableRoutes.map { route ->
+            routeCandidateToTunnel(route).copy(managedProfileId = route.profile_instance_id)
+        }
+        val store = customTunnelStore ?: context?.let(::TunnelRepository) ?: error("Хранилище подключений недоступно")
+        upsertRestoredTunnels(store, tunnels)
+        val restored = availableRoutes.map { route ->
+            val previous = _managedProfilesFlow.value.firstOrNull { it.id == route.profile_instance_id && it.serverId == node.id }
+            (previous ?: ManagedProfile(id = route.profile_instance_id, name = route.name)).copy(
+                name = route.name, status = ManagedProfile.STATUS_READY, revision = route.revision,
+                serverId = node.id, transportType = route.transport, allowedServerIds = listOf(node.id),
+                allowedProtocols = listOf(route.transport), sessionNegotiated = route.parameters["session_negotiate"] == "true",
+                serverConfigs = mapOf(node.id to ProfileServerConfig(node.id, route.url)), lastCheckTimestamp = System.currentTimeMillis())
+        }
+        val ids = restored.map { it.id }.toSet()
+        saveProfiles(_managedProfilesFlow.value.filterNot { it.serverId == node.id && it.id in ids } + restored)
+        availableRoutes.forEach { route ->
+            latestProtocolInstallation(node.id, route.transport)?.takeIf { it.profileId == route.profile_instance_id }?.let {
+                saveProtocolInstallation(it.copy(stage = ProtocolInstallationOperation.READY, error = null, updatedAt = System.currentTimeMillis()))
+            }
+            attachProtocolToOwnerProfile(node.id, route.transport, route.url)
+        }
+        context?.let { InstallationLog.append(it, "protocol_restore", "server_id=${node.id} restored=${availableRoutes.size}") }
+        restored
+    }
+
+    @Synchronized
+    private fun upsertRestoredTunnels(store: io.github.libreroute.data.TunnelStore, incoming: List<Tunnel>) {
+        val saved = store.load().filter { io.github.libreroute.data.TransportType.isAvailable(it.transportType) }
+        val contexts = syncContexts().associateWith(::managedTunnelIds)
+        val owners = saved.associate { tunnel -> tunnel.id to contexts.filterValues { tunnel.id in it }.keys }
+        val preferredId = NativeProcessSupervisor.activeTunnelId ?: store.getSelectedId()
+        val available = incoming.filter { io.github.libreroute.data.TransportType.isAvailable(it.transportType) }
+        val merged = io.github.libreroute.data.RestoredTunnelMerge.upsert(saved, available, preferredId, owners, store.getSelectedId())
+        val selected = store.getSelectedId()
+        store.save(merged)
+        if (selected != null && merged.none { it.id == selected }) {
+            // The selected duplicate may differ from the currently active one.
+            val old = saved.firstOrNull { it.id == selected }
+            val survivor = merged.firstOrNull {
+                old != null && io.github.libreroute.data.RestoredTunnelMerge.sameRoute(old, it)
+            }
+            (survivor ?: merged.firstOrNull())?.let { store.setSelectedId(it.id) }
+        }
+        // Removed IDs must never remain in an enrollment's ownership marker.
+        val remainingIds = merged.map { it.id }.toSet()
+        contexts.forEach { (prefix, ids) ->
+            val remaining = ids.intersect(remainingIds)
+            if (remaining != ids) {
+                // Route order and managed ID order must remain aligned after migration.
+                val previousRoutes = storage.getString(prefix + KEY_SYNC_ROUTES_JSON, null)?.let {
+                    runCatching { json.decodeFromString<List<RouteCandidate>>(it) }.getOrNull()
+                }
+                if (previousRoutes?.size == ids.size) {
+                    val previousIds = ids.toList()
+                    storage.putString(prefix + KEY_SYNC_ROUTES_JSON, json.encodeToString(
+                        previousRoutes.filterIndexed { index, _ -> previousIds[index] in remaining }))
+                }
+                storage.putString(prefix + KEY_MANAGED_TUNNEL_IDS, remaining.joinToString(","))
+            }
+        }
     }
 
     internal fun provisionedTunnel(profile: ManagedProfile, response: AdminEnvelope): Tunnel {
@@ -1956,15 +2444,19 @@ class AdminRepository(
         val secret = data["secret_key"]?.jsonPrimitive?.content.orEmpty()
         val transport = data["transport"]?.jsonPrimitive?.content.orEmpty().ifBlank { profile.transportType }
         require(endpoint.isNotBlank() && secret.length >= 16 && transport == profile.transportType &&
-            transport in setOf("vyandex", "mqtt", "jitsi")) { "Сервер вернул неполный маршрут" }
+            transport in setOf("vyandex", "mqtt", "jitsi", "jazz", "channel-group")) { "Сервер вернул неполный маршрут" }
         val parameters = data["parameters"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content }.orEmpty()
         val negotiated = parameters["session_negotiate"] == "true"
         return routeCandidateToTunnel(RouteCandidate(
-            route_id = profile.id, name = profile.name, transport = transport,
+            route_id = profile.id, server_id = profile.serverId ?: profile.allowedServerIds.singleOrNull().orEmpty(),
+            name = profile.name, transport = transport,
             url = endpoint, secret_key = secret,
             codec = parameters["codec"] ?: "batched",
             encryption_layout = parameters["encryption_layout"] ?: if (negotiated) "batch" else "packet",
-            parameters = parameters
+            parameters = parameters,
+            channel_group = data["channel_group"]?.takeUnless { it is kotlinx.serialization.json.JsonNull }?.let {
+                json.decodeFromJsonElement<ChannelGroupBinding>(it)
+            }
         ))
     }
 
@@ -1975,6 +2467,7 @@ class AdminRepository(
      * the app after protocol setup without creating a second admin identity.
      */
     fun attachProtocolToOwnerProfile(serverId: String, protocol: String, documentUrl: String = ""): Boolean {
+        if (!io.github.libreroute.data.TransportType.isAvailable(protocol)) return false
         val index = _managedProfilesFlow.value.indexOfFirst {
             it.profileType == ManagedProfile.PROFILE_TYPE_CONTROL &&
                 it.serverId == serverId && it.role == AdminRole.OWNER
@@ -2000,19 +2493,20 @@ class AdminRepository(
 
     /** Stops and revokes every user protocol profile assigned to a server. */
     fun clearServerProtocols(serverId: String, hostConfig: SshHostConfig): AdminOpResult {
+        protocolInventoryCache.invalidate(serverId)
         if (!hasManagePermission()) return AdminOpResult.Failure("Недостаточно прав для очистки протоколов")
         val node = getServerNode(serverId)
             ?: return AdminOpResult.Failure("Сервер не найден; очистка не запускалась")
         val remoteProfiles = listServerManagedProfiles(node).getOrElse {
             return AdminOpResult.Failure("Не удалось проверить протоколы на сервере: ${it.message.orEmpty()}",
                 UnknownAdminOperation(it.message.orEmpty()))
-        }.filter { it.transport in setOf("vyandex", "mqtt", "jitsi") && it.status != "revoked" }
+        }.filter { it.transport in setOf("vyandex", "mqtt", "jitsi", "jazz", "channel-group") && it.status != "revoked" }
         val targets = _managedProfilesFlow.value.filter {
             it.serverId == serverId && it.profileType != ManagedProfile.PROFILE_TYPE_CONTROL && it.status != ManagedProfile.STATUS_REVOKED
         }
         val failures = mutableListOf<String>()
         targets.forEach { profile ->
-            val result = revokeProfile(profile.id, AdminChannel.DIRECT_SSH, hostConfig)
+            val result = revokeProfile(profile.id, AdminChannel.AUTO, hostConfig)
             if (result is AdminOpResult.Failure) failures += "${profile.name}: ${result.error}"
         }
         // Revoke profiles discovered on the server even when the phone lost its
@@ -2026,7 +2520,7 @@ class AdminRepository(
                 serverId = serverId, revision = remote.revision
             )
             saveProfiles(_managedProfilesFlow.value + fake)
-            val result = revokeProfile(remote.profileId, AdminChannel.DIRECT_SSH, hostConfig)
+            val result = revokeProfile(remote.profileId, AdminChannel.AUTO, hostConfig)
             if (result is AdminOpResult.Failure) {
                 failures += "${remote.name}: ${result.error}"
             } else {
@@ -2169,7 +2663,7 @@ class AdminRepository(
         profileId: String,
         recipientPublicKeyBase64: String? = null,
         serverNode: ServerNode? = null,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH
+        channel: AdminChannel = AdminChannel.AUTO
     ): Pair<AdminOpResult, String> {
         if (!hasManagePermission()) {
             return Pair(AdminOpResult.Failure("Недостаточно прав для выдачи профиля. Требуется роль OWNER или OPERATOR."), "")
@@ -2235,7 +2729,7 @@ class AdminRepository(
         )
 
         val sshResult = confirmServerResponse(
-            sshClient.executeAdminEnvelope(signed, targetServer.toSshHostConfig(), channel),
+            executeAdministrativeRequest(signed, targetServer, channel),
             signed,
             targetServer.id
         )
@@ -2407,7 +2901,8 @@ class AdminRepository(
             name = candidate.name,
             transportType = transType.name,
             transportConnPayload = payload,
-            encryptionKey = candidate.secretKey
+            encryptionKey = candidate.secretKey,
+            serverId = candidate.serverId.takeIf { it.isNotBlank() }
         )
 
         if (context != null) {
@@ -2457,7 +2952,7 @@ class AdminRepository(
         channel: AdminChannel,
         hostConfig: SshHostConfig?
     ): AdminOpResult {
-        if (channel != AdminChannel.DOCUMENT && hostConfig == null) {
+        if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && hostConfig == null) {
             return AdminOpResult.Failure("Параметры SSH-сервера не настроены")
         }
         if (!hasManagePermission()) {
@@ -2508,8 +3003,7 @@ class AdminRepository(
         )
 
         val sshResult = confirmServerResponse(
-            if (channel == AdminChannel.DOCUMENT) executeDocumentCommand(signed, serverId)
-            else sshClient.executeAdminEnvelope(signed, hostConfig!!, channel), signed, serverId)
+            executeAdministrativeRequest(signed, getServerNode(serverId.orEmpty()) ?: policyServerForLegacy(serverId, hostConfig), channel), signed, serverId)
         if (sshResult is AdminOpResult.Failure) {
             updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_FAILED, error = sshResult.error)
             return sshResult
@@ -2640,6 +3134,9 @@ class AdminRepository(
         if (response["status"]?.jsonPrimitive?.content != "applied") {
             val reason = response["error"]?.jsonPrimitive?.content?.take(240)
                 ?: "Сервер отклонил команду"
+            if (response["status"]?.jsonPrimitive?.content in setOf("partial", "pending", "unknown")) {
+                return AdminOpResult.Failure(reason, UnknownAdminOperation(reason))
+            }
             return AdminOpResult.Failure(reason, ConfirmedAdminRejection(reason))
         }
         return result
@@ -2657,7 +3154,7 @@ class AdminRepository(
         } else null
         val session = (scopedSession ?: legacySession)
             ?.let { runCatching { json.decodeFromString<DocumentSessionKeys>(it) }.getOrNull() }
-            ?: return AdminOpResult.Failure("Ключи административного сеанса не найдены")
+            ?: return executeCarrierCommand(request, serverId, documentOnly = true)
         val pinned = getPinnedServerPublicKey(serverId)
             ?: return AdminOpResult.Failure("Ключ сервера не закреплён")
         val response = runCatching {
@@ -2667,15 +3164,68 @@ class AdminRepository(
         return AdminOpResult.Success("Сервер ответил через документ", response)
     }
 
-    /** Retry the SAME signed operation over the independent saved SSH channel. */
+    private fun executeCarrierCommand(request: AdminEnvelope, serverId: String?, documentOnly: Boolean = false,
+                                      reliableStream: Boolean = false): AdminOpResult = runCatching {
+        val appContext = context ?: error("Android context unavailable")
+        val pinned = getPinnedServerPublicKey(serverId) ?: error("Ключ сервера не закреплён")
+        val carrier = NativeProcessSupervisor.activeAdminCarrier ?: error("Сначала подключите маршрут этого сервера на главном экране")
+        require(carrier.serverId == null || carrier.serverId == serverId) { "Текущее подключение относится к другому серверу" }
+        val response = AdminCarrierClient(appContext, keyManager).execute(request, pinned, documentOnly, reliableStream, carrier)
+        val confirmed = confirmServerResponse(AdminOpResult.Success("Сервер ответил через текущее подключение", response), request, serverId)
+        if (confirmed is AdminOpResult.Success && serverId != null && carrier.bindingKey != null && carrier.serverId != serverId) {
+            storage.putString("admin_carrier_server_" + carrier.bindingKey, serverId)
+            NativeProcessSupervisor.bindAdminCarrier(carrier, serverId)
+        }
+        confirmed
+    }.getOrElse { AdminOpResult.Failure(it.message ?: "Канал управления не подтвердил запрос") }
+
+    fun resolveAdminChannel(channel: AdminChannel, node: ServerNode?): AdminChannel {
+        if (channel != AdminChannel.AUTO) return channel
+        val carrier = NativeProcessSupervisor.activeAdminCarrier
+        val grant = verifiedGrantForServer(node?.id)
+        val session = grant?.let {
+            storage.getString(documentSessionKey(it.profileId, node?.id), null)
+                ?: node?.id?.let { id -> storage.getString(KEY_DOCUMENT_SESSION_PREFIX + id, null) }
+        }?.let { runCatching { json.decodeFromString<DocumentSessionKeys>(it) }.getOrNull() }
+        return automaticAdminChannel(node?.id, grant != null, carrier?.serverId,
+            carrier?.ready == true && adminConnections[adminConnectionKey(node?.id.orEmpty(), AdminChannel.ACTIVE_TRANSPORT, carrier)] != false,
+            !node?.host.isNullOrBlank(), session != null && adminConnections["${node?.id}:${AdminChannel.DOCUMENT}"] != false)
+    }
+
+    /** Route identity comes from private metadata, never from a display name. */
+    fun adminCarrierBinding(tunnelId: Long?): Pair<String?, String?> {
+        val store = customTunnelStore ?: context?.let(::TunnelRepository) ?: return null to null
+        val tunnel = store.load().firstOrNull { it.id == tunnelId } ?: return null to null
+        val raw = tunnel.transportType + "\u0000" + tunnel.encryptionKey.orEmpty() + "\u0000" + json.encodeToString(tunnel.transportConnPayload)
+        val binding = java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return (tunnel.serverId ?: storage.getString("admin_carrier_server_" + binding, null)) to binding
+    }
+
+    /** Only a read is automatic when a newly connected carrier is ready. */
+    fun connectAdminCarrier(carrier: NativeProcessSupervisor.AdminCarrier) {
+        val serverId = carrier.serverId ?: return
+        val node = getServerNode(serverId) ?: return
+        if (verifiedGrantForServer(serverId) == null || NativeProcessSupervisor.activeAdminCarrier != carrier) return
+        readReadyAdminCarrier(isCurrent = {
+            NativeProcessSupervisor.activeAdminCarrier == carrier && verifiedGrantForServer(serverId) != null
+        }, read = { getClusterSnapshot(AdminChannel.ACTIVE_TRANSPORT, node) })?.onSuccess { snapshot ->
+            if (snapshot.coreInfo?.supports(setOf("protocol-config-restore-v1")) == true &&
+                canPerform(serverId, "get-protocol-configurations")) {
+                restoreServerProtocolsAutomatically(node, AdminChannel.ACTIVE_TRANSPORT, checkCompatibility = false)
+            }
+        }
+    }
+
+    /** Failed mutations return to reconciliation without resending through another carrier. */
     private fun executeAdministrativeRequest(request: AdminEnvelope, node: ServerNode?, channel: AdminChannel): AdminOpResult {
+        if (channel == AdminChannel.AUTO) return executeAdministrativeRequest(request, node, resolveAdminChannel(channel, node))
+        if (channel == AdminChannel.ACTIVE_TRANSPORT) return executeCarrierCommand(request, node?.id)
         if (channel != AdminChannel.DOCUMENT) {
             return node?.let { sshClient.executeAdminEnvelope(request, it.toSshHostConfig(), channel) }
                 ?: AdminOpResult.Failure("Выберите SSH-сервер")
         }
-        val document = executeDocumentCommand(request, node?.id)
-        if (document is AdminOpResult.Success || node == null || node.host.isBlank() || node.hostPublicKey.isNullOrBlank()) return document
-        return sshClient.executeAdminEnvelope(request, node.toSshHostConfig(), AdminChannel.DIRECT_SSH)
+        return executeDocumentCommand(request, node?.id)
     }
 
     /** Reads only the server's confirmed managed profiles. Local VPN profiles are separate. */
@@ -2694,7 +3244,7 @@ class AdminRepository(
             payload = payload
         ))
         val result = confirmServerResponse(
-            executeAdministrativeRequest(request, serverNode, AdminChannel.DOCUMENT), request, serverNode?.id
+            executeAdministrativeRequest(request, serverNode, AdminChannel.AUTO), request, serverNode?.id
         )
         val response = (result as? AdminOpResult.Success)?.envelope
             ?: error((result as? AdminOpResult.Failure)?.error ?: "Сервер не вернул список")
@@ -2714,6 +3264,7 @@ class AdminRepository(
         }
 
     private val policyMutationOps = setOf(
+        "set-jazz-room-policy", "prepare-jazz-access", "drain-jazz-room", "replace-jazz-room",
         "create", "update", "suspend", "resume", "revoke", "rotate-key", "grant", "issue",
         "create-user", "update-user", "suspend-user", "register-device", "revoke-device",
         "assign-profile", "revoke-assignment", "issue-invitation", "issue-enrollment",
@@ -2738,6 +3289,10 @@ class AdminRepository(
         targetServer: ServerNode? = null,
         channel: AdminChannel = AdminChannel.DOCUMENT,
         onResponse: ((AdminEnvelope) -> Unit)? = null,
+        updateBootstrap: SSHUpdateBootstrap? = null,
+
+        recordInHistory: Boolean = true,
+	    durableKey: String? = null,
         dataDecoder: (kotlinx.serialization.json.JsonElement) -> T
     ): Result<T> = runCatching {
         val server = targetServer ?: _serverNodesFlow.value.singleOrNull()
@@ -2745,33 +3300,48 @@ class AdminRepository(
         if (serverId == null && _serverNodesFlow.value.size > 1) {
             error("Выберите целевой сервер для административной команды")
         }
-        if (channel != AdminChannel.DOCUMENT && targetServer == null) {
+        if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && targetServer == null) {
             error("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды")
         }
         val activeGrant = verifiedGrantForServer(serverId)
             ?: error("Нет действующего допуска администратора")
         val operation = json.parseToJsonElement(commandPayloadJson).jsonObject["op"]?.jsonPrimitive?.content
             ?: error("Операция не указана")
-        require(canPerform(serverId, operation)) { "Операция $operation не разрешена допуском выбранного сервера" }
+        val updateAction = if (operation == "core-update") json.parseToJsonElement(commandPayloadJson).jsonObject["core_update"]?.jsonObject?.string("action") else null
+        val updateRead = updateAction in setOf("status", "upload_status")
+        require(if (updateRead) activeGrant.role in setOf(AdminRole.OWNER, AdminRole.OPERATOR, AdminRole.VIEWER) else canPerform(serverId, operation)) {
+            "Операция $operation не разрешена допуском выбранного сервера"
+        }
+        val readOnly = operation in setOf("list", "list-users", "list-devices", "list-assignments", "list-invitations", "get-cluster-snapshot", "get-protocol-configurations", "list-auth-incidents", "get-auth-session-status", "list-admins", "get-jazz-room-pool", "get-jazz-access-operation") || updateRead || updateAction == "plan"
+        if (!readOnly && updateAction == null && serverId != null) serverMutationBlockReason(serverId, channel)?.let { error(it) }
         val adminProfileId = targetProfileId ?: activeGrant.profileId
 
 
         val revision = activeGrant.revision
+        val pending = durableKey?.let { storage.getString(it, null)?.let(AdminEnvelope::fromJson) }
+        val actualCommand = pending?.let { String(Base64.getUrlDecoder().decode(it.payload), Charsets.UTF_8) } ?: commandPayloadJson
+        if (operation == "issue-invitation") {
+            val sentFormat = runCatching {
+                json.parseToJsonElement(actualCommand).jsonObject["config_format"]?.jsonPrimitive?.content.orEmpty()
+            }.getOrDefault("")
+            context?.let { InstallationLog.append(it, "compact-jazz-command", "format=$sentFormat pending=${pending != null}") }
+        }
         val payload = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(preparePolicyCommand(commandPayloadJson, channel, targetServer).toByteArray(Charsets.UTF_8))
+            .encodeToString(preparePolicyCommand(actualCommand, channel, targetServer).toByteArray(Charsets.UTF_8))
         val envelope = AdminEnvelope(
             ver = 1,
             type = AdminEnvelope.TYPE_ADMIN,
             subtype = AdminEnvelope.SUBTYPE_COMMAND,
             profileId = adminProfileId,
-            opId = UUID.randomUUID().toString(),
+            opId = pending?.opId ?: UUID.randomUUID().toString(),
             rev = revision,
             sender = keyManager.getFingerprint(),
             payload = payload
         )
-        val signed = keyManager.signEnvelope(envelope)
+        val signed = pending?.takeIf { it.exp > currentTimeSeconds() }
+            ?: keyManager.signEnvelope(envelope).also { if (durableKey != null) storage.putStringCommitted(durableKey, it.toJson()) }
 
-        recordCommand(
+        if (recordInHistory) recordCommand(
             AdminCommandRecord(
                 opId = signed.opId,
                 targetProfileId = adminProfileId,
@@ -2786,23 +3356,41 @@ class AdminRepository(
             )
         )
 
-        val rawResult = executeAdministrativeRequest(signed, server, channel)
+        val actualChannel = resolveAdminChannel(channel, server)
+        // Keep late replies and failures scoped to the route that sent the request.
+        val connectionKey = serverId?.let { adminConnectionKey(it, actualChannel) }
+        context?.let { InstallationLog.append(it, "admin_request",
+            "operation=$operation operation_id=${signed.opId} server_id=${serverId.orEmpty()} channel=$actualChannel") }
+        val rawResult = if (updateBootstrap != null && actualChannel in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)) {
+            require(operation == "core-update" && server != null) { "SSH-мост разрешён только для обновления ядра" }
+            sshClient.executeAdminEnvelope(signed, server.toSshHostConfig(), actualChannel, updateBootstrap)
+        } else if (updateAction == "put_batch") {
+            if (serverId == null || !coreUpdateHasLiveCarrier(actualChannel, serverId)) {
+                throw UnknownAdminOperation("Канал передачи сборки отключён. Восстанавливаем сохранённый прогресс")
+            }
+            executeCarrierCommand(signed, serverId, documentOnly = actualChannel == AdminChannel.DOCUMENT, reliableStream = true)
+        } else executeAdministrativeRequest(signed, server, actualChannel)
 
         val result = confirmServerResponse(rawResult, signed, serverId)
+        context?.let { InstallationLog.append(it, "admin_result",
+            "operation=$operation operation_id=${signed.opId} channel=$actualChannel result=${result.javaClass.simpleName} failure_type=${(result as? AdminOpResult.Failure)?.throwable?.javaClass?.simpleName.orEmpty()}") }
+        if (connectionKey != null) adminConnections[connectionKey] = result is AdminOpResult.Success || (result as? AdminOpResult.Failure)?.throwable is ConfirmedAdminRejection
         if (result is AdminOpResult.Failure) {
-            updateCommandStatus(signed.opId, if (result.throwable is ConfirmedAdminRejection)
+            if (durableKey != null && result.throwable is ConfirmedAdminRejection) storage.remove(durableKey)
+            if (recordInHistory) updateCommandStatus(signed.opId, if (result.throwable is ConfirmedAdminRejection)
                 AdminCommandRecord.STATUS_FAILED else AdminCommandRecord.STATUS_UNKNOWN, error = result.error)
             throw result.throwable ?: UnknownAdminOperation(result.error)
         }
         val respEnvelope = (result as AdminOpResult.Success).envelope
             ?: error("Сервер не вернул конверт ответа")
-        updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, respEnvelope.rev)
+        if (recordInHistory) updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, respEnvelope.rev)
 
         val body = json.parseToJsonElement(
             String(Base64.getUrlDecoder().decode(respEnvelope.payload), Charsets.UTF_8)
         ).jsonObject
         val data = body["data"] ?: error(body["error"]?.jsonPrimitive?.content ?: "Сервер вернул пустой ответ")
         val decoded = dataDecoder(data)
+        if (durableKey != null) storage.remove(durableKey)
         onResponse?.invoke(respEnvelope)
         decoded
     }
@@ -2813,6 +3401,40 @@ class AdminRepository(
             json.decodeFromJsonElement<List<AdminUser>>(data)
         }
     }
+
+    fun getJazzRoomPool(node: ServerNode): Result<JazzPoolProjection> = executeAdminApiCommand(
+        buildJsonObject { put("op", "get-jazz-room-pool"); put("server_id", node.id) }.toString(), targetServer = node
+    ) { data -> json.decodeFromJsonElement<JazzPoolProjection>(data).also { pool ->
+        val policyKey = "jazz_policy_request_${node.id}"
+        val pending = storage.getString(policyKey, null)?.let(AdminEnvelope::fromJson)
+        pool.operations.filter { it.state == "applied" }.forEach { op ->
+            if (op.operation_id == pending?.opId) storage.remove(policyKey)
+            if (op.result_resource_id.isNotBlank()) {
+                val roomKey = "jazz_room_request_${node.id}_${op.result_resource_id}"
+                if (storage.getString(roomKey, null)?.let(AdminEnvelope::fromJson)?.opId == op.operation_id) storage.remove(roomKey)
+            }
+        }
+    } }
+
+    fun reconcileJazzOperation(node: ServerNode, operation: JazzRoomOperation): Result<JazzPoolProjection> = runCatching {
+        executeAdminApiCommand(
+            buildJsonObject { put("op", "get-jazz-access-operation"); put("server_id", node.id); put("operation_id", operation.operation_id) }.toString(), targetServer = node
+        ) { json.decodeFromJsonElement<JazzRoomOperation>(it) }.getOrThrow()
+        getJazzRoomPool(node).getOrThrow()
+    }
+
+    fun setJazzRoomPolicy(node: ServerNode, policy: JazzRoomPolicy): Result<JazzPoolProjection> = executeAdminApiCommand(
+        buildJsonObject {
+            put("op", "set-jazz-room-policy"); put("server_id", node.id)
+            put("expected_revision", policy.desired_revision)
+            put("jazz_policy", json.encodeToJsonElement(policy))
+        }.toString(), targetServer = node, durableKey = "jazz_policy_request_${node.id}"
+    ) { json.decodeFromJsonElement<JazzPoolProjection>(it) }
+
+    fun changeJazzRoom(node: ServerNode, room: JazzRoomView, replace: Boolean): Result<JazzPoolProjection> = executeAdminApiCommand(
+        buildJsonObject { put("op", if (replace) "replace-jazz-room" else "drain-jazz-room"); put("server_id", node.id); put("resource_id", room.resource_id) }.toString(),
+        targetServer = node, durableKey = "jazz_room_request_${node.id}_${room.resource_id}"
+    ) { json.decodeFromJsonElement<JazzPoolProjection>(it) }
 
     fun createUser(name: String, channel: AdminChannel = AdminChannel.DOCUMENT, serverNode: ServerNode? = null): Result<AdminUser> {
         val payload = json.encodeToString(CreateUserPayload(name = name.trim()))
@@ -2923,7 +3545,8 @@ class AdminRepository(
                 parameters = parameters
             )
         )
-        return executeAdminApiCommand(payload, targetServer = serverNode, channel = channel) { data ->
+        val durableKey = if (transport == "jazz" && documentUrl.isNullOrBlank()) "jazz_assignment_request_${serverNode?.id ?: serverId}_${userId}_${deviceId}" else null
+        return executeAdminApiCommand(payload, targetServer = serverNode, channel = channel, durableKey = durableKey) { data ->
             json.decodeFromJsonElement<AdminAssignment>(data)
         }
     }
@@ -2953,11 +3576,11 @@ class AdminRepository(
         val payload = json.encodeToString(GetClusterSnapshotPayload())
         var receipt: AdminEnvelope? = null
         val res = executeAdminApiCommand(payload, targetServer = target, channel = channel, onResponse = { receipt = it }) { data ->
-            val wire = data.jsonObject
+            val wire = clusterSnapshotObject(data)
             require(wire["snapshot_hash"]?.jsonPrimitive?.content == computeClusterSnapshotHash(wire)) {
                 "Контрольная сумма снимка кластера не совпадает с ответом сервера"
             }
-            json.decodeFromJsonElement<AdminClusterSnapshot>(data)
+            json.decodeFromJsonElement<AdminClusterSnapshot>(wire)
         }
         return res.mapCatching { snapshot ->
             val expectedAuthority = getPinnedServerPublicKey(target?.id)
@@ -2977,14 +3600,24 @@ class AdminRepository(
                 updateServerNode(node.copy(coreObservation = CoreObservation(snapshot.coreInfo, System.currentTimeMillis())))
             }
         }.onFailure { error ->
+            context?.let { InstallationLog.append(it, "cluster-snapshot-failed", error.message.orEmpty()) }
             target?.id?.let(::getServerNode)?.let { node ->
                 updateServerNode(node.copy(coreObservation = node.coreObservation.copy(error = error.message ?: "Проверка ядра не завершена")))
             }
         }
     }
 
-    fun refreshServerCore(node: ServerNode): Result<CoreCompatibility?> =
-        getClusterSnapshot(AdminChannel.DIRECT_SSH, node).map { it.coreInfo }
+    fun refreshServerCore(node: ServerNode, channel: AdminChannel = AdminChannel.AUTO): Result<CoreCompatibility?> =
+        getClusterSnapshot(channel, node).map { it.coreInfo }
+
+    /** Accept an object or a single-object wrapper; verify the signed receipt and hash as usual. */
+    private fun clusterSnapshotObject(data: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonObject =
+        when (data) {
+            is kotlinx.serialization.json.JsonObject -> data
+            is kotlinx.serialization.json.JsonArray -> data.singleOrNull() as? kotlinx.serialization.json.JsonObject
+                ?: error("Сервер вернул некорректный снимок кластера")
+            else -> error("Сервер вернул некорректный снимок кластера")
+        }
 
     /** Offline display only: verify the saved signature/hash, without granting any current authority. */
     fun cachedClusterSnapshot(serverId: String?): AdminClusterSnapshot? = runCatching {
@@ -2995,7 +3628,7 @@ class AdminRepository(
             keyManager.verifyServerResponse(receipt, key, key))
         val payload = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(receipt.payload), Charsets.UTF_8)).jsonObject
         require(payload["op_id"]?.jsonPrimitive?.content == receipt.opId && payload["status"]?.jsonPrimitive?.content == "applied")
-        val data = payload.getValue("data").jsonObject
+        val data = clusterSnapshotObject(payload.getValue("data"))
         require(data["snapshot_hash"]?.jsonPrimitive?.content == computeClusterSnapshotHash(data))
         json.decodeFromJsonElement<AdminClusterSnapshot>(data).also { require(it.authorityId == key) }
     }.getOrNull()
@@ -3013,7 +3646,7 @@ class AdminRepository(
     fun beginAuthSession(
         targetId: String,
         profileId: String,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH,
+        channel: AdminChannel = AdminChannel.AUTO,
         serverNode: ServerNode? = null,
         documentUrl: String = ""
     ): Result<AuthSession> {
@@ -3035,7 +3668,7 @@ class AdminRepository(
 
     fun getAuthSessionStatus(
         authSessionId: String,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH,
+        channel: AdminChannel = AdminChannel.AUTO,
         serverNode: ServerNode? = null
     ): Result<AuthSession> {
         val payload = json.encodeToString(GetAuthSessionStatusPayload(authSessionId = authSessionId))
@@ -3048,7 +3681,7 @@ class AdminRepository(
         authSessionId: String,
         serverPub: String,
         bundle: AuthBundlePlaintext,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH,
+        channel: AdminChannel = AdminChannel.AUTO,
         serverNode: ServerNode? = null
     ): Result<Unit> {
         val bundleJson = json.encodeToString(bundle)
@@ -3073,7 +3706,7 @@ class AdminRepository(
 
     fun listAuthIncidents(
         profileId: String? = null,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH,
+        channel: AdminChannel = AdminChannel.AUTO,
         serverNode: ServerNode? = null
     ): Result<List<AuthIncident>> {
         val payload = json.encodeToString(ListAuthIncidentsPayload(profileId = profileId))
@@ -3084,7 +3717,7 @@ class AdminRepository(
 
     fun ackAuthIncident(
         incidentId: String,
-        channel: AdminChannel = AdminChannel.DIRECT_SSH,
+        channel: AdminChannel = AdminChannel.AUTO,
         serverNode: ServerNode? = null
     ): Result<Unit> {
         val payload = json.encodeToString(AckAuthIncidentPayload(incidentId = incidentId))
@@ -3095,13 +3728,27 @@ class AdminRepository(
 
     fun issueBootstrapInvitation(userId: String, routes: List<EnrollmentRoute>, channel: AdminChannel,
                                  serverNode: ServerNode?): Result<String> = runCatching {
+        routes.forEach(EnrollmentRoute::validateGroupTemplate)
         val payload = buildJsonObject {
             put("op", "issue-enrollment"); put("user_id", userId)
             put("enrollment_routes", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(EnrollmentRoute.serializer()), routes))
         }.toString()
+        val durableKey = when {
+            routes.any { it.transport == "channel-group" } -> "group_enrollment_request_${serverNode?.id ?: "local"}_${userId}"
+            routes.any { it.allocation_mode == "automatic" && it.transport == "jazz" } -> "jazz_enrollment_request_${serverNode?.id ?: "local"}_${userId}"
+            else -> null
+        }
+        if (durableKey != null && routes.any { it.transport == "channel-group" }) {
+            storage.getString(durableKey, null)?.let(AdminEnvelope::fromJson)?.let { pending ->
+                val previous = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(pending.payload), Charsets.UTF_8)).jsonObject
+                require(previous["enrollment_routes"] == json.parseToJsonElement(payload).jsonObject["enrollment_routes"]) {
+                    "Результат предыдущего приглашения ещё не подтверждён. Повторите с теми же ссылками"
+                }
+            }
+        }
         var signedResponse: AdminEnvelope? = null
         executeAdminApiCommand(payload, targetServer = serverNode, channel = channel,
-            onResponse = { signedResponse = it }) { Unit }.getOrThrow()
+            onResponse = { signedResponse = it }, durableKey = durableKey) { Unit }.getOrThrow()
         BootstrapInvitation.toLink(signedResponse ?: error("Signed enrollment response missing"))
     }
 
@@ -3122,7 +3769,7 @@ class AdminRepository(
         val candidate = ServerIssuedInvitation(crypto, keyManager).verifyCandidate(ServerIssuedInvitation.toLink(response), invitation.serverPublicKey)
         require(candidate.deviceId == crypto.publicKeyHashHex() && candidate.routes.isNotEmpty()) { "Enrollment package recipient mismatch" }
         val bound = candidate.copy(profileId = invitation.profileId, documentUrl = invitation.documentUrl, secretKey = "")
-        val tunnels = bound.routes.map { routeCandidateToTunnel(it, bound.name) }
+        val tunnels = prepareCandidateTunnels(bound)
         val checkpoint = ClientRedemptionCheckpoint(invitationHash(link), request.toJson(), invitation.serverPublicKey,
             response.toJson(), bound, tunnels)
         saveRedemptionCheckpoint(checkpoint)
@@ -3216,7 +3863,7 @@ class AdminRepository(
         if (serverNode == null && _serverNodesFlow.value.size > 1) {
             return Pair(AdminOpResult.Failure("Выберите целевой сервер для выдачи приглашения"), "")
         }
-        if (channel != AdminChannel.DOCUMENT && serverNode == null) {
+        if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && serverNode == null) {
             return Pair(AdminOpResult.Failure("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды"), "")
         }
         val activeGrant = verifiedGrantForServer(serverNode?.id)
@@ -3252,13 +3899,7 @@ class AdminRepository(
             )
         )
 
-        val rawResult = if (channel == AdminChannel.DOCUMENT) {
-            executeDocumentCommand(signed, serverNode?.id)
-        } else {
-            val server = serverNode
-                ?: return Pair(AdminOpResult.Failure("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды"), "")
-            sshClient.executeAdminEnvelope(signed, server.toSshHostConfig(), channel)
-        }
+        val rawResult = executeAdministrativeRequest(signed, serverNode, channel)
 
         val result = confirmServerResponse(rawResult, signed, serverNode?.id)
         if (result is AdminOpResult.Failure) {
@@ -3279,6 +3920,7 @@ class AdminRepository(
         invitationLink: String,
         serverNode: ServerNode? = null
     ): Pair<AdminOpResult, Tunnel?> {
+        if (invitationLink.startsWith(CompactRoute.PREFIX)) return importCompactRoute(invitationLink)
         if (invitationLink.startsWith(BootstrapInvitation.PREFIX)) return redeemBootstrapInvitation(invitationLink)
         val serverPub = serverNode?.let { getPinnedServerPublicKey(it.id) } ?: getPinnedServerPublicKey()
         return redeemInvitationViaDocument(invitationLink, serverPub)
@@ -3347,7 +3989,9 @@ class AdminRepository(
                                           trustedKey: String, receiptEnv: AdminEnvelope,
                                           preparedTunnels: List<Tunnel>? = null): Pair<AdminOpResult, Tunnel?> {
         // 5. Convert verified candidate to Tunnels
-        val tunnels = preparedTunnels ?: prepareCandidateTunnels(candidate)
+        val tunnels = (preparedTunnels ?: prepareCandidateTunnels(candidate))
+            .filter { io.github.libreroute.data.TransportType.isAvailable(it.transportType) }
+        if (tunnels.isEmpty()) return Pair(AdminOpResult.Failure("В приглашении нет доступных протоколов"), null)
         _lastRedeemedTunnels = tunnels
         val primaryTunnel = tunnels.first()
 
@@ -3369,7 +4013,8 @@ class AdminRepository(
 
     private fun prepareCandidateTunnels(candidate: VerifiedInvitationCandidate): List<Tunnel> =
         if (candidate.routes.isNotEmpty()) {
-            candidate.routes.map { routeCandidateToTunnel(it, candidate.name) }
+            candidate.routes.filter { io.github.libreroute.data.TransportType.isAvailable(it.transport) }
+                .map { routeCandidateToTunnel(it, candidate.name) }
         } else {
             val fallbackRoute = RouteCandidate(
                 route_id = candidate.profileId,
@@ -3412,7 +4057,8 @@ class AdminRepository(
             name = candidate.name,
             transportType = transType.name,
             transportConnPayload = payload,
-            encryptionKey = candidate.secretKey
+            encryptionKey = candidate.secretKey,
+            serverId = candidate.serverId.takeIf { it.isNotBlank() }
         )
 
         TunnelLinkParser.ensureLocalKeyFile(appContext, tunnel)
@@ -3454,6 +4100,7 @@ class AdminRepository(
         storage.putString(KEY_MANAGED_PROFILES, json.encodeToString(profiles))
     }
 
+    @Synchronized
     fun recordCommand(record: AdminCommandRecord) {
         val list = _commandHistoryFlow.value.toMutableList()
         list.add(0, record)
@@ -3464,6 +4111,7 @@ class AdminRepository(
         storage.putString(KEY_COMMAND_HISTORY, json.encodeToString(list))
     }
 
+    @Synchronized
     fun updateCommandStatus(
         opId: String,
         status: String,
@@ -3486,10 +4134,82 @@ class AdminRepository(
     private var _lastRedeemedTunnels: List<Tunnel> = emptyList()
     fun getLastRedeemedTunnels(): List<Tunnel> = _lastRedeemedTunnels
 
+    /** Creates a separate Jazz identity and returns one compact protocol string. */
+    fun issuePortableJazzRoute(userId: String, serverId: String, channel: AdminChannel, server: ServerNode?): Result<String> = runCatching {
+        val compatibility = getClusterSnapshot(channel, server).getOrThrow().coreInfo
+        val compactRouteSupported = compatibility?.let {
+            it.capabilities.contains("compact-route-v2") ||
+                (it.apiRevision >= 1 && Regex("[0-9a-f]{64}").matches(it.buildId) &&
+                    compareCoreVersions(it.version, "1.2.25")?.let { cmp -> cmp >= 0 } == true)
+        } == true
+        require(compactRouteSupported) {
+            "Обновите ядро VDS до 1.2.25 для выдачи Jazz без документа (получена версия ${compatibility?.version ?: "неизвестна"})"
+        }
+        val key = "portable_jazz_${serverId}_$userId"
+        val identityStore = object : InvitationStateStore {
+            override fun get(name: String) = storage.getString("${key}_$name", null)
+            override fun put(name: String, value: String) = storage.putStringCommitted("${key}_$name", value)
+        }
+        val identity = RecipientInvitationCrypto(identityStore)
+        val publicKey = identity.getOrCreatePublicKeyBase64()
+        val device = listDevices(userId, channel, server).getOrThrow().firstOrNull { it.publicKey == publicKey }
+            ?: registerDevice(userId, publicKey, channel, server).getOrThrow()
+        val assignment = listAssignments(userId, device.id, channel, server).getOrThrow().firstOrNull {
+            it.serverId == serverId && it.transport == "jazz" && it.status in setOf("ready", "active", "invited")
+        } ?: assignProfile(userId, device.id, serverId, "jazz", channel = channel, serverNode = server).getOrThrow()
+        val payload = buildJsonObject {
+            put("op", "issue-invitation"); put("assignment_id", assignment.id); put("config_format", "compact-route-v2")
+        }.toString()
+        val encoded = executeAdminApiCommand(payload, targetServer = server, channel = channel,
+            // Version the durable key so an interrupted pre-v2 command can never be replayed.
+            durableKey = "compact_issue_v2_${serverId}_${assignment.id}") { data ->
+            data.jsonObject["configuration"]?.jsonPrimitive?.content ?: error("Сервер не вернул строку настроек")
+        }.getOrThrow()
+        val link = CompactRoute.toLink(encoded, identity.privateKeyForNativePipe(identity.publicKeyHashHex()))
+        CompactRoute.parse(link, currentTimeSeconds()) { getPinnedServerPublicKey(it) }
+        storage.putStringCommitted("${key}_last", link)
+        link
+    }
+
+    private fun importCompactRoute(link: String): Pair<AdminOpResult, Tunnel?> = try {
+        val candidate = CompactRoute.parse(link, currentTimeSeconds()) { getPinnedServerPublicKey(it) }
+        val binding = candidate.route.pair_channel ?: error("В строке отсутствует привязка Jazz")
+        candidate.privateKey?.let { encoded ->
+            RecipientInvitationCrypto(ScopedInvitationStateStore(recipientIdentityStorage, binding.device_fingerprint))
+                .importIdentity(encoded, binding.device_public_key)
+        }
+        val identity = routeIdentity(recipientIdentityStorage, binding.device_fingerprint)
+        binding.validate(binding.server_id, identity.publicKeyHashHex(), identity.getOrCreatePublicKeyBase64())
+        val store = getTunnelStore() ?: error("Хранилище маршрутов недоступно")
+        val existing = store.load()
+        val tunnel = routeCandidateToTunnel(candidate.route)
+        store.save(existing.filter { it.id != tunnel.id } + tunnel)
+        setPinnedServerPublicKey(candidate.serverKey, binding.server_id)
+        _lastRedeemedTunnels = listOf(tunnel)
+        Logx.i(TAG, "Импортирована компактная конфигурация одного протокола: jazz")
+        Pair(AdminOpResult.Success("Настройки Jazz импортированы"), tunnel)
+    } catch (e: Exception) {
+        val safe = e.message.orEmpty().replace(Regex("(?i)(secret|password|token|key)[^, ]*"), "[скрыто]")
+        Logx.e(TAG, "Импорт компактной конфигурации Jazz не выполнен: $safe")
+        Pair(AdminOpResult.Failure(e.message ?: "Некорректная строка настроек Jazz", e), null)
+    }
+
     fun routeCandidateToTunnel(route: RouteCandidate, fallbackName: String = ""): Tunnel {
+	    route.channel_group?.let { group ->
+            require(route.transport == "channel-group" && route.pair_channel == null && route.url == group.endpoint &&
+                route.secret_key.matches(Regex("[0-9a-f]{64}")) && route.codec == "batched") { "Некорректная конфигурация объединённых каналов" }
+            val crypto = routeIdentity(recipientIdentityStorage, group.lanes.first().binding.device_fingerprint)
+            group.validate(route.server_id, crypto.publicKeyHashHex(), crypto.getOrCreatePublicKeyBase64())
+        }
+        require(route.transport != "channel-group" || route.channel_group != null) { "Отсутствует выданная конфигурация каналов" }
+	    route.pair_channel?.let { binding ->
+            require(route.transport == "jazz" && route.secret_key.matches(Regex("[0-9a-f]{64}"))) { "Некорректная конфигурация Jazz V2" }
+            val crypto = routeIdentity(recipientIdentityStorage, binding.device_fingerprint)
+            binding.validate(route.server_id, crypto.publicKeyHashHex(), crypto.getOrCreatePublicKeyBase64())
+        }
         val transport = if (route.transport.isNotBlank()) route.transport else "vyandex"
         val transType = io.github.libreroute.data.TransportType.from(transport)
-        if (transType in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi)) {
+        if (transType in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi, io.github.libreroute.data.TransportType.jazz)) {
             require(io.github.libreroute.util.ServiceRouteEndpoint.isValid(transType, route.url)) { "Некорректный адрес маршрута" }
             require(route.secret_key.length >= 16) { "У маршрута отсутствует ключ шифрования" }
         }
@@ -3502,10 +4222,12 @@ class AdminRepository(
             add("--codec=${route.parameters["codec"] ?: route.codec.ifBlank { "batched" }}")
             add("--encryption-layout=${route.parameters["encryption_layout"] ?: route.encryption_layout.ifBlank { "packet" }}")
             add("--peer-health")
+            route.pair_channel?.let { add("--pair-channel-config"); add(json.encodeToString(it)) }
+            route.channel_group?.let { add("--channel-group-config"); add(json.encodeToString(it)) }
             for (flag in listOf("session_batch_bytes", "session_linger_ms", "session_compression")) {
                 route.parameters[flag]?.let { add("--${flag.replace('_', '-')}=$it") }
             }
-            if (route.parameters["session_negotiate"] == "true") {
+            if (route.parameters["session_negotiate"] == "true" && route.channel_group == null) {
                 add("--session-negotiate")
             }
             if (route.parameters["udp_enabled"] == "true") {
@@ -3529,7 +4251,9 @@ class AdminRepository(
             name = tunnelName,
             transportType = transType.name,
             transportConnPayload = payload,
-            encryptionKey = route.secret_key
+            encryptionKey = route.secret_key,
+            serverId = route.server_id.takeIf { it.isNotBlank() },
+            managedProfileId = route.profile_instance_id.takeIf { it.isNotBlank() }
         )
 
         return context?.let { TunnelLinkParser.ensureLocalKeyFile(it, tunnel) } ?: tunnel
@@ -3560,7 +4284,8 @@ class AdminRepository(
         storage.putLong(prefix + KEY_SYNC_REVISION, revision)
         storage.putString(prefix + KEY_SYNC_TRUSTED_SERVER_KEY, trustedServerPub)
         storage.putLong(prefix + KEY_SYNC_LAST_CHECKED_AT, System.currentTimeMillis())
-        storage.putString(prefix + KEY_SYNC_ROUTES_JSON, json.encodeToString(routes))
+        storage.putString(prefix + KEY_SYNC_ROUTES_JSON, json.encodeToString(
+            routes.filter { io.github.libreroute.data.TransportType.isAvailable(it.transport) }))
         storage.putString(KEY_SYNC_CONTEXTS, json.encodeToString((contexts + prefix).distinct()))
         storage.putString(KEY_ACTIVE_SYNC_CONTEXT, prefix)
     }
@@ -3715,7 +4440,7 @@ class AdminRepository(
                 val stableIds = oldRoutes.mapIndexedNotNull { index, route ->
                     oldIds.getOrNull(index)?.let { route.route_id to it }
                 }.toMap()
-                val newTunnels = routesList.map { route ->
+                val newTunnels = routesList.filter { io.github.libreroute.data.TransportType.isAvailable(it.transport) }.map { route ->
                     val tunnel = routeCandidateToTunnel(route)
                     stableIds[route.route_id]?.let { tunnel.copy(id = it) } ?: tunnel
                 }
@@ -3734,7 +4459,8 @@ class AdminRepository(
                 updateManagedTunnels(newTunnels, prefix)
                 storage.putLong(prefix + KEY_SYNC_REVISION, newRev)
                 storage.putLong(prefix + KEY_SYNC_LAST_CHECKED_AT, now)
-                storage.putString(prefix + KEY_SYNC_ROUTES_JSON, json.encodeToString(routesList))
+                storage.putString(prefix + KEY_SYNC_ROUTES_JSON, json.encodeToString(
+                    routesList.filter { io.github.libreroute.data.TransportType.isAvailable(it.transport) }))
                 return RouteSyncResult.Updated(newRev, newTunnels)
             }
             else -> {
@@ -3792,11 +4518,11 @@ class AdminRepository(
 
     private fun updateManagedTunnels(newTunnels: List<Tunnel>, prefix: String) {
         val store = getTunnelStore() ?: return
-        val currentTunnels = store.load().toMutableList()
+        val currentTunnels = store.load().filter { io.github.libreroute.data.TransportType.isAvailable(it.transportType) }.toMutableList()
         val oldManagedIds = managedTunnelIds(prefix)
 
         currentTunnels.removeAll { it.id in oldManagedIds }
-        val preparedTunnels = newTunnels.map { t ->
+        val preparedTunnels = newTunnels.filter { io.github.libreroute.data.TransportType.isAvailable(it.transportType) }.map { t ->
             // A save may have succeeded immediately before the ownership marker failed.
             // Replaying the exact checkpoint must upsert that record with its stable id.
             currentTunnels.removeAll { it == t }
@@ -3814,4 +4540,3 @@ class AdminRepository(
         storage.putString(prefix + KEY_MANAGED_TUNNEL_IDS, preparedTunnels.joinToString(",") { it.id.toString() })
     }
 }
-

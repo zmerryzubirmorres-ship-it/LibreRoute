@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeTransportReadinessTest {
+    @Test fun groupRequiresItsOwnAuthenticatedRoundTrip() {
+        val readiness = NativeTransportReadiness(listOf("--channel-group-config", "signed-group", "--peer-health"))
+        assertFalse(readiness.isReady("[VOLGA] transport started"))
+        assertFalse(readiness.isReady("[CHANNEL] peer ready"))
+        assertFalse(readiness.isReady("[HEALTH] peer ready"))
+        assertTrue(readiness.isReady("[GROUP] peer ready lanes=2/3"))
+    }
+    @Test fun pairChannelRequiresAuthenticatedRoundTrip() {
+        val readiness = NativeTransportReadiness(listOf("--pair-channel-config", "public-binding"))
+        assertFalse(readiness.isReady("[JAZZ] data channel open"))
+        assertFalse(readiness.isReady("[SESSION] ready"))
+        assertFalse(readiness.isReady("[HEALTH] peer ready"))
+        assertTrue(readiness.isReady("[CHANNEL] peer ready"))
+    }
     @Test fun yandexStartupWaitsForPeerAndRecoveryCannotUseSessionAlone() {
         val readiness = NativeTransportReadiness(listOf("--session-negotiate", "--peer-health"))
         for (line in listOf(

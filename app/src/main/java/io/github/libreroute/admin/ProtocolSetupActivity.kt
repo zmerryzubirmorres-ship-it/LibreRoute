@@ -12,10 +12,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.button.MaterialButton
-import io.github.libreroute.data.TunnelRepository
 import io.github.libreroute.ui.CalmViews
 import io.github.libreroute.util.JitsiBrowserHandoff
 import io.github.libreroute.util.JitsiTokenStore
@@ -25,6 +27,7 @@ import kotlinx.coroutines.withContext
 
 /** One resumable operation per server transport. */
 class ProtocolSetupActivity : AppCompatActivity() {
+    private val scrollPosition by lazy { io.github.libreroute.ui.ScreenScrollPosition(this, content.parent as ScrollView) }
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private val endpointInputs = mutableMapOf<String, EditText>()
@@ -34,8 +37,28 @@ class ProtocolSetupActivity : AppCompatActivity() {
     private var pendingAuthEndpoint: String = ""
     /** A plain room handoff is valid when the provider admits guests after the host. */
     private var confirmedJitsiRoom: String = ""
-    private var busy = false
+    private val operation by viewModels<io.github.libreroute.ui.ScreenOperationViewModel>()
+    private val busy get() = operation.state.value.running
+    private data class ProtocolOutcome(val protocol: String, val endpoint: String, val result: AdminOpResult)
+    private val dialogs by lazy { io.github.libreroute.ui.DialogScreens(this) { key, args ->
+        if (key == "group") repository.getServerNode(nodeId)?.let(::showChannelGroupDialog)
+        if (key == "clear") confirmClear()
+        if (key == "yandex_choose") showGroupDocuments(args.getStringArrayList("documents").orEmpty())
+        if (key == "auth_request") handleProtocolOutcome(ProtocolOutcome(args.getString("protocol").orEmpty(), args.getString("endpoint").orEmpty(), AdminOpResult.Failure(args.getString("error").orEmpty())))
+    } }
     private var lastOutcome = ""
+    private var channelGroupDialog: AlertDialog? = null
+    private var localSnapshot: ProtocolRestoreViewModel.LocalState? = null
+    private val endpointDrafts = mutableMapOf<String, String>()
+    private val jazzSetup by lazy { ViewModelProvider(this)[JazzRoomSetupViewModel::class.java] }
+    private val protocolRestore by lazy { ViewModelProvider(this)[ProtocolRestoreViewModel::class.java] }
+    private val groupSetup by lazy { ViewModelProvider(this)[ChannelGroupSetupViewModel::class.java] }
+    private fun isBusy() = busy || jazzSetup.state.value.running || groupSetup.state.value.running
+    private val groupAuthLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        lastOutcome = if (result.resultCode == RESULT_OK) "Документ Яндекса проверен. Можно проверить следующий документ или настроить объединение." else "Проверка документа не завершена. Повторите её после входа или CAPTCHA."
+        if (::status.isInitialized) status.text = lastOutcome
+        repository.getServerNode(nodeId)?.let { if (!isBusy()) showChannelGroupDialog(it) }
+    }
     private val authLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val protocol = pendingAuthProtocol
         pendingAuthProtocol = null
@@ -56,10 +79,14 @@ class ProtocolSetupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        savedInstanceState?.getString("group_draft")?.let { groupSetup.draft = it }
         pendingAuthProtocol = savedInstanceState?.getString("pending_auth_protocol")
         pendingAuthEndpoint = savedInstanceState?.getString("pending_auth_endpoint").orEmpty()
         confirmedJitsiRoom = savedInstanceState?.getString("confirmed_jitsi_room").orEmpty()
         lastOutcome = savedInstanceState?.getString("last_outcome").orEmpty()
+        for (id in listOf("vyandex", "jazz", "jitsi")) {
+            savedInstanceState?.getString("endpoint_$id")?.let { endpointDrafts[id] = it }
+        }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(MaterialButton(this).apply {
@@ -68,29 +95,124 @@ class ProtocolSetupActivity : AppCompatActivity() {
         header.addView(TextView(this).apply { text = "Протоколы сервера"; textSize = 22f })
         root.addView(header)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16.dp(), 0, 16.dp(), 24.dp()) }
-        root.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root); render()
+        root.addView(ScrollView(this).apply { id = io.github.libreroute.ui.DialogScreens.stateId("protocol-setup-scroll") }.apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        setContentView(root)
+        status = TextView(this).apply { text = "Загружаем сохранённые настройки…" }
+        content.addView(status)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                operation.state.collect { state ->
+                    state.result?.let { result ->
+                        operation.consumed()
+                        result.onSuccess { value ->
+                            if (value is ProtocolOutcome) handleProtocolOutcome(value)
+                            else lastOutcome = value.toString()
+                        }.onFailure { lastOutcome = it.message ?: "Операция не завершена. Проверьте результат." }
+                        render()
+                    }
+                    refreshSetupEnabled()
+                }
+            }
+        }
+        localSnapshot = protocolRestore.cached(nodeId)
+        localSnapshot?.let { renderSnapshot() }
+        lifecycleScope.launch {
+            protocolRestore.local.collect { snapshot ->
+                if (snapshot != null) {
+                    localSnapshot = snapshot
+                    if (snapshot.node == null || "list" !in snapshot.permissions) { finish(); return@collect }
+                    renderSnapshot()
+                    if ("get-protocol-configurations" in snapshot.permissions) protocolRestore.restore(snapshot.node)
+                }
+            }
+        }
+        lifecycleScope.launch {
+            protocolRestore.state.collect { state ->
+                if (state.outcome.isNotBlank()) {
+                    lastOutcome = state.outcome
+                    if (!state.running) render() else status.text = lastOutcome
+                }
+                refreshSetupEnabled()
+            }
+        }
+        lifecycleScope.launch {
+            jazzSetup.state.collect { state ->
+                if (state.outcome.isNotBlank()) {
+                    lastOutcome = state.outcome
+                    status.text = lastOutcome
+                    if (!state.running) render()
+                }
+                refreshSetupEnabled()
+            }
+        }
+        lifecycleScope.launch {
+            groupSetup.state.collect { state ->
+                if (state.outcome.isNotBlank()) {
+                    lastOutcome = state.outcome
+                    if (::status.isInitialized) status.text = lastOutcome
+                    if (!state.running) render()
+                }
+                refreshSetupEnabled()
+            }
+        }
+        dialogs.restore()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("group_draft", groupSetup.draft)
         outState.putString("pending_auth_protocol", pendingAuthProtocol)
         outState.putString("pending_auth_endpoint", pendingAuthEndpoint)
         outState.putString("confirmed_jitsi_room", confirmedJitsiRoom)
         outState.putString("last_outcome", lastOutcome)
+        endpointInputs.forEach { (id, input) -> endpointDrafts[id] = input.text.toString() }
+        endpointDrafts.forEach { (id, value) -> outState.putString("endpoint_$id", value) }
         super.onSaveInstanceState(outState)
     }
 
     override fun onResume() { super.onResume(); if (::content.isInitialized) render() }
 
     private fun render() {
+        if (::status.isInitialized) status.text = lastOutcome
+        if (::content.isInitialized) refreshSetupEnabled()
+        protocolRestore.loadLocal(nodeId)
+    }
+
+    private fun renderSnapshot() {
+        val snapshot = localSnapshot ?: return
+        scrollPosition.beforeRebuild()
+        endpointInputs.forEach { (id, input) -> endpointDrafts[id] = input.text.toString() }
         content.removeAllViews(); endpointInputs.clear()
-        val node = repository.getServerNode(nodeId) ?: run { finish(); return }
+        val node = snapshot.node ?: run { finish(); return }
+        content.addView(MaterialButton(this).apply {
+            text = "Объединить каналы"; isAllCaps = false; tag = "local"
+            setOnClickListener { if (!isBusy()) showChannelGroupDialog(node) }
+        })
+        snapshot.blockReason?.let { content.addView(CalmViews.row(this, "Изменения недоступны", it)) }
+        content.addView(MaterialButton(this).apply {
+            text = "Проверить соединение"; tag = "local"; isAllCaps = false
+            setOnClickListener {
+                if (isBusy()) return@setOnClickListener
+                val repo = repository
+                lastOutcome = "Проверяем соединение с сервером…"
+                status.text = lastOutcome
+                operation.run { repo.refreshServerCore(node).getOrThrow(); "Соединение с сервером подтверждено" }
+            }
+        })
         content.addView(CalmViews.row(this, node.name, node.host))
+        if ("get-protocol-configurations" in snapshot.permissions) content.addView(MaterialButton(this).apply {
+            text = "Восстановить подключения"; tag = "local"; isAllCaps = false
+            setOnClickListener { if (!isBusy()) protocolRestore.restore(node, force = true) }
+        })
         content.addView(CalmViews.row(this, "Ядро сервера", coreVersionSummary(node.coreObservation)))
+        if ("get-jazz-room-pool" in snapshot.permissions) content.addView(MaterialButton(this).apply {
+            text="СберДжаз · размещение подключений"; isAllCaps=false
+            setOnClickListener { startActivity(Intent(this@ProtocolSetupActivity,JazzRoomPolicyActivity::class.java).putExtra(EXTRA_SERVER_ID,nodeId)) }
+        },LinearLayout.LayoutParams(-1,56.dp()))
+        if ("install" !in snapshot.permissions) { status=TextView(this).apply { text="Управление протоколами ограничено ролью администратора" }; content.addView(status); return }
         content.addView(CalmViews.row(this, "Сетевые каналы", "Настройте каналы туннелирования. Клиент сразу подключится к доступному каналу или выберет наиболее подходящий."))
         protocolCard(node, "vyandex", "Yandex Volga", "Документный транспорт. Если Яндекс запросит вход или CAPTCHA, откроется WebView.", true)
-        protocolCard(node, "mqtt", "MQTT WSS", "Шифрованный WebSocket. Адрес, topic и ключ сервер настроит автоматически.", false)
         protocolCard(node, "jitsi", "Jitsi Meet", "WebRTC-канал. Ссылка комнаты необязательна.", false, true)
+        protocolCard(node, "jazz", "СберДжаз", "Создайте гостевую комнату автоматически или вставьте полную ссылку с паролем.", true)
         content.addView(CalmViews.row(this, "UDP-маршрутизация", "Проверяется автоматически. При недоступности приложение использует TCP."))
         status = TextView(this).apply { textSize = 14f; setTextColor(resources.getColor(io.github.libreroute.R.color.text_secondary, theme)); setPadding(0, 12.dp(), 0, 0) }
         status.text = lastOutcome
@@ -104,18 +226,90 @@ class ProtocolSetupActivity : AppCompatActivity() {
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                 finish()
             }
+            tag = "local"
         }, LinearLayout.LayoutParams(-1, 56.dp()))
+        refreshSetupEnabled()
+    }
+
+    private fun showChannelGroupDialog(node: ServerNode) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24.dp(), 0, 24.dp(), 0) }
+        box.addView(TextView(this).apply { text = "Вставьте от 2 до 4 ссылок, каждую с новой строки. Можно сочетать отдельные комнаты Jazz и документы Яндекса. Они будут работать как одно подключение." })
+        val input = EditText(this).apply {
+            hint = "Ссылки на каналы"; minLines = 4
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(groupSetup.draft)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { groupSetup.draft = s?.toString().orEmpty() }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+        }
+        box.addView(input)
+        val dialog = AlertDialog.Builder(this).setTitle("Объединить каналы").setView(box)
+            .setNegativeButton("Отмена", null).setNeutralButton("Проверить Яндекс", null).setPositiveButton("Настроить", null).create()
+        channelGroupDialog = dialog
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val documents = input.text.toString().lineSequence().map(String::trim).filter(String::isNotBlank)
+                    .filter { runCatching { endpointIdentity("vyandex", it) }.isSuccess }.distinct().toList()
+                if (documents.isEmpty()) { input.error = "Сначала вставьте ссылки на документы Яндекса"; return@setOnClickListener }
+                showGroupDocuments(documents)
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val result = runCatching {
+                    val urls = input.text.toString().lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+                    require(urls.size in 2..4) { "Добавьте от 2 до 4 ссылок" }
+                    ChannelGroupPlan(lanes = urls.map { raw ->
+                        val host = java.net.URI(raw).host?.lowercase().orEmpty()
+                        val provider = if (host in setOf("salutejazz.ru", "jazz.sber.ru")) "jazz" else "vyandex"
+                        GroupLaneRequest(provider, raw)
+                    }).also(ChannelGroupPlan::validate)
+                }
+                result.onSuccess { plan -> groupSetup.install(node, plan); dialog.dismiss() }
+                    .onFailure { input.error = it.message }
+            }
+        }
+        dialogs.show(dialog, "group", Bundle())
+    }
+
+    private fun showGroupDocuments(documents: List<String>) {
+        val dialog = AlertDialog.Builder(this).setTitle("Проверить Яндекс")
+            .setItems(documents.indices.map { "Документ ${it + 1}" }.toTypedArray()) { _, index ->
+                channelGroupDialog?.dismiss()
+                groupAuthLauncher.launch(Intent(this, io.github.libreroute.ui.YandexCaptchaActivity::class.java)
+                    .putExtra(io.github.libreroute.ui.YandexCaptchaActivity.EXTRA_DOCUMENT_URL, documents[index])
+                    .putExtra(io.github.libreroute.ui.YandexCaptchaActivity.EXTRA_REASON, io.github.libreroute.event.YandexAuthReason.CAPTCHA.name))
+            }.setNegativeButton("Отмена", null).create()
+        dialogs.show(dialog, "yandex_choose", Bundle().apply { putStringArrayList("documents", ArrayList(documents)) })
+    }
+
+    private fun refreshSetupEnabled() {
+        val blockReason = localSnapshot?.blockReason
+        fun update(view: View) {
+            if (view is MaterialButton || view is EditText) view.isEnabled = !isBusy() &&
+                (view.tag == "local" || view is EditText || blockReason == null)
+            if (view is MaterialButton && view.text == "Восстановить подключения" && protocolRestore.state.value.running)
+                view.isEnabled = false
+            if (view is android.view.ViewGroup) for (i in 0 until view.childCount) update(view.getChildAt(i))
+        }
+        update(content)
     }
 
     private fun protocolCard(node: ServerNode, id: String, title: String, description: String, endpointRequired: Boolean, jitsi: Boolean = false) {
         val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(12.dp(), 12.dp(), 12.dp(), 12.dp()); setBackgroundResource(io.github.libreroute.R.drawable.bg_bottom_sheet) }
         val operation = repository.latestProtocolInstallation(node.id, id)
-        val installed = repository.isProtocolReady(node.id, id)
+        val installed = id in localSnapshot?.ready.orEmpty()
         val serverHasProtocol = node.inventory?.installedProtocols?.any { it.equals(id, true) } == true
         val state = when (operation?.stage) { ProtocolInstallationOperation.NEEDS_ACTION -> "Требуется проверка"; ProtocolInstallationOperation.UNKNOWN -> "Проверяем результат"; ProtocolInstallationOperation.FAILED -> "Не настроен"; else -> if (installed) "Активен" else if (serverHasProtocol) "Доступен к настройке" else "Доступен к установке" }
         card.addView(CalmViews.row(this, "$title · $state", description))
         if (endpointRequired || jitsi) {
-            val input = EditText(this).apply { hint = if (jitsi) "HTTPS-ссылка комнаты (необязательно)" else "HTTPS-ссылка документа Yandex"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI; operation?.endpoint?.takeIf { it.isNotBlank() }?.let(::setText) }
+            val input = EditText(this).apply {
+                hint = when { id == "jazz" -> "Гостевая ссылка СберДжаза с паролем"; jitsi -> "HTTPS-ссылка комнаты (необязательно)"; else -> "HTTPS-ссылка документа Yandex" }
+                inputType = InputType.TYPE_CLASS_TEXT or if (id == "jazz") InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_URI
+                (endpointDrafts[id] ?: operation?.endpoint?.takeIf { it.isNotBlank() }
+                    ?: generatedEndpoint(node, id).takeIf { it.isNotBlank() })?.let(::setText)
+            }
             endpointInputs[id] = input; card.addView(input)
         }
         if (id == "mqtt" && installed) {
@@ -142,6 +336,7 @@ class ProtocolSetupActivity : AppCompatActivity() {
                     }, LinearLayout.LayoutParams(0, -2, 1f))
                     addView(MaterialButton(this@ProtocolSetupActivity).apply {
                         text = "Копия"
+                        tag = "local"
                         isAllCaps = false
                         minHeight = 36.dp()
                         setOnClickListener {
@@ -154,11 +349,20 @@ class ProtocolSetupActivity : AppCompatActivity() {
                 card.addView(endpointRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 8.dp() })
             }
         }
+        if (id == "jazz" && !installed) {
+            card.addView(MaterialButton(this).apply {
+                isAllCaps = false
+                text = if (operation?.endpoint?.isNotBlank() == true) "Продолжить настройку комнаты" else "Создать комнату"
+                setOnClickListener {
+                    if (!isBusy()) jazzSetup.createAndInstall(node)
+                }
+            }, LinearLayout.LayoutParams(-1, 52.dp()))
+        }
         card.addView(MaterialButton(this).apply {
             isAllCaps = false
             text = when {
                 id == "vyandex" -> "Проверить и активировать"
-                id == "jitsi" -> "Подключить комнату"
+                id == "jitsi" || id == "jazz" -> "Подключить комнату"
                 installed -> "Настроить"
                 else -> "Установить"
             }
@@ -168,7 +372,11 @@ class ProtocolSetupActivity : AppCompatActivity() {
     }
 
     private fun install(node: ServerNode, protocol: String, endpoint: String) {
-        if (busy) return
+        if (isBusy()) return
+        if (protocol == "jazz" && !io.github.libreroute.util.ServiceRouteEndpoint.isValid(io.github.libreroute.data.TransportType.jazz, endpoint)) {
+            Toast.makeText(this, "Укажите полную HTTPS-ссылку СберДжаза: /call/комната/пароль", Toast.LENGTH_LONG).show()
+            return
+        }
         val jitsiToken = if (protocol == "jitsi") JitsiTokenStore(this).get(endpoint) else null
         val plainRoomConfirmed = protocol == "jitsi" && confirmedJitsiRoom.isNotBlank() &&
             JitsiBrowserHandoff.sameRoom(confirmedJitsiRoom, endpoint)
@@ -190,18 +398,24 @@ class ProtocolSetupActivity : AppCompatActivity() {
         }
         if (protocol == "vyandex" && endpoint.isBlank()) { Toast.makeText(this, "Укажите ссылку на HTTPS-документ Yandex", Toast.LENGTH_LONG).show(); return }
         if (protocol == "jitsi" && endpoint.isNotBlank() && !endpoint.startsWith("https://")) { Toast.makeText(this, "Ссылка комнаты должна начинаться с https://", Toast.LENGTH_LONG).show(); return }
-        busy = true
-        status.text = "Настраиваем ${protocolName(protocol)}…"
-        InstallationLog.append(this, "protocol_prepare", "server=${node.host} protocol=$protocol")
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                try { repository.installProtocol(node, protocol, endpoint, AdminChannel.DIRECT_SSH) }
-                catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { AdminOpResult.Failure("Не удалось завершить настройку протокола. Повторите проверку результата.", e) }
-            }
-            val operation = repository.latestProtocolInstallation(node.id, protocol)
-            InstallationLog.append(this@ProtocolSetupActivity, "protocol_result",
-                "server=${node.host} protocol=$protocol operation_id=${operation?.operationId.orEmpty()} stage=${operation?.stage.orEmpty()} result=${result.javaClass.simpleName} error=${(result as? AdminOpResult.Failure)?.error.orEmpty()}")
+        lastOutcome = "Настраиваем ${protocolName(protocol)}…"
+        status.text = lastOutcome
+        val repo = repository
+        val app = applicationContext
+        InstallationLog.append(app, "protocol_prepare", "server=${node.host} protocol=$protocol")
+        operation.run {
+            val result = repo.installProtocol(node, protocol, endpoint, AdminChannel.AUTO)
+            val record = repo.latestProtocolInstallation(node.id, protocol)
+            InstallationLog.append(app, "protocol_result", "server=${node.host} protocol=$protocol operation_id=${record?.operationId.orEmpty()} stage=${record?.stage.orEmpty()} result=${result.javaClass.simpleName}")
+            ProtocolOutcome(protocol, endpoint, result)
+        }
+    }
+
+    private fun handleProtocolOutcome(value: ProtocolOutcome) {
+        val node = repository.getServerNode(nodeId) ?: return
+        val protocol = value.protocol
+        val endpoint = value.endpoint
+        val result = value.result
             when (result) {
                 is AdminOpResult.Success -> status.text = result.message
                 is AdminOpResult.Failure -> {
@@ -222,7 +436,7 @@ class ProtocolSetupActivity : AppCompatActivity() {
                                     .putExtra(RemoteAuthActivity.EXTRA_TARGET_ID, node.id)
                                     .putExtra(RemoteAuthActivity.EXTRA_PROFILE_ID, controlProfileId)
                                     .putExtra(RemoteAuthActivity.EXTRA_DOC_URL, endpoint))
-                            }.show()
+                            }.create().let { dialogs.show(it, "auth_request", Bundle().apply { putString("protocol", protocol); putString("endpoint", endpoint); putString("error", result.error) }) }
                     } else if (protocol == "jitsi" && endpoint.isNotBlank() &&
                         (result.error.contains("moderator", true) || result.error.contains("not ready", true) || result.error.contains("room", true))) {
                         AlertDialog.Builder(this@ProtocolSetupActivity)
@@ -236,44 +450,42 @@ class ProtocolSetupActivity : AppCompatActivity() {
                                     authLauncher.launch(Intent(this@ProtocolSetupActivity, JitsiAuthActivity::class.java)
                                         .putExtra(JitsiAuthActivity.EXTRA_ROOM_URL, endpoint))
                                 }.onFailure { status.text = "Не найден браузер для открытия комнаты" }
-                            }.show()
+                            }.create().let { dialogs.show(it, "auth_request", Bundle().apply { putString("protocol", protocol); putString("endpoint", endpoint); putString("error", result.error) }) }
                     }
                 }
             }
-            lastOutcome = status.text.toString()
-            busy = false
-            render()
-        }
+        lastOutcome = status.text.toString()
+        render()
     }
 
     private fun confirmClear() {
-        AlertDialog.Builder(this).setTitle("Очистить протоколы?").setMessage("Будут удалены только worker-протоколы и пользовательские конфигурации. SSH и единственный профиль администратора сохранятся.").setNegativeButton("Отмена", null).setPositiveButton("Очистить") { _, _ -> clearProtocols() }.show()
+        AlertDialog.Builder(this).setTitle("Очистить протоколы?").setMessage("Будут удалены только worker-протоколы и пользовательские конфигурации. SSH и единственный профиль администратора сохранятся.").setNegativeButton("Отмена", null).setPositiveButton("Очистить") { _, _ -> clearProtocols() }.create().let { dialogs.show(it, "clear", Bundle()) }
     }
 
     private fun clearProtocols() {
-        if (busy) return
+        if (isBusy()) return
         val node = repository.getServerNode(nodeId) ?: return
-        busy = true
-        status.text = "Очищаем протоколы…"
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { repository.clearServerProtocols(node.id, node.toSshHostConfig()) }
-            status.text = when (result) { is AdminOpResult.Success -> result.message; is AdminOpResult.Failure -> "Не удалось очистить протоколы: ${result.error}" }
-            lastOutcome = status.text.toString()
-            busy = false
-            render()
+        lastOutcome = "Очищаем протоколы…"
+        status.text = lastOutcome
+        val repo = repository
+        operation.run {
+            when (val result = repo.clearServerProtocols(node.id, node.toSshHostConfig())) {
+                is AdminOpResult.Success -> result.message
+                is AdminOpResult.Failure -> "Не удалось очистить протоколы: ${result.error}"
+            }
         }
     }
 
     private fun generatedEndpoint(node: ServerNode, transport: String): String {
-        val tunnel = runCatching { TunnelRepository(this).load().firstOrNull {
-            it.transportType.equals(transport, true) && it.name.contains(node.name, ignoreCase = true)
-        } }.getOrNull() ?: return ""
+        val tunnel = localSnapshot?.tunnels?.firstOrNull {
+            it.transportType.equals(transport, true) && it.serverId == node.id
+        } ?: return ""
         val args = tunnel.transportConnPayload
         val index = args.indexOf("--url")
         return if (index >= 0) args.getOrNull(index + 1).orEmpty() else ""
     }
 
-    private fun protocolName(id: String) = when (id) { "vyandex" -> "Yandex Volga"; "mqtt" -> "MQTT WSS"; "jitsi" -> "Jitsi Meet"; else -> id }
+    private fun protocolName(id: String) = when (id) { "vyandex" -> "Yandex Volga"; "mqtt" -> "MQTT WSS"; "jitsi" -> "Jitsi Meet"; "jazz" -> "СберДжаз"; else -> id }
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
     companion object { const val EXTRA_SERVER_ID = "server_id" }
 }

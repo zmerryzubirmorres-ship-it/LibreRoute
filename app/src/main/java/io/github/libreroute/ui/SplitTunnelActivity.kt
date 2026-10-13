@@ -37,6 +37,8 @@ import android.widget.TextView
 import android.widget.Toast
 
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.viewModels
+import androidx.lifecycle.repeatOnLifecycle
 
 import androidx.appcompat.app.AppCompatActivity
 
@@ -93,6 +95,13 @@ class SplitTunnelActivity : AppCompatActivity() {
         private const val PAYLOAD_CHECKED = "payload_checked"
     }
 
+    private val dialogs by lazy { DialogScreens(this) { key, _ ->
+        when (key) {
+            "add_site" -> showAddSiteBottomSheet()
+            "presets" -> showPresetsBottomSheet()
+            "clear_sites" -> confirmClearSites()
+        }
+    } }
     private var activeSection = SECTION_APPS
 
     // App Preferences & Data
@@ -102,6 +111,7 @@ class SplitTunnelActivity : AppCompatActivity() {
     private lateinit var appsAdapter: AppsAdapter
 
     private val allApps: MutableList<AppItem> = mutableListOf()
+    private val inventory by viewModels<InstalledAppsViewModel>()
 
     // Domain Preferences & Data
 
@@ -214,6 +224,13 @@ class SplitTunnelActivity : AppCompatActivity() {
         initViews()
 
         setupListeners()
+        activeSection = savedInstanceState?.getInt("section") ?: SECTION_APPS
+        sectionToggleGroup.check(if (activeSection == SECTION_APPS) R.id.btn_section_apps else R.id.btn_section_sites)
+        if (savedInstanceState?.getBoolean("search_open") == true) {
+            titleContainer.isVisible = false
+            searchBarContainer.isVisible = true
+            searchInput.setText(savedInstanceState.getString("search"))
+        }
 
         loadInstalledApps()
 
@@ -239,6 +256,14 @@ class SplitTunnelActivity : AppCompatActivity() {
 
         })
 
+        dialogs.restore()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("section", activeSection)
+        outState.putBoolean("search_open", searchBarContainer.isVisible)
+        outState.putString("search", searchInput.text.toString())
+        super.onSaveInstanceState(outState)
     }
 
     private fun initViews() {
@@ -330,6 +355,7 @@ class SplitTunnelActivity : AppCompatActivity() {
 
         }
 
+        appsAdapter.stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
         appsRecycler.adapter = appsAdapter
 
         sitesRecycler.layoutManager = LinearLayoutManager(this)
@@ -497,109 +523,35 @@ class SplitTunnelActivity : AppCompatActivity() {
     // --- Apps Split Tunneling Logic ---
 
     private fun loadInstalledApps() {
-
-        appLoadingProgress.isVisible = true
-
-        appsRecycler.isVisible = false
-
-        appEmptyState.isVisible = false
-
-        lifecycleScope.launch(Dispatchers.IO) {
-
-            val pm = packageManager
-
-            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
-
-                addCategory(Intent.CATEGORY_LAUNCHER)
-
-            }
-
-            val launchableList: List<ResolveInfo> = pm.queryIntentActivities(mainIntent, 0)
-
-            val launchablePkgs = launchableList.map { it.activityInfo.packageName }.toSet()
-
-            val installed = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-
-            val myPackage = packageName
-
-            val currentSelected = getSelectedAppPackages()
-
-            val list = mutableListOf<AppItem>()
-
-            for (app in installed) {
-
-                if (app.packageName == myPackage) continue
-
-                val isLaunchable = launchablePkgs.contains(app.packageName)
-                val isSystem = ((app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) ||
-                        ((app.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) ||
-                        !isLaunchable
-
-                val label = try {
-
-                    pm.getApplicationLabel(app).toString()
-
-                } catch (_: Exception) {
-
-                    app.packageName
-
+        inventory.ensureLoaded(allIcons = true)
+        applyAppInventory(inventory.state.value)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                inventory.state.collect { state ->
+                    applyAppInventory(state)
+                    if (state.failed) Toast.makeText(this@SplitTunnelActivity, R.string.app_rules_error, Toast.LENGTH_LONG).show()
                 }
-
-                val icon = try {
-
-                    pm.getApplicationIcon(app)
-
-                } catch (_: Exception) {
-
-                    null
-
-                }
-
-                val selected = currentSelected.contains(app.packageName)
-
-                list.add(
-
-                    AppItem(
-
-                        name = label,
-
-                        packageName = app.packageName,
-
-                        icon = icon,
-
-                        isSelected = selected,
-
-                        isSystem = isSystem
-
-                    )
-
-                )
-
             }
-
-            list.sortWith(
-                compareByDescending<AppItem> { it.isSelected }
-                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
-            )
-
-            withContext(Dispatchers.Main) {
-
-                allApps.clear()
-
-                allApps.addAll(list)
-
-                appLoadingProgress.isVisible = false
-
-                appsRecycler.isVisible = true
-
-                applySearchFilter(searchInput.text?.toString().orEmpty())
-
-                updateAppCountDisplay()
-
-            }
-
         }
+    }
 
+    private fun applyAppInventory(state: InstalledAppsViewModel.State) {
+        appLoadingProgress.isVisible = state.loading
+        appsRecycler.isVisible = !state.loading
+        appEmptyState.isVisible = false
+        state.apps?.let { apps ->
+            val selected = getSelectedAppPackages()
+            allApps.clear()
+            allApps.addAll(apps.map {
+                AppItem(name = it.name, packageName = it.key, icon = it.icon,
+                    isSelected = it.key in selected, isSystem = it.system || !it.launchable)
+            }.sortedWith(compareByDescending<AppItem> { it.isSelected }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }))
+        }
+        if (!state.loading) {
+            applySearchFilter(searchInput.text?.toString().orEmpty())
+            updateAppCountDisplay()
+        }
     }
 
     private fun getSelectedAppPackages(): Set<String> {
@@ -832,7 +784,7 @@ class SplitTunnelActivity : AppCompatActivity() {
             }
         }
 
-        dialog.show()
+        dialogs.show(dialog, "add_site", Bundle())
         inputEdit.requestFocus()
     }
 
@@ -887,7 +839,7 @@ class SplitTunnelActivity : AppCompatActivity() {
             dialog.dismiss()
         }
 
-        dialog.show()
+        dialogs.show(dialog, "presets", Bundle())
     }
 
     private fun confirmClearSites() {
@@ -908,7 +860,7 @@ class SplitTunnelActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.split_sites_clear, Toast.LENGTH_SHORT).show()
         }
 
-        dialog.show()
+        dialogs.show(dialog, "clear_sites", Bundle())
 
     }
 

@@ -93,18 +93,15 @@ class SocksVpnService : android.net.VpnService() {
                         notifications.startSpeedUpdates()
                         serviceScope.launch(Dispatchers.IO) {
                             if (alreadyStopping.get()) return@launch
-                            supervisor.start(currentTransportType, currentTransportPayload.toList())
+                            supervisor.start(currentTransportType, currentTransportPayload.toList(), currentTunnelId)
                             val rawFd = vpn.fileDescriptor
                             if (rawFd != null && supervisor.passTunFd(rawFd)) {
-                                var ready = false
-                                for (step in 1..40) {
-                                    kotlinx.coroutines.delay(250)
-                                    if (alreadyStopping.get()) return@launch
-                                    if (supervisor.isConnected) {
-                                        ready = true
-                                        break
-                                    }
-                                }
+                                val ready = NativeTransportReadiness(currentTransportPayload.toList()).awaitReady(
+                                    currentTransportType,
+                                    canWait = { !alreadyStopping.get() && supervisor.isRunning },
+                                    connected = { supervisor.isConnected }
+                                )
+                                if (alreadyStopping.get()) return@launch
                                 if (ready) {
                                     reconnectAttempts = 0
                                     EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
@@ -257,6 +254,7 @@ class SocksVpnService : android.net.VpnService() {
 
     @Volatile private var currentTransportType: String = "yandex"
     @Volatile private var currentTransportPayload: Array<String> = emptyArray()
+    @Volatile private var currentTunnelId: Long? = null
 
     private fun rotateActivePayloadLanes(): Array<String>? {
         val payload = currentTransportPayload.toMutableList()
@@ -309,6 +307,7 @@ class SocksVpnService : android.net.VpnService() {
                             }
                             val rotated = rotateActivePayloadLanes()
                             val payloadToUse = rotated?.toList() ?: currentTransportPayload.toList()
+                            val connectionWasReady = supervisor.isConnected
 
                             if (rotated != null || reconnectAttempts < maxReconnectAttempts) {
                                 reconnectAttempts++
@@ -321,19 +320,22 @@ class SocksVpnService : android.net.VpnService() {
                                     EventBus.dispatch(AppEvent.LogMessage("[I] [TRANSPORT] $modeDesc через ${backoffMs}мс..."))
                                     kotlinx.coroutines.delay(backoffMs)
                                     if (alreadyStopping.get() || !isActive) return@launch
+                                    if (!connectionWasReady && supervisor.isConnected) {
+                                        reconnectAttempts = 0
+                                        EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
+                                        Logx.i(TAG, "Transport recovered before scheduled restart")
+                                        return@launch
+                                    }
 
-                                    supervisor.start(currentTransportType, payloadToUse)
+                                    supervisor.start(currentTransportType, payloadToUse, currentTunnelId)
                                     val rawFd = vpn.fileDescriptor
                                     if (rawFd != null && supervisor.passTunFd(rawFd)) {
-                                        var ready = false
-                                        for (step in 1..40) {
-                                            kotlinx.coroutines.delay(250)
-                                            if (alreadyStopping.get() || !isActive) return@launch
-                                            if (supervisor.isConnected) {
-                                                ready = true
-                                                break
-                                            }
-                                        }
+                                        val ready = NativeTransportReadiness(payloadToUse).awaitReady(
+                                            currentTransportType,
+                                            canWait = { !alreadyStopping.get() && supervisor.isRunning },
+                                            connected = { supervisor.isConnected }
+                                        )
+                                        if (alreadyStopping.get() || !isActive) return@launch
                                         if (ready) {
                                             reconnectAttempts = 0
                                             EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
@@ -410,6 +412,7 @@ class SocksVpnService : android.net.VpnService() {
         }
         currentTransportType = transportType
         currentTransportPayload = transportPayload
+        currentTunnelId = intent.getLongExtra(Constants.INTENT_TUNNEL_ID, -1L).takeIf { it >= 0 }
 
         startupJob?.cancel()
         startupJob = serviceScope.launch(Dispatchers.IO) {
@@ -437,7 +440,7 @@ class SocksVpnService : android.net.VpnService() {
                 }
 
                 EventBus.dispatch(AppEvent.LogMessage("[I] Starting native transport ($transportType)..."))
-                supervisor.start(transportType, transportPayload.toList())
+                supervisor.start(transportType, transportPayload.toList(), currentTunnelId)
                 if (!supervisor.isRunning) {
                     EventBus.dispatch(AppEvent.LogMessage("[E] LibreRoute core did not start; VPN remains closed"))
                     stopEverything()
@@ -465,22 +468,11 @@ class SocksVpnService : android.net.VpnService() {
                 EventBus.dispatch(AppEvent.LogMessage("[S] Дескриптор TUN успешно принят ядром"))
 
                 // Wait for transport readiness inside the service
-                var ready = false
-                val sessionNegotiated = transportPayload.any { it == "--session-negotiate" || it == "--session-negotiate=true" }
-                // MQTT/Jitsi peer health starts only after the asynchronous
-                // WSS/signalling provider has subscribed. Allow the provider
-                // handshake plus the first authenticated health round trip;
-                // otherwise the service restarts just before the retry tick.
-                val readinessSteps = if (sessionNegotiated || NativeTransportReadiness(transportPayload.toList()).requiresPeerHealth || transportType.equals("mqtt", true) || transportType.equals("jitsi", true)) 240 else 80
-                for (step in 1..readinessSteps) {
-                    kotlinx.coroutines.delay(250)
-                    if (alreadyStopping.get() || !isActive) return@launch
-                    if (supervisor.isConnected) {
-                        ready = true
-                        Logx.i(TAG, "Transport ready after ${step * 250}ms")
-                        break
-                    }
-                }
+                val ready = NativeTransportReadiness(transportPayload.toList()).awaitReady(
+                    transportType,
+                    canWait = { !alreadyStopping.get() && supervisor.isRunning },
+                    connected = { supervisor.isConnected }
+                )
 
                 if (alreadyStopping.get() || !isActive) return@launch
 

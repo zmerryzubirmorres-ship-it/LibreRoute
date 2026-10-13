@@ -2,7 +2,10 @@ package io.github.libreroute.admin
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -17,8 +20,13 @@ class AdminRepositoryV2Test {
     private lateinit var repository: AdminRepository
     private var lastExecutedEnvelope: AdminEnvelope? = null
     private var nextResponseData: String = "{}"
+    private var jazzReplyStatus = "applied"
+    private var jazzRoomCreator: () -> String = { error("Unexpected room creation") }
     private var coreInfo: CoreCompatibility? = CoreCompatibility("1.2.5", "a".repeat(64), 1,
         CoreCompatibility.REQUIRED_CAPABILITIES.toList())
+    private var lastUpdateBootstrap: kotlinx.serialization.json.JsonElement? = null
+    private var loseEnrollmentResponse = false
+    private val enrollmentRequests = mutableListOf<AdminEnvelope>()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -30,6 +38,206 @@ class AdminRepositoryV2Test {
         keys = AdminKeyManager()
         storage = InMemoryAdminStorage()
         repository = createRepo()
+    }
+
+    private fun checkUpdateBootstrapSelection(configurationBaselineSupported: Boolean) {
+        grantRole("update-node", AdminRole.OWNER)
+        val oldGrant = repository.getActiveGrant("update-node")
+        val caps = CoreCompatibility.REQUIRED_CAPABILITIES + CoreUpdateClient.CAPABILITY +
+            if (configurationBaselineSupported) setOf(CoreUpdateClient.CONFIGURATION_BASELINE) else emptySet()
+        coreInfo = CoreCompatibility("1.2.30", "a".repeat(64), 1, caps.toList(), arch = "amd64")
+        val artifact = java.io.File.createTempFile("core-bootstrap", ".bin").apply { writeText("target") }
+        try {
+            val target = buildJsonObject { put("arch", "amd64"); put("version", CoreCompatibility.REQUIRED_VERSION); put("size", artifact.length()) }
+            val manifest = buildJsonObject { put("payload", Base64.getUrlEncoder().withoutPadding().encodeToString(target.toString().toByteArray())); put("signature", "fixture") }
+            nextResponseData = buildJsonObject {
+                put("server_id", "update-node"); put("server_public_key", keys.getPublicKeyBase64())
+                put("control_profile_id", oldGrant!!.profileId); put("operation_id", "update-plan")
+                put("namespace", "node-updatenode"); put("operation_kind", "core-update"); put("plan_hash", "hash")
+                put("manifest", target); put("baseline_format", "configuration-v1")
+            }.toString()
+            val repo = createRepo(artifactProvider = { artifact to manifest })
+            val node = repo.getServerNode("update-node")!!
+            repo.planCoreUpdate(node, "update-plan", AdminChannel.DIRECT_SSH)
+            val operation = repo.loadServerInstallation("update-plan")!!
+            if (configurationBaselineSupported) {
+                assertNull(operation.bootstrapManifest); assertNull(lastUpdateBootstrap)
+            } else {
+                assertEquals(manifest.toString(), operation.bootstrapManifest)
+                assertEquals(manifest, lastUpdateBootstrap!!.jsonObject.getValue("manifest"))
+                // Switching this helper attempt to a live carrier is rejected
+                // before a mutation or an update-plan identity change.
+                val result = repo.continueCoreUpdate(node, operation.operationId, AdminChannel.ACTIVE_TRANSPORT)
+                assertTrue(result is AdminOpResult.Failure)
+                assertEquals(AdminChannel.DIRECT_SSH, repo.loadServerInstallation(operation.operationId)!!.channel)
+            }
+            assertEquals(oldGrant, repo.getActiveGrant(node.id)); assertNull(operation.join)
+        } finally { artifact.delete() }
+    }
+
+    @Test fun brokenBaselineUsesSignedHelperDespiteTransactionCapability() = checkUpdateBootstrapSelection(false)
+    @Test fun fixedBaselineUsesExistingServerCoordinatorOverSsh() = checkUpdateBootstrapSelection(true)
+
+    @Test fun resumedSshUpdateStagesApprovedArtifactWithoutPerChunkCommandsOrPlanChanges() {
+        grantRole("update-node", AdminRole.OWNER)
+        val grant = repository.getActiveGrant("update-node")!!
+        val node = repository.getServerNode("update-node")!!
+        val artifact = java.io.File.createTempFile("ssh-artifact", ".bin").apply { writeText("target") }
+        try {
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(artifact.readBytes()).hex()
+            val target = buildJsonObject {
+                put("arch", "amd64"); put("version", CoreCompatibility.REQUIRED_VERSION)
+                put("size", artifact.length()); put("sha256", hash)
+            }
+            val signed = buildJsonObject {
+                put("payload", Base64.getUrlEncoder().withoutPadding().encodeToString(target.toString().toByteArray()))
+                put("signature", "fixture")
+            }
+            val plan = buildJsonObject {
+                put("server_id", node.id); put("server_public_key", keys.getPublicKeyBase64())
+                put("control_profile_id", grant.profileId); put("owner_device_id", keys.getFingerprint())
+                put("operation_id", "resumed"); put("namespace", "node-updatenode")
+                put("operation_kind", "core-update"); put("plan_hash", "approved-hash")
+                put("manifest", target); put("signed_manifest", signed); put("adapter", "systemd")
+            }
+            val actions = mutableListOf<String>()
+            storage.putString("admin_install_operations", json.encodeToString(listOf(ServerInstallOperation(
+                "resumed", node.id, "node-updatenode", node, plan.toString(), "approved-hash", grant.profileId,
+                keys.getFingerprint(), kind = ServerInstallOperation.KIND_CORE_UPDATE, coordinator = true,
+                channel = AdminChannel.DIRECT_SSH, stage = ServerInstallOperation.UNKNOWN,
+                serverStage = "receiving", receivedBytes = 2))))
+            val repo = createRepo(artifactProvider = { artifact to signed }, updateResponse = { payload, bootstrap ->
+                val request = payload.getValue("core_update").jsonObject
+                val action = request.getValue("action").jsonPrimitive.content
+                actions += action
+                assertEquals("resumed", request.getValue("operation_id").jsonPrimitive.content)
+                assertEquals("approved-hash", request.getValue("plan_hash").jsonPrimitive.content)
+                if (action == "begin") {
+                    assertEquals(plan, request.getValue("plan"))
+                    assertEquals(signed, bootstrap!!.jsonObject.getValue("manifest"))
+                    assertEquals(artifact.absolutePath, bootstrap.jsonObject.getValue("artifact_path").jsonPrimitive.content)
+                } else assertNull(bootstrap)
+                buildJsonObject {
+                    put("server_id", node.id); put("server_public_key", keys.getPublicKeyBase64())
+                    put("control_profile_id", grant.profileId); put("operation_id", "resumed"); put("plan_hash", "approved-hash")
+                    put("stage", when (action) { "begin" -> "verified"; "prepare" -> "prepared"; "apply" -> "committed"; else -> error("Unexpected action: $action") })
+                    put("next_offset", artifact.length()); put("received_bytes", artifact.length()); put("size", artifact.length())
+                    if (action == "apply") put("runtime", json.encodeToJsonElement(CoreCompatibility.serializer(), CoreCompatibility(
+                        CoreCompatibility.REQUIRED_VERSION, hash, 1, CoreCompatibility.REQUIRED_CAPABILITIES.toList())))
+                }.toString()
+            })
+            assertTrue(repo.continueCoreUpdate(node, "resumed", AdminChannel.DIRECT_SSH) is AdminOpResult.Success)
+            assertEquals(listOf("begin", "prepare", "apply"), actions)
+            val saved = repo.loadServerInstallation("resumed")!!
+            assertEquals(plan.toString(), saved.expectedPlan)
+            assertEquals("approved-hash", saved.planHash)
+            assertNull(saved.bootstrapManifest)
+            assertEquals(grant, repo.getActiveGrant(node.id))
+            assertEquals(ServerInstallOperation.READY, saved.stage)
+        } finally { artifact.delete() }
+    }
+
+    @Test fun jazzCreationChecksCapabilityAndDoesNotMutateOnProviderFailure() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        var calls = 0
+        jazzRoomCreator = { calls++; throw java.io.IOException("secret provider response") }
+        assertTrue(repository.createAndInstallJazz(node) is AdminOpResult.Failure)
+        assertEquals(0, calls)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        val result = repository.createAndInstallJazz(node) as AdminOpResult.Failure
+        assertEquals(1, calls)
+        assertFalse(result.error.contains("secret"))
+        assertNull(result.throwable)
+        assertNull(repository.latestProtocolInstallation(node.id, "jazz"))
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload))).jsonObject
+        assertEquals("get-cluster-snapshot", command.getValue("op").jsonPrimitive.content)
+    }
+
+    @Test fun jazzRoomIsCommittedBeforeInstallationAndReusedAfterRecreation() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        val supported = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        coreInfo = supported
+        val endpoint = "https://salutejazz.ru/call/new-room/secret-password"
+        var calls = 0
+        jazzRoomCreator = {
+            calls++
+            // The second snapshot fails, after guest creation but before the server command.
+            coreInfo = null
+            endpoint
+        }
+        assertTrue(repository.createAndInstallJazz(node) is AdminOpResult.Failure)
+        val saved = repository.latestProtocolInstallation(node.id, "jazz")!!
+        assertEquals(endpoint, saved.endpoint)
+        assertEquals(ProtocolInstallationOperation.PLANNED, saved.stage)
+        val restored = createRepo()
+        assertEquals(saved, restored.latestProtocolInstallation(node.id, "jazz"))
+        coreInfo = supported
+        assertTrue(restored.createAndInstallJazz(node) is AdminOpResult.Success)
+        assertEquals(1, calls)
+        val completed = restored.latestProtocolInstallation(node.id, "jazz")!!
+        assertEquals(saved.operationId, completed.operationId)
+        assertEquals(saved.profileId, completed.profileId)
+        assertEquals(ProtocolInstallationOperation.READY, completed.stage)
+        assertTrue(restored.createAndInstallJazz(node) is AdminOpResult.Success)
+        assertEquals(1, calls)
+    }
+
+    @Test fun jazzUnknownOperationIsReconciledWithoutCreatingAnotherRoom() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        val pending = ProtocolInstallationOperation("jazz-unknown", node.id, "jazz", "pending-jazz",
+            "https://salutejazz.ru/call/pending/password", ProtocolInstallationOperation.UNKNOWN)
+        storage.putString("admin_protocol_install_operations", json.encodeToString(listOf(pending)))
+        val restored = createRepo()
+        restored.createAndInstallJazz(node)
+        assertEquals(pending.operationId, restored.latestProtocolInstallation(node.id, "jazz")!!.operationId)
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload))).jsonObject
+        assertNotEquals("create-profile", command.getValue("op").jsonPrimitive.content)
+    }
+
+    @Test fun concurrentJazzSetupUsesOneGuestRoom() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        jazzRoomCreator = {
+            calls.incrementAndGet(); entered.countDown()
+            check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            "https://salutejazz.ru/call/concurrent/password"
+        }
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit<AdminOpResult> { repository.createAndInstallJazz(node) }
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val second = executor.submit<AdminOpResult> { repository.createAndInstallJazz(node) }
+            release.countDown()
+            assertTrue(first.get(10, java.util.concurrent.TimeUnit.SECONDS) is AdminOpResult.Success)
+            assertTrue(second.get(10, java.util.concurrent.TimeUnit.SECONDS) is AdminOpResult.Success)
+            assertEquals(1, calls.get())
+        } finally { release.countDown(); executor.shutdownNow() }
+    }
+
+    @Test fun jazzDoesNotMutateServerWhenRoomCannotBeCommitted() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        jazzRoomCreator = { "https://salutejazz.ru/call/new-room/password" }
+        val failingStorage = object : AdminStorage by storage {
+            override fun putStringCommitted(key: String, value: String?) {
+                throw java.io.IOException("disk full")
+            }
+        }
+        val restored = createRepo(failingStorage)
+        val result = restored.createAndInstallJazz(node) as AdminOpResult.Failure
+        assertTrue(result.error.contains("сохранить"))
+        assertNull(restored.latestProtocolInstallation(node.id, "jazz"))
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload))).jsonObject
+        assertEquals("get-cluster-snapshot", command.getValue("op").jsonPrimitive.content)
     }
 
     @Test fun serviceRouteRetainsSignedFramingAndRequiresKey() {
@@ -52,7 +260,7 @@ class AdminRepositoryV2Test {
         grantRole("srv-1", AdminRole.OWNER)
         val node = repository.getServerNode("srv-1")!!.copy(name = "Москва — 89.167.49.64")
         repository.updateServerNode(node)
-        for ((transport, endpoint) in listOf("vyandex" to "https://docs.yandex.ru/edit/d/test", "mqtt" to "", "jitsi" to "")) {
+        for ((transport, endpoint) in listOf("vyandex" to "https://docs.yandex.ru/edit/d/test", "jitsi" to "")) {
             val result = repository.installProtocol(node, transport, endpoint)
             assertTrue((result as? AdminOpResult.Failure)?.error, result is AdminOpResult.Success)
             val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload), Charsets.UTF_8)).jsonObject
@@ -63,6 +271,28 @@ class AdminRepositoryV2Test {
             assertEquals(ProtocolInstallationOperation.READY, operation.stage)
             assertEquals("${transport.uppercase()} — ${node.name}", repository.managedProfilesFlow.value.first { it.id == operation.profileId }.name)
         }
+    }
+
+    @Test fun jazzRequiresCapabilityBeforeMutationAndRestoresDurableOperation() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        val endpoint = "https://salutejazz.ru/call/dedicated/password"
+        assertTrue(repository.installProtocol(node, "jazz", endpoint) is AdminOpResult.Failure)
+        assertNull(repository.latestProtocolInstallation(node.id, "jazz"))
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "jazz-datachannel-v1")
+        assertTrue(repository.installProtocol(node, "jazz", endpoint) is AdminOpResult.Success)
+        val operation = repository.latestProtocolInstallation(node.id, "jazz")!!
+        assertEquals(endpoint, operation.endpoint)
+        assertEquals(ProtocolInstallationOperation.READY, operation.stage)
+        val restored = createRepo()
+        assertTrue(restored.installProtocol(node, "jazz", endpoint) is AdminOpResult.Success)
+        assertEquals(operation.operationId, restored.latestProtocolInstallation(node.id, "jazz")!!.operationId)
+        val route = RouteCandidate(route_id = operation.profileId, transport = "jazz", url = endpoint, secret_key = "distinct Jazz encryption key 12345")
+        val tunnel = restored.routeCandidateToTunnel(route)
+        assertEquals("jazz", tunnel.transportType)
+        assertTrue(tunnel.transportConnPayload.contains("--peer-health"))
+        assertEquals(endpoint, tunnel.transportConnPayload[tunnel.transportConnPayload.indexOf("--url") + 1])
+        assertTrue(runCatching { restored.routeCandidateToTunnel(route.copy(secret_key = "")) }.isFailure)
     }
 
     @Test fun provisionedYandexTunnelRetainsSignedNegotiationAndEncryptionSettings() {
@@ -88,6 +318,37 @@ class AdminRepositoryV2Test {
         assertTrue(tunnel.transportConnPayload.contains("--session-negotiate"))
         assertTrue(tunnel.transportConnPayload.contains("--session-batch-bytes=8192"))
         assertEquals("test encryption secret 12345", tunnel.encryptionKey)
+    }
+
+    @Test fun mixedGroupMaterializesOneRouteAndRestoresSameIdentityWithoutPrivateKey() {
+        val publicKey = repository.getRecipientDevicePublicKey()
+        val fp = java.security.MessageDigest.getInstance("SHA-256").digest(Base64.getDecoder().decode(publicKey))
+            .joinToString("") { "%02x".format(it) }
+        val binding = PairChannelBinding(2, "12345678123456781234567812345678", 1,
+            "lease1", "resource1", "room", 1, 1, 1, 1, "group-node", "device", fp, publicKey)
+        val group = ChannelGroupBinding(1, "ordered_striping", 1, listOf(
+            ChannelGroupLane("jazz", "https://salutejazz.ru/call/room/password", binding),
+            ChannelGroupLane("vyandex", "https://disk.yandex.ru/i/document", binding.copy(
+                lane_id = 2, lease_id = "lease2", resource_id = "resource2", resource_identity = "disk.yandex.ru/i/document"))
+        ))
+        val profile = ManagedProfile(id = "new-group", name = "Mixed group", transportType = "channel-group", serverId = "group-node")
+        val body = buildJsonObject { put("data", buildJsonObject {
+            put("profile_id", profile.id); put("transport", "channel-group"); put("endpoint", group.endpoint)
+            put("secret_key", "a".repeat(64)); put("channel_group", json.encodeToJsonElement(group))
+            put("parameters", buildJsonObject { put("codec", "batched"); put("encryption_layout", "batch"); put("session_negotiate", "false") })
+        }) }
+        val response = AdminEnvelope(subtype = AdminEnvelope.SUBTYPE_RESPONSE, profileId = profile.id, sender = "server",
+            payload = Base64.getUrlEncoder().withoutPadding().encodeToString(body.toString().toByteArray()))
+        val tunnel = repository.provisionedTunnel(profile, response)
+        val route = RouteCandidate(route_id = profile.id, server_id = "group-node", name = profile.name,
+            transport = "channel-group", url = group.endpoint, secret_key = "a".repeat(64), codec = "batched", encryption_layout = "batch", channel_group = group)
+        val restored = createRepo().routeCandidateToTunnel(route)
+        assertEquals(tunnel.transportConnPayload, restored.transportConnPayload)
+        assertEquals("channelGroup", tunnel.transportType)
+        assertTrue(tunnel.transportConnPayload.contains("--channel-group-config"))
+        assertFalse(tunnel.transportConnPayload.any { "private-key" in it || it == "--session-negotiate" })
+        assertTrue(runCatching { repository.routeCandidateToTunnel(route.copy(server_id = "another-node")) }.isFailure)
+        assertTrue(runCatching { repository.routeCandidateToTunnel(route.copy(channel_group = null)) }.isFailure)
     }
 
     @Test fun oldCoreBlocksProtocolAndAuthBeforeMutation() {
@@ -121,24 +382,38 @@ class AdminRepositoryV2Test {
         assertNotNull(retained.error)
     }
 
-    private fun createRepo(): AdminRepository {
+    private fun createRepo(repositoryStorage: AdminStorage = storage,
+        artifactProvider: ((String) -> Pair<java.io.File, kotlinx.serialization.json.JsonObject>)? = null,
+        tunnelStore: io.github.libreroute.data.TunnelStore? = null,
+        updateResponse: ((kotlinx.serialization.json.JsonObject, kotlinx.serialization.json.JsonElement?) -> String)? = null): AdminRepository {
         return AdminRepository(
             context = null,
             keyManager = keys,
             sshClient = AdminSshClient(
                 context = AdminRepository.createDummyContext(),
                 networkChecker = { true },
-                commandExecutor = { _, request ->
+                  commandExecutor = { _, request ->
+                      lastUpdateBootstrap = json.parseToJsonElement(request).jsonObject["update_bootstrap"]
+                          ?.takeUnless { it is kotlinx.serialization.json.JsonNull }
                     val command = AdminEnvelope.fromJson(json.parseToJsonElement(request).jsonObject["envelope"].toString())!!
                     lastExecutedEnvelope = command
                     val requestOp = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(command.payload), Charsets.UTF_8)).jsonObject["op"]?.jsonPrimitive?.content
-                    val autoSnapshot = requestOp == "get-cluster-snapshot" && !json.parseToJsonElement(nextResponseData).let { it is kotlinx.serialization.json.JsonObject && it.containsKey("snapshot_revision") }
+                    if (requestOp == "issue-enrollment") {
+                        enrollmentRequests.add(command)
+                        if (loseEnrollmentResponse) { loseEnrollmentResponse = false; throw java.io.IOException("Lost response after issuance") }
+                    }
+                    val autoSnapshot = requestOp == "get-cluster-snapshot" && !json.parseToJsonElement(nextResponseData).let {
+                        val objectData = if (it is kotlinx.serialization.json.JsonArray) it.singleOrNull() else it
+                        objectData is kotlinx.serialization.json.JsonObject && objectData.containsKey("snapshot_revision")
+                    }
                     val snapshot = AdminClusterSnapshot(authorityId = keys.getPublicKeyBase64(), snapshotRevision = 5L,
                         coreInfo = coreInfo)
-                    val data = if (autoSnapshot) json.encodeToString(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot))) else nextResponseData
+                    val data = if (requestOp == "core-update" && updateResponse != null) {
+                        updateResponse(json.parseToJsonElement(String(Base64.getUrlDecoder().decode(command.payload))).jsonObject, lastUpdateBootstrap)
+                    } else if (autoSnapshot) json.encodeToString(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot))) else nextResponseData
                     val body = buildJsonObject {
                         put("op_id", command.opId)
-                        put("status", "applied")
+                        put("status", if (requestOp == "assign-profile") jazzReplyStatus else "applied")
                         put("timestamp", System.currentTimeMillis() / 1000L)
                         put("data", json.parseToJsonElement(data))
                     }
@@ -157,8 +432,11 @@ class AdminRepositoryV2Test {
                     Pair(0, respEnv.toJson())
                 }
             ),
-            storage = storage,
-            socketProbe = { _, _, _ -> true }
+            storage = repositoryStorage,
+            customTunnelStore = tunnelStore,
+            socketProbe = { _, _, _ -> true },
+              jazzRoomCreator = { jazzRoomCreator() },
+              coreArtifactProvider = artifactProvider
         )
     }
 
@@ -231,6 +509,35 @@ class AdminRepositoryV2Test {
         assertNotNull(lastExecutedEnvelope)
         val viewerProfile = repository.managedProfilesFlow.value.first { it.serverId == "observed" }
         assertEquals(AdminRole.VIEWER, viewerProfile.role)
+    }
+
+    @Test fun jazzRoomPermissionsFollowSignedRolesAndScope() {
+        grantRole("owner", AdminRole.OWNER)
+        grantRole("viewer", AdminRole.VIEWER)
+        grantRole("operator", AdminRole.OPERATOR)
+        assertTrue(repository.canPerform("owner", "set-jazz-room-policy"))
+        assertTrue(repository.canPerform("operator", "replace-jazz-room"))
+        assertFalse(repository.canPerform("operator", "set-jazz-room-policy"))
+        assertTrue(repository.canPerform("viewer", "get-jazz-room-pool"))
+        assertFalse(repository.canPerform("viewer", "drain-jazz-room"))
+        assertFalse(repository.canPerform("missing", "get-jazz-room-pool"))
+    }
+
+    @Test fun unknownJazzAssignmentKeepsOperationAcrossRepositoryRecreation() {
+        grantRole("srv-1", AdminRole.OWNER)
+        val node = repository.getServerNode("srv-1")!!
+        nextResponseData = """{"id":"pair-a","user_id":"user","device_id":"device","profile_instance_id":"profile","server_id":"srv-1","transport":"jazz","status":"ready","revision":1}"""
+        jazzReplyStatus = "unknown"
+        val first = repository.assignProfile("user", "device", "srv-1", "jazz", channel=AdminChannel.DIRECT_SSH, serverNode=node)
+        assertTrue(first.isFailure)
+        val original = lastExecutedEnvelope!!
+        jazzReplyStatus = "applied"
+        val restored = createRepo()
+        val retry = restored.assignProfile("user", "device", "srv-1", "jazz", channel=AdminChannel.DIRECT_SSH, serverNode=node)
+        assertTrue(retry.isSuccess)
+        assertEquals(original.opId, lastExecutedEnvelope!!.opId)
+        assertEquals(original.payload, lastExecutedEnvelope!!.payload)
+        assertEquals("pair-a", retry.getOrThrow().id)
     }
 
     @Test fun removingOneScopedGrantPreservesOtherServerAndSshContexts() {
@@ -844,6 +1151,33 @@ class AdminRepositoryV2Test {
         assertNull(newRepo.getActiveGrant("any-server-id"))
     }
 
+    @Test fun wrappedClusterSnapshotRetainsVerifiedCacheAndRejectsRevisionRollback() {
+        grantOwner()
+        val node = repository.serverNodesFlow.value.first()
+        val snapshot = AdminClusterSnapshot(authorityId = keys.getPublicKeyBase64(), snapshotRevision = 10L,
+            coreInfo = coreInfo)
+        val signedData = json.encodeToString(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot)))
+        nextResponseData = "[$signedData]"
+        assertEquals(10L, repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).getOrThrow().snapshotRevision)
+        assertEquals(10L, createRepo().cachedClusterSnapshot(node.id)?.snapshotRevision)
+
+        val stale = snapshot.copy(snapshotRevision = 9L)
+        nextResponseData = json.encodeToString(stale.copy(snapshotHash = computeClusterSnapshotHash(stale)))
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertEquals(10L, repository.cachedClusterSnapshot(node.id)?.snapshotRevision)
+    }
+
+    @Test fun wrappedClusterSnapshotRejectsTamperedHash() {
+        grantOwner()
+        val node = repository.serverNodesFlow.value.first()
+        val tampered = AdminClusterSnapshot(authorityId = keys.getPublicKeyBase64(), snapshotRevision = 10L,
+            snapshotHash = "invalid")
+        nextResponseData = "[${json.encodeToString(tampered)}]"
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertNull(repository.cachedClusterSnapshot(node.id))
+        assertNotNull(repository.getServerNode(node.id)?.coreObservation?.error)
+    }
+
     @Test fun testClusterSnapshotTwoProfilesOnSameServer() {
         grantOwner()
         val testServer = repository.serverNodesFlow.value.first()
@@ -973,6 +1307,165 @@ class AdminRepositoryV2Test {
         assertTrue(applyRes is AdminOpResult.Failure)
         assertNotEquals(AdminRole.OWNER, testRepo.getRole())
         assertNull(testRepo.getActiveGrant())
+    }
+
+    private fun restorationReply(serverId: String = "restore-node") = """{"server_id":"$serverId","routes":[{
+        "profile_instance_id":"jitsi-existing","route_id":"jitsi-existing","server_id":"$serverId",
+        "name":"Jitsi Meet","transport":"jitsi","url":"https://meet.jit.si/restored-room",
+        "secret_key":"distinct encryption secret 12345","revision":7,"status":"ready",
+        "codec":"batched","encryption_layout":"packet","parameters":{"session_negotiate":"false","session_batch_bytes":"8192"}
+    }]}"""
+
+    @Test fun restorationRecoversMissingRouteAndPreservesSelectionOnRetry() {
+        grantRole("restore-node", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "protocol-config-restore-v1")
+        val manual = io.github.libreroute.data.Tunnel(42, "Manual", "jitsi", listOf("--url", "https://meet.jit.si/manual-room"))
+        val store = InMemoryTestTunnelStore(listOf(manual))
+        val repo = createRepo(tunnelStore = store)
+        val node = repo.getServerNode("restore-node")!!
+        nextResponseData = restorationReply()
+        assertTrue(repo.restoreServerProtocols(node).isSuccess)
+        assertEquals(2, store.load().size)
+        val restored = store.load().single { it.managedProfileId == "jitsi-existing" }
+        store.setSelectedId(restored.id)
+        assertFalse(restored.transportConnPayload.contains("--session-negotiate"))
+        assertTrue(restored.transportConnPayload.contains("--session-batch-bytes=8192"))
+        assertTrue(repo.isProtocolReady(node.id, "jitsi"))
+        val originalGrant = repo.getActiveGrant(node.id)
+        assertTrue(repo.restoreServerProtocols(node).isSuccess)
+        assertEquals(2, store.load().size)
+        assertEquals(restored.id, store.load().single { it.managedProfileId == "jitsi-existing" }.id)
+        assertEquals(restored.id, store.getSelectedId())
+        assertEquals(originalGrant, repo.getActiveGrant(node.id))
+        assertEquals(manual, store.load().single { it.id == 42L })
+        assertTrue(repo.installProtocol(node, "jitsi", "", AdminChannel.DIRECT_SSH) is AdminOpResult.Success)
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload))).jsonObject
+        assertEquals("get-protocol-configurations", command.getValue("op").jsonPrimitive.content)
+    }
+
+    @Test fun restorationRejectsWrongServerAndViewerWithoutChangingConnections() {
+        grantRole("restore-node", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "protocol-config-restore-v1")
+        val store = InMemoryTestTunnelStore(emptyList())
+        val repo = createRepo(tunnelStore = store)
+        nextResponseData = restorationReply("another-server")
+        assertTrue(repo.restoreServerProtocols(repo.getServerNode("restore-node")!!).isFailure)
+        assertTrue(store.load().isEmpty())
+        grantRole("viewer-node", AdminRole.VIEWER)
+        val viewerRepo = createRepo(tunnelStore = store)
+        lastExecutedEnvelope = null
+        assertTrue(viewerRepo.restoreServerProtocols(viewerRepo.getServerNode("viewer-node")!!).isFailure)
+        assertNull(lastExecutedEnvelope)
+    }
+
+    @Test fun restorationRepairsRenamedLegacyDuplicatesAndReadySetupUsesNoNetwork() {
+        grantRole("restore-node", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "protocol-config-restore-v1")
+        val legacy = io.github.libreroute.data.Tunnel(41, "My Jitsi", "jitsi",
+            listOf("--url", "https://meet.jit.si/restored-room"),
+            "distinct encryption secret 12345", "restore-node")
+        val store = InMemoryTestTunnelStore(listOf(legacy, legacy.copy(id = 42, name = "Restored Jitsi",
+            managedProfileId = "jitsi-existing")))
+        store.setSelectedId(41)
+        val repo = createRepo(tunnelStore = store)
+        val node = repo.getServerNode("restore-node")!!
+        nextResponseData = restorationReply()
+        assertTrue(repo.restoreServerProtocols(node).isSuccess)
+        assertEquals(1, store.load().size)
+        assertEquals(41L, store.load().single().id)
+        assertEquals("My Jitsi", store.load().single().name)
+        assertEquals(41L, store.getSelectedId())
+        lastExecutedEnvelope = null
+        assertTrue(repo.restoreServerProtocolsAutomatically(node).isSuccess)
+        assertNull(lastExecutedEnvelope)
+        assertTrue(repo.installProtocol(node, "jitsi") is AdminOpResult.Success)
+        assertNull(lastExecutedEnvelope)
+    }
+
+    @Test fun excludedMqttIsRemovedAndNotRestoredOrInstalled() {
+        grantRole("restore-node", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "protocol-config-restore-v1")
+        val legacyMqtt = io.github.libreroute.data.Tunnel(50, "Old MQTT", "mqtt",
+            listOf("--url", "wss://broker.example/mqtt#phone"), "distinct encryption secret 12345")
+        val manual = io.github.libreroute.data.Tunnel(42, "My Jazz", "jazz",
+            listOf("--url", "https://salutejazz.ru/call/manual/password"))
+        val store = InMemoryTestTunnelStore(listOf(legacyMqtt, manual))
+        store.setSelectedId(50)
+        val repo = createRepo(tunnelStore = store)
+        val node = repo.getServerNode("restore-node")!!
+        val reply = json.parseToJsonElement(restorationReply()).jsonObject
+        val readyRoute = reply.getValue("routes").jsonArray.single().jsonObject
+        val mqttRoute = buildJsonObject {
+            readyRoute.forEach { (key, value) -> put(key, value) }
+            put("profile_instance_id", "mqtt-existing"); put("route_id", "mqtt-existing")
+            put("transport", "mqtt"); put("url", "wss://broker.example/mqtt#phone")
+        }
+        nextResponseData = buildJsonObject {
+            put("server_id", "restore-node")
+            put("routes", buildJsonArray { add(mqttRoute); add(readyRoute) })
+        }.toString()
+        repeat(2) {
+            assertTrue(repo.restoreServerProtocols(node).isSuccess)
+            assertEquals(setOf("jazz", "jitsi"), store.load().map { it.transportType }.toSet())
+            assertEquals(manual, store.load().single { it.id == 42L })
+            assertEquals(42L, store.getSelectedId())
+            assertFalse(repo.isProtocolReady(node.id, "mqtt"))
+            assertTrue(repo.managedProfilesFlow.value.none { it.transportType == "mqtt" })
+        }
+        lastExecutedEnvelope = null
+        assertTrue(repo.installProtocol(node, "mqtt") is AdminOpResult.Failure)
+        assertNull(lastExecutedEnvelope)
+        repo.updateManagedTunnels(listOf(legacyMqtt))
+        assertTrue(store.load().none { it.transportType == "mqtt" })
+    }
+
+    @Test fun groupEnrollmentIssuanceRetainsOneSignedOperationOnLossAndRejectsChangedPendingLinks() {
+        grantOwner()
+        nextResponseData = buildJsonObject {
+            put("enrollment_id", "group-enrollment"); put("token", "a".repeat(43)); put("control_profile_id", "profile-1")
+            put("document_url", "https://docs.yandex.ru/edit/d/dedicated-control"); put("server_public_key", keys.getPublicKeyBase64())
+            put("expires_at", System.currentTimeMillis() / 1000 + 600)
+        }.toString()
+        val plan = ChannelGroupPlan.fromLinks("https://salutejazz.ru/call/one/password\nhttps://salutejazz.ru/call/two/password")
+        val routes = listOf(EnrollmentRoute("srv-1", transport = "channel-group", channel_group_plan = plan))
+        loseEnrollmentResponse = true
+        val first = repository.issueBootstrapInvitation("user-one", routes, AdminChannel.DIRECT_SSH, repository.getServerNode("srv-1"))
+        assertTrue(first.isFailure); assertEquals(1, enrollmentRequests.size)
+        val changed = routes.map { it.copy(channel_group_plan = plan.copy(min_ready = 2)) }
+        assertTrue(repository.issueBootstrapInvitation("user-one", changed, AdminChannel.DIRECT_SSH, repository.getServerNode("srv-1")).isFailure)
+        assertEquals(1, enrollmentRequests.size)
+        val restarted = createRepo()
+        val retry = restarted.issueBootstrapInvitation("user-one", routes, AdminChannel.DIRECT_SSH, restarted.getServerNode("srv-1"))
+        assertTrue(retry.exceptionOrNull()?.message, retry.isSuccess)
+        assertEquals("group-enrollment", BootstrapInvitation.parse(retry.getOrThrow(), keys).enrollmentId)
+        assertEquals(2, enrollmentRequests.size)
+        assertEquals(enrollmentRequests.first().toJson(), enrollmentRequests.last().toJson())
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(enrollmentRequests.last().payload))).jsonObject
+        val decoded = json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(EnrollmentRoute.serializer()), command.getValue("enrollment_routes"))
+        assertEquals(routes, decoded)
+        assertNull(storage.getString("group_enrollment_request_srv-1_user-one", null))
+    }
+
+    @Test fun failureOfPreviousCarrierDoesNotDisableNewOwnerRoute() {
+        grantRole("carrier-node", AdminRole.OWNER)
+        val node = repository.getServerNode("carrier-node")!!
+        val grant = repository.getActiveGrant(node.id)
+        val old = io.github.libreroute.service.NativeProcessSupervisor.AdminCarrier("/private/old.sock", "vyandex", node.id, ready = true)
+        try {
+            io.github.libreroute.service.NativeProcessSupervisor.activeAdminCarrier = old
+            assertEquals(AdminChannel.ACTIVE_TRANSPORT, repository.resolveAdminChannel(AdminChannel.AUTO, node))
+            // This JVM has no native carrier; the read records a real connection failure.
+            assertTrue(repository.getClusterSnapshot(AdminChannel.ACTIVE_TRANSPORT, node).isFailure)
+            assertEquals("Нет связи с сервером", repository.serverMutationBlockReason(node.id, AdminChannel.ACTIVE_TRANSPORT))
+            assertEquals(AdminChannel.DIRECT_SSH, repository.resolveAdminChannel(AdminChannel.AUTO, node))
+            val next = old.copy(path = "/private/new.sock", transport = "jazz", ready = false)
+            io.github.libreroute.service.NativeProcessSupervisor.activeAdminCarrier = next
+            assertEquals(AdminChannel.DIRECT_SSH, repository.resolveAdminChannel(AdminChannel.AUTO, node))
+            io.github.libreroute.service.NativeProcessSupervisor.activeAdminCarrier = next.copy(ready = true)
+            assertEquals(AdminChannel.ACTIVE_TRANSPORT, repository.resolveAdminChannel(AdminChannel.AUTO, node))
+            assertNull(repository.serverMutationBlockReason(node.id, AdminChannel.ACTIVE_TRANSPORT))
+            assertEquals(grant, repository.getActiveGrant(node.id))
+        } finally { io.github.libreroute.service.NativeProcessSupervisor.activeAdminCarrier = null }
     }
 
     private class InMemoryTestTunnelStore(initial: List<io.github.libreroute.data.Tunnel>) : io.github.libreroute.data.TunnelStore {

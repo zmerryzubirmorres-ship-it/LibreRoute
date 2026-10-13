@@ -11,7 +11,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.libreroute.R
 import io.github.libreroute.service.Ipv4WebViewProxy
 import io.github.libreroute.event.YandexAuthReason
@@ -24,12 +26,15 @@ import java.io.File
 /** Human-operated Yandex challenge; no CAPTCHA solver or challenge URL is logged. */
 class YandexCaptchaActivity : AppCompatActivity() {
     private lateinit var browser: WebView
+    private lateinit var chrome: BrowserChrome
     private lateinit var status: TextView
     private var documentUrl: String = ""
     private var reason = YandexAuthReason.CAPTCHA
-    private var verifying = false
-    private var retryNotBefore = 0L
-    @Volatile private var probeProcess: Process? = null
+    private val vm by viewModels<YandexBrowserViewModel>()
+    private val verifying get() = vm.state.value.running
+    private var retryNotBefore: Long
+        get() = vm.retryNotBefore
+        set(value) { vm.retryNotBefore = value }
     private var ipv4Proxy: Ipv4WebViewProxy? = null
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -54,17 +59,17 @@ class YandexCaptchaActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tv_target_info).text = "Завершите проверку на странице"
         findViewById<TextView>(R.id.tv_tunnel_badge).visibility = android.view.View.GONE
         findViewById<android.view.View>(R.id.btn_manual_fallback).visibility = android.view.View.GONE
-        findViewById<android.view.View>(R.id.btn_back).setOnClickListener { finish() }
+        findViewById<android.view.View>(R.id.btn_back).setOnClickListener { navigateBack() }
         findViewById<Button>(R.id.btn_return_server).apply { text = "Вернуться в приложение"; setOnClickListener { finish() } }
         val address = findViewById<android.widget.EditText>(R.id.browser_address).apply { isEnabled = true; setText(documentUrl) }
+        chrome = BrowserChrome(this, savedInstanceState)
         val pageError = findViewById<TextView>(R.id.tv_error_view)
-        val progress = findViewById<android.widget.ProgressBar>(R.id.progress_bar)
         val retryPage = findViewById<Button>(R.id.btn_retry_page)
         browser = findViewById(R.id.web_view)
         // WebView itself has no IPv4-only setting. Install a loopback CONNECT
         // proxy before the first navigation; it resolves every destination to
         // an IPv4 address and leaves TLS/cookies end-to-end in Chromium.
-        ipv4Proxy = runCatching { Ipv4WebViewProxy() }.getOrNull()
+        ipv4Proxy = vm.proxy
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, true)
         fun openAddress() {
@@ -74,14 +79,14 @@ class YandexCaptchaActivity : AppCompatActivity() {
                 address.error = "Для этой проверки нужен HTTPS-адрес Яндекса"
                 return
             }
-            address.clearFocus()
+            chrome.navigate(url)
             browser.loadUrl(url)
         }
         findViewById<Button>(R.id.browser_go).apply { isEnabled = true; setOnClickListener { openAddress() } }
         address.setOnEditorActionListener { _, action, _ ->
             if (action == android.view.inputmethod.EditorInfo.IME_ACTION_GO) { openAddress(); true } else false
         }
-        findViewById<android.view.View>(R.id.btn_reload).setOnClickListener { browser.reload() }
+        chrome.bindReload(browser)
         retryPage.setOnClickListener { openAddress() }
         browser.settings.javaScriptEnabled = true
         browser.settings.domStorageEnabled = true
@@ -90,19 +95,20 @@ class YandexCaptchaActivity : AppCompatActivity() {
         browser.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
         browser.webChromeClient = object : android.webkit.WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progress.visibility = if (newProgress in 1..99) android.view.View.VISIBLE else android.view.View.GONE
-                progress.progress = newProgress
+                chrome.progressChanged(newProgress)
             }
         }
         browser.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 request.isForMainFrame && !isAllowed(request.url.toString())
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                chrome.pageStarted(url)
                 pageError.visibility = android.view.View.GONE
                 retryPage.visibility = android.view.View.GONE
             }
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
                 if (request?.isForMainFrame == true) {
+                    chrome.pageFailed()
                     pageError.text = "Не удалось загрузить страницу. Проверьте сеть и повторите попытку"
                     pageError.visibility = android.view.View.VISIBLE
                     retryPage.visibility = android.view.View.VISIBLE
@@ -110,7 +116,8 @@ class YandexCaptchaActivity : AppCompatActivity() {
                 }
             }
             override fun onPageFinished(view: WebView, url: String) {
-                if (!address.hasFocus()) address.setText(url)
+                chrome.pageFinished(url)
+                if (verifying) return
                 status.text = if (url.contains("showcaptcha", ignoreCase = true)) {
                     "Завершите проверку на странице, затем дождитесь открытия документа"
                 } else {
@@ -122,19 +129,35 @@ class YandexCaptchaActivity : AppCompatActivity() {
             text = "Повторить подключение"
             setOnClickListener { verifyAndSave() }
         }
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = navigateBack()
+        })
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.state.collect { state ->
+                    findViewById<Button>(R.id.btn_send_auth).isEnabled = !state.running
+                    state.message?.let { status.text = it }
+                    if (state.saved) { setResult(Activity.RESULT_OK); finish() }
+                }
+            }
+        }
+        val browserState = savedInstanceState?.getBundle("browser")
         val proxy = ipv4Proxy
         if (proxy == null) {
             status.text = "Не удалось включить IPv4 для проверки. Проверьте сеть"
         } else {
             proxy.install { installed ->
+                if (isFinishing || isDestroyed) return@install
                 if (!installed) {
                     status.text = "Не удалось включить IPv4 для проверки. Проверьте сеть"
                 } else if (!isFinishing && !isDestroyed) {
-                    browser.loadUrl(documentUrl)
+                    if (browserState == null || browser.restoreState(browserState) == null) browser.loadUrl(documentUrl)
                 }
             }
         }
     }
+
+    private fun navigateBack() { if (::browser.isInitialized && browser.canGoBack()) browser.goBack() else finish() }
 
     private fun verifyAndSave() {
         if (verifying) return
@@ -220,70 +243,11 @@ class YandexCaptchaActivity : AppCompatActivity() {
     }
 
     private fun verifyCandidate(handoff: JSONObject) {
-        if (verifying || isFinishing || isDestroyed) return
-        verifying = true
-        findViewById<Button>(R.id.btn_send_auth).isEnabled = false
-        status.text = "Проверяем соединение с Яндексом…"
-        val candidateDir = File(filesDir, "yandex-probe-${java.util.UUID.randomUUID()}")
-        lifecycleScope.launch {
-            try {
-                val outcome = withContext(Dispatchers.IO) {
-                    check(candidateDir.mkdir())
-                    val candidate = File(candidateDir, COOKIE_FILE)
-                    candidate.writeText(handoff.toString(), Charsets.UTF_8)
-                    android.system.Os.chmod(candidate.absolutePath, 0x180)
-                    io.github.libreroute.service.YandexBrowserProbe.run(this@YandexCaptchaActivity, documentUrl, candidate) {
-                        probeProcess = it
-                        if (isFinishing || isDestroyed) it?.destroyForcibly()
-                    }
-                }
-                if (isFinishing || isDestroyed) return@launch
-                if (!outcome.optBoolean("ok")) {
-                    status.text = when (outcome.optString("reason")) {
-                        "captcha" -> "Яндекс снова запросил проверку. Обновите страницу и завершите её"
-                        "session" -> "Яндекс не принял сессию. Обновите документ и повторите проверку"
-                        "rate_limit" -> {
-                            val seconds = outcome.optLong("retry_after_seconds").coerceAtLeast(30)
-                            retryNotBefore = android.os.SystemClock.elapsedRealtime() + seconds.coerceAtMost(Int.MAX_VALUE.toLong()) * 1000
-                            "Яндекс ограничил запросы. Повторите через $seconds с"
-                        }
-                        else -> "Не удалось проверить соединение. Проверьте сеть и повторите попытку"
-                    }
-                    io.github.libreroute.admin.InstallationLog.append(this@YandexCaptchaActivity, "client_yandex_probe_failed", "reason=${outcome.optString("reason").takeIf { it in setOf("captcha", "session", "rate_limit", "network") } ?: "network"}")
-                    return@launch
-                }
-                // Copy to temporary siblings before replacing the active files.
-                // The probe's cache is bound to the exact promoted cookie bytes.
-                val cookieTarget = getFileStreamPath(COOKIE_FILE)
-                val cookieTmp = File(filesDir, "$COOKIE_FILE.new")
-                File(candidateDir, COOKIE_FILE).copyTo(cookieTmp, overwrite = true)
-                android.system.Os.chmod(cookieTmp.absolutePath, 0x180)
-                val cacheName = "yandex_volga_session.json"
-                val cacheTmp = File(filesDir, "$cacheName.new")
-                File(candidateDir, cacheName).copyTo(cacheTmp, overwrite = true)
-                android.system.Os.chmod(cacheTmp.absolutePath, 0x180)
-                check(cookieTmp.renameTo(cookieTarget))
-                check(cacheTmp.renameTo(getFileStreamPath(cacheName)))
-                io.github.libreroute.admin.InstallationLog.append(this@YandexCaptchaActivity, "client_yandex_browser_saved", "cookies_present=true native_probe_passed=true")
-                setResult(Activity.RESULT_OK)
-                finish()
-            } catch (_: Exception) {
-                if (!isFinishing && !isDestroyed) status.text = getString(R.string.yandex_webview_save_failed)
-            } finally {
-                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
-                    // This directory was created by this activity with a fixed parent.
-                    candidateDir.deleteRecursively()
-                }
-                verifying = false
-                if (!isFinishing && !isDestroyed) findViewById<Button>(R.id.btn_send_auth).isEnabled = true
-            }
-        }
+        if (!isFinishing && !isDestroyed) vm.verify(documentUrl, handoff)
     }
 
     override fun onDestroy() {
-        ipv4Proxy?.close()
         ipv4Proxy = null
-        probeProcess?.let { if (it.isAlive) it.destroyForcibly() }
         if (::browser.isInitialized) {
             browser.stopLoading()
             browser.destroy()
@@ -292,7 +256,9 @@ class YandexCaptchaActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        if (::chrome.isInitialized) chrome.saveState(outState)
         outState.putLong("retry_not_before", retryNotBefore)
+        if (::browser.isInitialized) outState.putBundle("browser", Bundle().also { browser.saveState(it) })
         super.onSaveInstanceState(outState)
     }
 

@@ -35,12 +35,20 @@ import java.io.FileOutputStream
 object QrShareDialog {
 
     fun show(context: Context, tunnel: Tunnel) {
+        val host = context as? androidx.fragment.app.FragmentActivity ?: return
+        if (host.supportFragmentManager.findFragmentByTag("tunnel-share") != null) return
+        TunnelShareDialogFragment().apply {
+            arguments = android.os.Bundle().apply { putString("tunnel", Json.encodeToString(tunnel)) }
+        }.show(host.supportFragmentManager, "tunnel-share")
+    }
+
+    internal fun create(context: Context, tunnel: Tunnel): Dialog? {
         val exportTunnel = TunnelLinkParser.prepareForExport(context, tunnel)
-        val json = runCatching { Json.encodeToString(exportTunnel) }.getOrNull() ?: return
+        val json = runCatching { Json.encodeToString(exportTunnel) }.getOrNull() ?: return null
         val configLink = TunnelLinkParser.toLink(exportTunnel, context)
         val qrBitmap = QrGenerator.generateQrBitmap(configLink, 600) ?: run {
             Toast.makeText(context, R.string.qr_generate_error, Toast.LENGTH_SHORT).show()
-            return
+            return null
         }
 
         val dialog = Dialog(context)
@@ -114,6 +122,14 @@ object QrShareDialog {
             }
         }
 
-        dialog.show()
+        return dialog
+    }
+}
+
+class TunnelShareDialogFragment : androidx.fragment.app.DialogFragment() {
+    override fun onCreateDialog(savedInstanceState: android.os.Bundle?): Dialog {
+        val tunnel = Json.decodeFromString<Tunnel>(requireArguments().getString("tunnel").orEmpty())
+        return QrShareDialog.create(requireContext(), tunnel) ?: android.app.AlertDialog.Builder(requireContext())
+            .setMessage(R.string.qr_generate_error).setPositiveButton(android.R.string.ok, null).create()
     }
 }

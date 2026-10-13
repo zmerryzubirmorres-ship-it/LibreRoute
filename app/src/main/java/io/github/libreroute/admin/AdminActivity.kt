@@ -6,7 +6,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -27,7 +26,6 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -44,17 +42,45 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import io.github.libreroute.R
-import io.github.libreroute.util.QrGenerator
 import io.github.libreroute.util.ThemePreferences
 import io.github.libreroute.util.performAppHaptics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 class AdminActivity : AppCompatActivity() {
 
+    private val dialogs by lazy { io.github.libreroute.ui.DialogScreens(this) { key, args ->
+        when (key) {
+            "message" -> showMessage(args.getString("title").orEmpty(), args.getString("body").orEmpty())
+            "admins_choose_server" -> showAdministratorsDialog()
+            "admins" -> showAdministratorList(args.getString("node").orEmpty(), kotlinx.serialization.json.Json.decodeFromString<List<AdministratorRecord>>(args.getString("admins").orEmpty()))
+            "revoke_admin" -> showRevokeAdministrator(args.getString("node").orEmpty(), args.getString("device").orEmpty(), args.getString("role").orEmpty())
+            "showAdminDelegationActions" -> showAdminDelegationActions()
+            "showCompleteOwnerTransferDialog" -> showCompleteOwnerTransferDialog()
+            "showAdminInvitationTemplateDialog" -> showAdminInvitationTemplateDialog()
+            "showApproveAdminRequestDialog" -> showApproveAdminRequestDialog()
+            "showImportGrantDialog" -> showImportGrantDialog()
+            "showCreateUserDialog" -> showCreateUserDialog()
+            "showSelectUserForAssignment" -> showSelectUserForAssignment()
+            "showServerAuthDialog" -> showServerAuthDialog()
+            "showInstallServerDialog" -> showInstallServerDialog()
+            "showProbeServerDialog" -> showProbeServerDialog()
+            "showSelectAssignmentForInvitation" -> showSelectAssignmentForInvitation()
+            "showConfirmRevokeRightsDialog" -> showConfirmRevokeRightsDialog()
+            "showManageSshKeyDialog" -> showManageSshKeyDialog()
+            "showImportSshKeyDialog" -> showImportSshKeyDialog()
+            "showPromptRecipientKeyDialog" -> vm.managedProfiles.value.firstOrNull { it.id == args.getString("id") }?.let { showPromptRecipientKeyDialog(it) }
+            "showConfirmRevokeProfileDialog" -> vm.managedProfiles.value.firstOrNull { it.id == args.getString("id") }?.let { showConfirmRevokeProfileDialog(it) }
+            "showAssignmentActionDialog" -> vm.assignments.value.firstOrNull { it.id == args.getString("id") }?.let { showAssignmentActionDialog(it) }
+            "person" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showPersonDetails(it) }
+            "access" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showAssignDocumentDialog(it) }
+            "server" -> vm.serverNodes.value.firstOrNull { it.id == args.getString("id") }?.let { showServerNodeDetailsDialog(it) }
+        }
+    } }
+    private val dialogOperation by viewModels<io.github.libreroute.ui.ScreenOperationViewModel>()
+    private data class AdminDialogOutcome(val message: String = "", val link: String? = null, val title: String = "")
+    private data class AdministratorsLoaded(val nodeId: String, val admins: List<AdministratorRecord>)
     private val vm: AdminViewModel by viewModels()
     private lateinit var themePrefs: ThemePreferences
 
@@ -123,6 +149,12 @@ class AdminActivity : AppCompatActivity() {
             layoutTabServers.visibility = if (adminTab == R.id.nav_servers) View.VISIBLE else View.GONE
             true
         }
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (adminTab != R.id.nav_overview) nav.selectedItemId = R.id.nav_overview else finish()
+            }
+        })
+        findViewById<View>(R.id.adminOverviewAdvanced).visibility = if (saved?.getBoolean("advanced") == true) View.VISIBLE else View.GONE
         nav.selectedItemId = saved?.getInt("admin_tab", R.id.nav_overview) ?: R.id.nav_overview
         findViewById<View>(R.id.adminReturnUser).setOnClickListener { finish() }
         findViewById<View>(R.id.overviewInvite).setOnClickListener { showCreateUserDialog() }
@@ -135,15 +167,19 @@ class AdminActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putBoolean("restored_operation_shown", restoredOperationShown)
         outState.putInt("admin_tab", adminTab)
+        outState.putString("people_filter", peopleFilter)
+        outState.putBoolean("audit_expanded", isAuditLogExpanded)
+        outState.putBoolean("advanced", findViewById<View>(R.id.adminOverviewAdvanced).visibility == View.VISIBLE)
     }
 
     private fun renderOverviewCounts() {
         val count = findViewById<TextView>(R.id.adminOverviewCounts)
         val nodes = vm.serverNodes.value
-        count.text = "Люди: ${vm.users.value.size} · Серверы: ${nodes.size}\n" +
+        count.text = "Пользователи: ${vm.users.value.size} · Серверы: ${nodes.size}\n" +
             when {
-                nodes.isEmpty() -> "Добавьте первый сервер, затем пригласите человека"
+                nodes.isEmpty() -> "Добавьте первый сервер, затем пригласите пользователя"
                 nodes.any { it.status == ServerNodeStatus.OFFLINE } -> "Есть недоступные серверы. Откройте раздел «Серверы»"
                 nodes.any { it.status == ServerNodeStatus.UNKNOWN } -> "Часть серверов ещё не проверена"
                 else -> "Состояние серверов доступно в разделе «Серверы»"
@@ -180,7 +216,10 @@ class AdminActivity : AppCompatActivity() {
 
     private fun setupPeopleSearch() {
         peopleSearch = findViewById(R.id.adminPeopleSearch)
-        findViewById<MaterialButtonToggleGroup>(R.id.peopleFilters).check(R.id.btn_people_all)
+        findViewById<MaterialButtonToggleGroup>(R.id.peopleFilters).check(when (peopleFilter) {
+            "active" -> R.id.btn_people_active; "suspended" -> R.id.btn_people_suspended
+            "revoked" -> R.id.btn_people_revoked; else -> R.id.btn_people_all
+        })
         peopleSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderPeople()
@@ -203,6 +242,7 @@ class AdminActivity : AppCompatActivity() {
         "vyandex" -> "Документ Яндекса"
         "mqtt" -> "MQTT · WSS"
         "jitsi" -> "Jitsi Meet"
+        "jazz" -> "СберДжаз"
         else -> transport
     }
 
@@ -220,6 +260,7 @@ class AdminActivity : AppCompatActivity() {
     private fun showPersonDetails(user: AdminUser) {
         val screen = io.github.libreroute.ui.CalmDetailDialog(this, "Детали пользователя")
         fun render() {
+            val readingPosition = screen.scrollView.scrollY
             screen.content.removeAllViews()
             screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, user.name, when {
                 user.isRevoked -> "Доступ отозван"
@@ -253,7 +294,8 @@ class AdminActivity : AppCompatActivity() {
                 screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, name,
                     "${protocolLabel(assignment.transport)} · ${assignmentStatusLabel(assignment.status)}") { showAssignmentActionDialog(assignment) })
             }
-            if (user.isActive) screen.action("Настроить доступ") { screen.dismiss(); showAssignDocumentDialog(user) }
+            if (user.isActive) screen.action("Настроить доступ") { showAssignDocumentDialog(user) }
+            screen.scrollView.post { screen.scrollView.scrollTo(0, readingPosition) }
             if (user.isActive) screen.action("Приостановить доступ", destructive = true) {
                 MaterialAlertDialogBuilder(this).setTitle("Приостановить доступ?")
                     .setMessage("Пользователь «${user.name}» потеряет доступ к назначенным маршрутам.")
@@ -262,12 +304,11 @@ class AdminActivity : AppCompatActivity() {
             }
         }
         render()
-        screen.show()
         val updates = lifecycleScope.launch {
             kotlinx.coroutines.flow.combine(vm.clusterSnapshot, vm.assignments, vm.serverNodes, vm.clusterSnapshotStatus) { _, _, _, _ -> Unit }
                 .collect { if (screen.isShowing) render() }
         }
-        screen.setOnDismissListener { updates.cancel() }
+        dialogs.show(screen, "person", Bundle().apply { putString("id", user.id) }) { updates.cancel() }
         vm.refreshClusterSnapshot()
     }
 
@@ -296,16 +337,38 @@ class AdminActivity : AppCompatActivity() {
         setContentView(R.layout.activity_admin)
 
         initViews()
+        restoredOperationShown = savedInstanceState?.getBoolean("restored_operation_shown") ?: false
+        peopleFilter = savedInstanceState?.getString("people_filter") ?: "all"
+        isAuditLogExpanded = savedInstanceState?.getBoolean("audit_expanded", true) ?: true
         setupPeopleSearch()
         setupTopBar()
         setupChannelSelector()
         setupAdapters()
         setupCalmAdminNavigation(savedInstanceState)
         observeViewModel()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                dialogOperation.state.collect { state ->
+                    state.result?.let { result ->
+                        dialogOperation.consumed()
+                        result.onSuccess { value -> when (value) {
+                            is AdminDialogOutcome -> {
+                                if (value.message.isNotBlank()) Toast.makeText(this@AdminActivity, value.message, Toast.LENGTH_LONG).show()
+                                value.link?.takeIf { it.isNotBlank() }?.let { shareAdminLink(it, value.title) }
+                            }
+                            is AdministratorsLoaded -> showAdministratorList(value.nodeId, value.admins)
+                        } }.onFailure { Toast.makeText(this@AdminActivity, it.message ?: "Операция не завершена. Проверьте результат.", Toast.LENGTH_LONG).show() }
+                    }
+                }
+            }
+        }
         vm.refreshServerProfiles()
         vm.refreshUsers()
         vm.refreshAssignments()
-        intent.getStringExtra("admin_transfer_ack")?.let { showCompleteOwnerTransferDialog(it) }
+        if (savedInstanceState == null) intent.getStringExtra("admin_transfer_ack")?.let {
+            showCompleteOwnerTransferDialog(it); intent.removeExtra("admin_transfer_ack")
+        }
+        dialogs.restore()
     }
 
     override fun onResume() {
@@ -447,10 +510,12 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private fun setupChannelSelector() {
-        toggleChannel.check(R.id.btn_channel_doc)
+        toggleChannel.check(R.id.btn_channel_auto)
         toggleChannel.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
             when (checkedId) {
+                R.id.btn_channel_auto -> vm.selectChannel(AdminChannel.AUTO)
+                R.id.btn_channel_active -> vm.selectChannel(AdminChannel.ACTIVE_TRANSPORT)
                 R.id.btn_channel_doc -> vm.selectChannel(AdminChannel.DOCUMENT)
                 R.id.btn_channel_vds -> vm.selectChannel(AdminChannel.SSH_VDS)
                 R.id.btn_channel_netcraze -> vm.selectChannel(AdminChannel.SSH_NETCRAZE)
@@ -560,8 +625,9 @@ class AdminActivity : AppCompatActivity() {
                 launch {
                     vm.commandHistory.collect { history ->
                         commandsAdapter.submitList(history)
-                        tvEmptyHistory.visibility = if (history.isEmpty()) View.VISIBLE else View.GONE
-                        rvCommandHistory.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+                        tvEmptyHistory.visibility = if (isAuditLogExpanded && history.isEmpty()) View.VISIBLE else View.GONE
+                        rvCommandHistory.visibility = if (isAuditLogExpanded && history.isNotEmpty()) View.VISIBLE else View.GONE
+                        iconAuditChevron.rotation = if (isAuditLogExpanded) 0f else -90f
                     }
                 }
                 launch {
@@ -740,11 +806,12 @@ class AdminActivity : AppCompatActivity() {
             val label = "${route.serverId} · ${route.transport}"
             if (route.reason.isNullOrBlank()) "$label: ${route.state}" else "$label: ${route.state} — ${route.reason}"
         }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(title)
-            .setMessage(rows.ifBlank { operation.error ?: "Нет данных" })
-            .setPositiveButton("Закрыть", null)
-            .show()
+        showMessage(title, rows.ifBlank { operation.error ?: "Нет данных" })
+    }
+
+    private fun showMessage(title: String, body: String) {
+        val dialog = MaterialAlertDialogBuilder(this).setTitle(title).setMessage(body).setPositiveButton("Закрыть", null).create()
+        dialogs.show(dialog, "message", Bundle().apply { putString("title", title); putString("body", body) })
     }
 
     private fun bindRoleState(role: AdminRole) {
@@ -851,7 +918,7 @@ class AdminActivity : AppCompatActivity() {
         if (vm.role.value == AdminRole.OWNER || vm.role.value == AdminRole.OPERATOR) {
             btnActionPrimary.isEnabled = supported
             btnActionPrimary.text = if (supported) "Добавить пользователя"
-                else "Недостаточно прав на выбранном сервере"
+                else vm.mutationBlockReason() ?: "Недостаточно прав на выбранном сервере"
         }
     }
 
@@ -859,7 +926,7 @@ class AdminActivity : AppCompatActivity() {
         val actions = arrayOf("Создать приглашение для устройства", "Одобрить запрос устройства", "Завершить передачу владения", "Управлять администраторами")
         MaterialAlertDialogBuilder(this).setTitle("Доступ администратора")
             .setItems(actions) { _, which -> when (which) { 0 -> showAdminInvitationTemplateDialog(); 1 -> showApproveAdminRequestDialog(); 2 -> showCompleteOwnerTransferDialog(); else -> showAdministratorsDialog() } }
-            .show()
+            .create().let { dialogs.show(it, "showAdminDelegationActions", Bundle()) }
     }
 
     private fun showAdministratorsDialog(selectedNode: ServerNode? = null) {
@@ -867,28 +934,31 @@ class AdminActivity : AppCompatActivity() {
         if (nodes.isEmpty()) { Toast.makeText(this, "Нет сервера для списка администраторов", Toast.LENGTH_LONG).show(); return }
         val node = selectedNode ?: nodes.firstOrNull { it.id == vm.selectedServerNodeId.value } ?: nodes.singleOrNull()
         if (node == null) {
-            MaterialAlertDialogBuilder(this).setTitle("Выберите сервер").setItems(nodes.map { it.name }.toTypedArray()) { _, index -> showAdministratorsDialog(nodes[index]) }.show()
+            MaterialAlertDialogBuilder(this).setTitle("Выберите сервер").setItems(nodes.map { it.name }.toTypedArray()) { _, index -> showAdministratorsDialog(nodes[index]) }.create().let { dialogs.show(it, "admins_choose_server") }
             return
         }
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { AdminRepository.getInstance(this@AdminActivity).listAdministrators(AdminChannel.DOCUMENT, node) }
-            result.onFailure { Toast.makeText(this@AdminActivity, it.message ?: "Не удалось загрузить список", Toast.LENGTH_LONG).show() }
-                .onSuccess { admins ->
-                    val labels = admins.map { "${it.role} · ${it.deviceId}\n${it.status}" }.toTypedArray()
-                    if (labels.isEmpty()) { Toast.makeText(this@AdminActivity, "Администраторов нет", Toast.LENGTH_LONG).show(); return@onSuccess }
-                    MaterialAlertDialogBuilder(this@AdminActivity).setTitle("Администраторы")
-                        .setItems(labels) { _, index ->
-                            val admin = admins[index]
-                            MaterialAlertDialogBuilder(this@AdminActivity).setTitle("Отозвать доступ?")
-                                .setMessage("${admin.role}\n${admin.deviceId}").setNegativeButton("Отмена", null)
-                                .setPositiveButton("Отозвать") { _, _ -> lifecycleScope.launch {
-                                    val revoke = withContext(Dispatchers.IO) { AdminRepository.getInstance(this@AdminActivity).revokeAdministrator(admin.deviceId, node) }
-                                    revoke.onSuccess { Toast.makeText(this@AdminActivity, "Доступ отозван", Toast.LENGTH_LONG).show() }
-                                        .onFailure { Toast.makeText(this@AdminActivity, it.message ?: "Не удалось отозвать доступ", Toast.LENGTH_LONG).show() }
-                                } }.show()
-                        }.show()
-                }
-        }
+        val repo = AdminRepository.getInstance(applicationContext)
+        dialogOperation.run { AdministratorsLoaded(node.id, repo.listAdministrators(AdminChannel.DOCUMENT, node).getOrThrow()) }
+    }
+
+    private fun showAdministratorList(nodeId: String, admins: List<AdministratorRecord>) {
+        if (admins.isEmpty()) { Toast.makeText(this, "Администраторов нет", Toast.LENGTH_LONG).show(); return }
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Администраторы")
+            .setItems(admins.map { "${it.role} · ${it.deviceId}\n${it.status}" }.toTypedArray()) { _, index ->
+                val admin = admins[index]; showRevokeAdministrator(nodeId, admin.deviceId, admin.role.toString())
+            }.create()
+        dialogs.show(dialog, "admins", Bundle().apply { putString("node", nodeId); putString("admins", kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(AdministratorRecord.serializer()), admins)) })
+    }
+
+    private fun showRevokeAdministrator(nodeId: String, deviceId: String, role: String) {
+        val node = vm.serverNodes.value.firstOrNull { it.id == nodeId } ?: return
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Отозвать доступ?")
+            .setMessage("$role\n$deviceId").setNegativeButton("Отмена", null)
+            .setPositiveButton("Отозвать") { _, _ ->
+                val repo = AdminRepository.getInstance(applicationContext)
+                dialogOperation.run { repo.revokeAdministrator(deviceId, node).getOrThrow(); AdminDialogOutcome("Доступ отозван") }
+            }.create()
+        dialogs.show(dialog, "revoke_admin", Bundle().apply { putString("node", nodeId); putString("device", deviceId); putString("role", role) })
     }
 
     private fun showCompleteOwnerTransferDialog(initialAck: String = "") {
@@ -902,12 +972,11 @@ class AdminActivity : AppCompatActivity() {
             .setView(container).setNegativeButton("Отмена", null).setPositiveButton("Завершить") { _, _ ->
                 if (server.selectedItemPosition == 0) { Toast.makeText(this, "Выберите сервер", Toast.LENGTH_LONG).show(); return@setPositiveButton }
                 val node = nodes[server.selectedItemPosition - 1]
-                lifecycleScope.launch {
-                    val result = withContext(Dispatchers.IO) { AdminRepository.getInstance(this@AdminActivity).completeOwnerTransfer(ack.text.toString().trim(), node) }
-                    result.onSuccess { Toast.makeText(this@AdminActivity, "Передача владения завершена", Toast.LENGTH_LONG).show() }
-                        .onFailure { Toast.makeText(this@AdminActivity, it.message ?: "Подтверждение не принято", Toast.LENGTH_LONG).show() }
-                }
-            }.show()
+                val text = ack.text.toString().trim()
+                val repo = AdminRepository.getInstance(applicationContext)
+                dialogOperation.run { repo.completeOwnerTransfer(text, node).getOrThrow(); AdminDialogOutcome("Передача владения завершена") }
+
+            }.create().let { dialogs.show(it, "showCompleteOwnerTransferDialog", Bundle()) }
     }
 
     private fun showAdminInvitationTemplateDialog() {
@@ -925,12 +994,14 @@ class AdminActivity : AppCompatActivity() {
                 val selectedRole = if (role.selectedItemPosition == 0) AdminRole.OPERATOR else AdminRole.VIEWER
                 if (server.selectedItemPosition == 0) { Toast.makeText(this, "Выберите сервер", Toast.LENGTH_LONG).show(); return@setPositiveButton }
                 val node = nodes[server.selectedItemPosition - 1]
-                lifecycleScope.launch {
-                    val (result, link) = withContext(Dispatchers.IO) { AdminRepository.getInstance(this@AdminActivity).issueAdminInvitationTemplate(selectedRole, node, AdminChannel.DOCUMENT) }
-                    if (result is AdminOpResult.Failure) Toast.makeText(this@AdminActivity, result.error, Toast.LENGTH_LONG).show()
-                    else if (!link.isNullOrBlank()) shareAdminLink(link, "Приглашение LibreRoute")
+                val repo = AdminRepository.getInstance(applicationContext)
+                dialogOperation.run {
+                    val (result, link) = repo.issueAdminInvitationTemplate(selectedRole, node, AdminChannel.DOCUMENT)
+                    if (result is AdminOpResult.Failure) error(result.error)
+                    AdminDialogOutcome(link = link, title = "Приглашение LibreRoute")
                 }
-            }.show()
+
+            }.create().let { dialogs.show(it, "showAdminInvitationTemplateDialog", Bundle()) }
     }
 
     private fun showApproveAdminRequestDialog() {
@@ -950,16 +1021,20 @@ class AdminActivity : AppCompatActivity() {
             val selectedRole = when (role.selectedItemPosition) { 0 -> AdminRole.OPERATOR; 1 -> AdminRole.VIEWER; else -> AdminRole.OWNER }
             if (server.selectedItemPosition == 0) { Toast.makeText(this, "Выберите сервер", Toast.LENGTH_LONG).show(); return@setPositiveButton }
             val node = nodes[server.selectedItemPosition - 1]
-            lifecycleScope.launch {
-                val (result, link) = withContext(Dispatchers.IO) { AdminRepository.getInstance(this@AdminActivity).approveAdminRequest(request.text.toString().trim(), selectedRole, node, AdminChannel.DOCUMENT, transfer.isChecked) }
-                if (result is AdminOpResult.Failure) Toast.makeText(this@AdminActivity, result.error, Toast.LENGTH_LONG).show()
-                else if (!link.isNullOrBlank()) shareAdminLink(link, "Подтверждение LibreRoute")
+            val text = request.text.toString().trim()
+            val transferOwner = transfer.isChecked
+            val repo = AdminRepository.getInstance(applicationContext)
+            dialogOperation.run {
+                val (result, link) = repo.approveAdminRequest(text, selectedRole, node, AdminChannel.DOCUMENT, transferOwner)
+                if (result is AdminOpResult.Failure) error(result.error)
+                AdminDialogOutcome(link = link, title = "Подтверждение LibreRoute")
             }
-        }.show()
+
+        }.create().let { dialogs.show(it, "showApproveAdminRequestDialog", Bundle()) }
     }
 
     private fun shareAdminLink(link: String, title: String) {
-        shareInvite(title, link, QrGenerator.generateQrBitmap(link, 480))
+        InvitationShareDialogFragment.show(supportFragmentManager, title, link)
     }
 
     private fun copyPendingJoinRequest() {
@@ -994,7 +1069,7 @@ class AdminActivity : AppCompatActivity() {
             .setPositiveButton("Проверить") { _, _ ->
                 vm.importBootstrapGrant(grantInput.text.toString(), fingerprintInput.text.toString())
             }
-            .show()
+            .create().let { dialogs.show(it, "showImportGrantDialog", Bundle()) }
     }
 
     private fun showPromptRecipientKeyDialog(profile: ManagedProfile) {
@@ -1026,44 +1101,12 @@ class AdminActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create().let { dialogs.show(it, "showPromptRecipientKeyDialog", Bundle().apply { putString("id", profile.id) }) }
     }
 
     private fun showInviteDialog(profile: ManagedProfile, inviteLink: String) {
-        val qrBitmap = QrGenerator.generateQrBitmap(inviteLink, 480)
-
-        val dialog = Dialog(this, R.style.Theme_SoxMax)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-
-        val view = layoutInflater.inflate(R.layout.dialog_issue_invitation, null)
-        val scroll = android.widget.ScrollView(this).apply { addView(view) }
-        dialog.setContentView(scroll)
-
-        view.findViewById<TextView>(R.id.tv_invite_profile_name).text = "Для профиля: ${profile.name}"
-        val imgQr = view.findViewById<ImageView>(R.id.img_invite_qr)
-        if (qrBitmap != null) {
-            imgQr.setImageBitmap(qrBitmap)
-        }
-        val tvLink = view.findViewById<TextView>(R.id.tv_invite_link)
-        tvLink.text = "Приглашение готово · нажмите, чтобы показать ссылку"
-        tvLink.setOnClickListener { tvLink.text = if (tvLink.text == inviteLink) "Приглашение готово · нажмите, чтобы показать ссылку" else inviteLink }
-
-        view.findViewById<View>(R.id.btn_close_invite).setOnClickListener { dialog.dismiss() }
-
-        view.findViewById<View>(R.id.btn_copy_invite).setOnClickListener {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("LibreRoute Invite", inviteLink))
-            Toast.makeText(this, "Приглашение скопировано", Toast.LENGTH_SHORT).show()
-        }
-
-        view.findViewById<View>(R.id.btn_share_invite).setOnClickListener {
-            shareInvite(profile.name, inviteLink, qrBitmap)
-        }
-
-        dialog.show()
-        val width = (resources.displayMetrics.widthPixels * 0.92).toInt()
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        InvitationShareDialogFragment.show(supportFragmentManager,
+            getString(R.string.invite_profile_label, profile.name), inviteLink)
     }
 
     private fun showCreateUserDialog() {
@@ -1112,7 +1155,7 @@ class AdminActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
         }
-        dialog.show()
+        dialogs.show(dialog, "showCreateUserDialog", Bundle())
     }
 
     private fun showSelectUserForAssignment() {
@@ -1122,7 +1165,7 @@ class AdminActivity : AppCompatActivity() {
             return
         }
         MaterialAlertDialogBuilder(this).setTitle("Настроить доступ пользователя")
-            .setItems(users.map { it.name }.toTypedArray()) { _, index -> showPersonDetails(users[index]) }.show()
+            .setItems(users.map { it.name }.toTypedArray()) { _, index -> showPersonDetails(users[index]) }.create().let { dialogs.show(it, "showSelectUserForAssignment", Bundle()) }
     }
 
     private fun showAssignDocumentDialog(user: AdminUser) {
@@ -1133,15 +1176,20 @@ class AdminActivity : AppCompatActivity() {
             return
         }
         val screen = io.github.libreroute.ui.CalmDetailDialog(this, "Доступ: ${user.name}")
-        screen.text("Выберите серверы для приглашения или добавления маршрутов устройству. Доступные протоколы настраиваются автоматически. Ссылку на документ или комнату можно добавить позже; MQTT-канал создаст сервер.")
+        screen.text("Выберите серверы и протоколы для устройства. В приглашение попадут только отмеченные протоколы. Для автоматического СберДжаза сервер выделит комнату.")
         val selectedServers = mutableSetOf<String>()
+        val selectedProtocols = mutableSetOf<Pair<String, String>>()
         val fields = mutableMapOf<Pair<String, String>, TextInputEditText>()
         val assignedServers = vm.assignments.value.filter { it.userId == user.id }.map { it.serverId }.toSet()
         snapshot.distinctServerIds.sorted().forEach { serverId ->
-            val methods = snapshot.methodsFor(serverId).filter { it.transport in setOf("vyandex", "mqtt", "jitsi") }
+            val methods = snapshot.methodsFor(serverId).filter {
+                it.transport in setOf("vyandex", "mqtt", "jitsi", "jazz") &&
+                    io.github.libreroute.data.TransportType.isAvailable(it.transport)
+            }
             val name = vm.serverNodes.value.firstOrNull { it.id == serverId }?.name ?: serverId
             val options = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             val checkbox = MaterialCheckBox(this).apply {
+                id = io.github.libreroute.ui.DialogScreens.stateId("server:$serverId")
                 text = name
                 isEnabled = methods.isNotEmpty()
                 isChecked = isEnabled && (snapshot.distinctServerIds.size == 1 || serverId in assignedServers)
@@ -1153,26 +1201,42 @@ class AdminActivity : AppCompatActivity() {
             }
             screen.content.addView(checkbox)
             options.visibility = if (checkbox.isChecked) View.VISIBLE else View.GONE
-            options.addView(TextView(this).apply {
-                text = methods.joinToString(" · ") { protocolLabel(it.transport) }.ifEmpty { "Протоколы не подтверждены" }
-                setTextColor(ContextCompat.getColor(this@AdminActivity, R.color.text_secondary))
-            })
-            methods.filter { it.endpointRequired }.forEach { method ->
+            if (methods.isEmpty()) options.addView(TextView(this).apply { text = "Протоколы не подтверждены" })
+            methods.forEach methodLoop@ { method ->
+                val protocolKey = serverId to method.transport
+                val needsLink = method.endpointRequired && !method.automaticAllocation
+                val linkField = if (needsLink) TextInputLayout(this) else null
+                options.addView(MaterialCheckBox(this).apply {
+                    id = io.github.libreroute.ui.DialogScreens.stateId("protocol:$serverId:${method.transport}")
+                    text = protocolLabel(method.transport)
+                    // A newly issued device gets only automatic Jazz by default;
+                    // every other protocol is an explicit administrator choice.
+                    isChecked = method.transport == "jazz" && method.automaticAllocation
+                    if (isChecked) selectedProtocols.add(protocolKey)
+                    setOnCheckedChangeListener { _, checked ->
+                        if (checked) selectedProtocols.add(protocolKey) else selectedProtocols.remove(protocolKey)
+                        linkField?.visibility = if (checked) View.VISIBLE else View.GONE
+                    }
+                })
+                if (linkField == null) return@methodLoop
                 val input = TextInputEditText(this).apply {
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                    id = io.github.libreroute.ui.DialogScreens.stateId("endpoint:$serverId:${method.transport}")
+                    inputType = InputType.TYPE_CLASS_TEXT or if (method.transport == "jazz") InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_URI
                     setSingleLine(true)
                     if (method.transport == "vyandex" && snapshot.distinctServerIds.size == 1)
                         setText(AdminRepository.getInstance(this@AdminActivity).getPendingUserDocument(user.id).orEmpty())
                 }
-                options.addView(TextInputLayout(this).apply {
+                options.addView(linkField.apply {
+                    visibility = View.GONE
                     hint = when (method.transport) {
                         "vyandex" -> "Ссылка на отдельный документ"
                         "jitsi" -> "Ссылка на комнату организатора"
+                        "jazz" -> "Гостевая ссылка СберДжаза с паролем"
                         else -> "Ссылка на отдельный канал"
                     }
                     addView(input)
                 })
-                fields[serverId to method.transport] = input
+                fields[protocolKey] = input
             }
             screen.content.addView(options)
         }
@@ -1180,21 +1244,54 @@ class AdminActivity : AppCompatActivity() {
             val links = fields.mapValues { it.value.text?.toString()?.trim().orEmpty() }
             fields.values.forEach { it.error = null }
             for ((key, value) in links) {
-                if (key.first !in selectedServers || value.isEmpty()) continue
+                if (key.first !in selectedServers || key !in selectedProtocols || value.isEmpty()) continue
                 if (!AutomaticAccessPlan.validLink(key.second, value)) {
                     fields[key]?.error = "Проверьте ссылку на отдельный документ или комнату"
                     return null
                 }
             }
-            return runCatching { AutomaticAccessPlan.build(snapshot, selectedServers, links) }.getOrElse {
+            return runCatching { AutomaticAccessPlan.build(snapshot, selectedServers, links, selectedProtocols) }.getOrElse {
                 Toast.makeText(this, it.message, Toast.LENGTH_LONG).show()
                 null
             }
         }
-        screen.action("Создать приглашение QR для нового телефона") {
+        screen.action("Создать приглашение выбранных протоколов") {
+            if (selectedServers.size == 1 && selectedProtocols.count { it.first in selectedServers } == 1 &&
+                selectedProtocols.any { it.first in selectedServers && it.second == "jazz" }) {
+                vm.issuePortableJazzInvitation(user, selectedServers.single())
+                screen.dismiss()
+                return@action
+            }
             val plan = routes() ?: return@action
             vm.configureUserAccess(user, plan, null)
             screen.dismiss()
+        }
+        screen.action("Выдать компактный QR только СберДжаз") {
+            if (selectedServers.size != 1 || selectedProtocols.count { it.first in selectedServers && it.second == "jazz" } != 1) {
+                Toast.makeText(this, "Выберите один сервер и только протокол СберДжаз", Toast.LENGTH_LONG).show()
+                return@action
+            }
+            val serverId = selectedServers.single()
+            val jazz = snapshot.methodsFor(serverId).firstOrNull { it.transport == "jazz" }
+            if (jazz == null || !jazz.automaticAllocation) {
+                Toast.makeText(this, "Сервер не подтвердил автоматический Jazz V2", Toast.LENGTH_LONG).show()
+                return@action
+            }
+            vm.issuePortableJazzInvitation(user, serverId)
+            screen.dismiss()
+        }
+        screen.action("Приглашение для объединённых каналов", secondary = true) {
+            if (selectedServers.size != 1) {
+                Toast.makeText(this, "Выберите один сервер для всей группы каналов", Toast.LENGTH_LONG).show()
+                return@action
+            }
+            val serverId = selectedServers.single()
+            if (snapshot.coreInfo?.capabilities?.contains(ChannelGroupPlan.ENROLLMENT_CAPABILITY) != true ||
+                snapshot.methodsFor(serverId).none { it.transport == "channel-group" }) {
+                Toast.makeText(this, "Обновите ядро выбранного сервера для выдачи приглашений на объединённые каналы", Toast.LENGTH_LONG).show()
+                return@action
+            }
+            ChannelGroupInvitationDialogFragment.show(supportFragmentManager, user.id, serverId)
         }
         val key = TextInputEditText(this).apply {
             hint = "Публичный ключ уже известного устройства"
@@ -1210,7 +1307,7 @@ class AdminActivity : AppCompatActivity() {
             vm.configureUserAccess(user, plan, publicKey)
             screen.dismiss()
         }
-        screen.show()
+        dialogs.show(screen, "access", Bundle().apply { putString("id", user.id) })
     }
 
     private fun showServerAuthDialog() {
@@ -1232,7 +1329,7 @@ class AdminActivity : AppCompatActivity() {
         }
         if (nodes.size == 1) open(nodes.first())
         else MaterialAlertDialogBuilder(this).setTitle("Авторизация Яндекса на сервере")
-            .setItems(nodes.map { it.name }.toTypedArray()) { _, index -> open(nodes[index]) }.show()
+            .setItems(nodes.map { it.name }.toTypedArray()) { _, index -> open(nodes[index]) }.create().let { dialogs.show(it, "showServerAuthDialog", Bundle()) }
     }
 
     private fun showInstallServerDialog() {
@@ -1242,7 +1339,7 @@ class AdminActivity : AppCompatActivity() {
             return
         }
         MaterialAlertDialogBuilder(this).setTitle("Настройка сервера")
-            .setItems(nodes.map { it.name }.toTypedArray()) { _, index -> openServerSetup(nodes[index]) }.show()
+            .setItems(nodes.map { it.name }.toTypedArray()) { _, index -> openServerSetup(nodes[index]) }.create().let { dialogs.show(it, "showInstallServerDialog", Bundle()) }
     }
 
     private fun openServerSetup(node: ServerNode) {
@@ -1264,7 +1361,7 @@ class AdminActivity : AppCompatActivity() {
             .setItems(nodes.map { "${it.name} (${it.host}:${it.port})" }.toTypedArray()) { _, index ->
                 vm.probeServer(nodes[index])
             }
-            .show()
+            .create().let { dialogs.show(it, "showProbeServerDialog", Bundle()) }
     }
 
     private fun showSelectAssignmentForInvitation() {
@@ -1283,7 +1380,7 @@ class AdminActivity : AppCompatActivity() {
             }.toTypedArray()) { _, index ->
                 showAssignmentActionDialog(assignments[index])
             }
-            .show()
+            .create().let { dialogs.show(it, "showSelectAssignmentForInvitation", Bundle()) }
     }
 
     private fun showAssignmentActionDialog(assignment: AdminAssignment) {
@@ -1321,80 +1418,12 @@ class AdminActivity : AppCompatActivity() {
                 actions[which].invoke()
             }
             .setNegativeButton("Отмена", null)
-            .show()
+            .create().let { dialogs.show(it, "showAssignmentActionDialog", Bundle().apply { putString("id", assignment.id) }) }
     }
 
     private fun showAssignmentInviteDialog(assignmentId: String, inviteLink: String) {
-        val qrBitmap = QrGenerator.generateQrBitmap(inviteLink, 480)
-        val dialog = Dialog(this, R.style.Theme_SoxMax)
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        val view = layoutInflater.inflate(R.layout.dialog_issue_invitation, null)
-        val scroll = android.widget.ScrollView(this).apply { addView(view) }
-        dialog.setContentView(scroll)
-
-        view.findViewById<TextView>(R.id.tv_invite_profile_name).text = "Назначение: ${assignmentId.take(8)}"
-        val imgQr = view.findViewById<ImageView>(R.id.img_invite_qr)
-        if (qrBitmap != null) {
-            imgQr.setImageBitmap(qrBitmap)
-        }
-        val tvLink = view.findViewById<TextView>(R.id.tv_invite_link)
-        tvLink.text = "Приглашение готово · нажмите, чтобы показать ссылку"
-        tvLink.setOnClickListener { tvLink.text = if (tvLink.text == inviteLink) "Приглашение готово · нажмите, чтобы показать ссылку" else inviteLink }
-
-        view.findViewById<View>(R.id.btn_close_invite).setOnClickListener { dialog.dismiss() }
-        view.findViewById<View>(R.id.btn_copy_invite).setOnClickListener {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("LibreRoute Invite", inviteLink))
-            Toast.makeText(this, "Приглашение скопировано", Toast.LENGTH_SHORT).show()
-        }
-        view.findViewById<View>(R.id.btn_share_invite).setOnClickListener {
-            shareInvite("Доступ LibreRoute", inviteLink, qrBitmap)
-        }
-        dialog.show()
-        val width = (resources.displayMetrics.widthPixels * 0.92).toInt()
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-    }
-
-    private fun shareInvite(profileName: String, inviteLink: String, qrBitmap: Bitmap?) {
-        val appContext = applicationContext
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "LibreRoute: $profileName")
-                    putExtra(Intent.EXTRA_TEXT, inviteLink)
-                }
-
-                if (qrBitmap != null) {
-                    val imagesDir = File(appContext.cacheDir, "shared_images").apply { mkdirs() }
-                    val imageFile = File(imagesDir, "invite_${System.currentTimeMillis()}.png")
-                    FileOutputStream(imageFile).use { fos ->
-                        qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                    }
-                    val uri = FileProvider.getUriForFile(
-                        appContext,
-                        "${appContext.packageName}.fileprovider",
-                        imageFile
-                    )
-                    intent.type = "image/png"
-                    intent.putExtra(Intent.EXTRA_STREAM, uri)
-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-
-                val chooser = Intent.createChooser(intent, "Поделиться приглашением").apply {
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                withContext(Dispatchers.Main) {
-                    appContext.startActivity(chooser)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, "Ошибка отправки: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        InvitationShareDialogFragment.show(supportFragmentManager,
+            getString(R.string.invite_assignment_label, assignmentId.take(8)), inviteLink)
     }
 
     private fun showConfirmRevokeProfileDialog(profile: ManagedProfile) {
@@ -1418,7 +1447,7 @@ class AdminActivity : AppCompatActivity() {
             vm.revokeProfile(profile.id)
         }
 
-        dialog.show()
+        dialogs.show(dialog, "showConfirmRevokeProfileDialog", Bundle().apply { putString("id", profile.id) })
         val width = (resources.displayMetrics.widthPixels * 0.88).toInt()
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
@@ -1443,7 +1472,7 @@ class AdminActivity : AppCompatActivity() {
             vm.revokeAdminRights()
         }
 
-        dialog.show()
+        dialogs.show(dialog, "showConfirmRevokeRightsDialog", Bundle())
         val width = (resources.displayMetrics.widthPixels * 0.88).toInt()
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
@@ -1497,7 +1526,7 @@ class AdminActivity : AppCompatActivity() {
 
         btnClose.setOnClickListener { dialog.dismiss() }
 
-        dialog.show()
+        dialogs.show(dialog, "showManageSshKeyDialog", Bundle())
         val width = (resources.displayMetrics.widthPixels * 0.92).toInt()
         dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
@@ -1536,7 +1565,7 @@ class AdminActivity : AppCompatActivity() {
                     Toast.makeText(this, "Ключ не может быть пустым", Toast.LENGTH_SHORT).show()
                 }
             }
-            .show()
+            .create().let { dialogs.show(it, "showImportSshKeyDialog", Bundle()) }
     }
 
     private fun showAddServerNodeDialog() {
@@ -1560,7 +1589,7 @@ class AdminActivity : AppCompatActivity() {
         screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, node.name, node.status.displayName))
         screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, "Ядро сервера", coreVersionSummary(node.coreObservation)))
         val assignments = vm.assignments.value.filter { it.serverId == node.id }
-        screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, "Назначенные люди", if (assignments.isEmpty()) "Нет назначений" else assignments.map { a -> vm.users.value.firstOrNull { it.id == a.userId }?.name ?: a.userId }.distinct().joinToString("\n")))
+        screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, "Назначенные пользователи", if (assignments.isEmpty()) "Нет назначений" else assignments.map { a -> vm.users.value.firstOrNull { it.id == a.userId }?.name ?: a.userId }.distinct().joinToString("\n")))
         screen.action("Проверить") { vm.probeServer(node); screen.dismiss() }
         screen.action("Открыть авторизацию") {
             val profileId = vm.controlProfileForServer(node)
@@ -1587,7 +1616,7 @@ class AdminActivity : AppCompatActivity() {
                     append("Диск: ${inv.diskFreeMb}/${inv.diskTotalMb} МБ свободно")
                 }
             }
-            MaterialAlertDialogBuilder(this).setTitle("Технические сведения").setMessage(message).setPositiveButton("Закрыть", null).show()
+            showMessage("Технические сведения", message)
         }
         screen.action("Удалить сервер", destructive = true) {
             MaterialAlertDialogBuilder(this).setTitle("Удалить сервер?")
@@ -1595,6 +1624,6 @@ class AdminActivity : AppCompatActivity() {
                 .setNegativeButton("Отмена", null)
                 .setPositiveButton("Удалить") { _, _ -> vm.removeServerNode(node.id); screen.dismiss() }.show()
         }
-        screen.show()
+        dialogs.show(screen, "server", Bundle().apply { putString("id", node.id) })
     }
 }

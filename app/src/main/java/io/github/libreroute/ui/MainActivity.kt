@@ -32,6 +32,9 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    private val dialogs by lazy { DialogScreens(this) { key, args ->
+        if (key == "tunnel_import") args.getString("uri")?.let { showTunnelImport(android.net.Uri.parse(it)) }
+    } }
     private val vm: TunnelsViewModel by viewModels()
     private var captchaOpen = false
     private var captchaDocumentUrl: String? = null
@@ -101,7 +104,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        handleIncomingIntent(intent)
+        if (savedInstanceState == null) handleIncomingIntent(intent)
+        dialogs.restore()
     }
 
     fun openPendingYandexAuthIssue() {
@@ -199,6 +203,11 @@ class MainActivity : AppCompatActivity() {
             handleInvitationUri(uri)
             return
         }
+        intent.data = null
+        showTunnelImport(uri)
+    }
+
+    private fun showTunnelImport(uri: android.net.Uri) {
         val tunnel = TunnelLinkParser.fromUri(uri, this) ?: return
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
@@ -214,7 +223,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.config_saved, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create().let { dialogs.show(it, "tunnel_import", Bundle().apply { putString("uri", uri.toString()) }) }
     }
 
     private val invitationResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->

@@ -45,6 +45,13 @@ object ServiceRouteEndpoint {
         val uri = URI(address)
         require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.port in -1..65535 && uri.port != 0)
         when (type) {
+            TransportType.jazz -> {
+                require(uri.scheme == "https" && uri.rawQuery == null && uri.rawFragment == null)
+                require(uri.host.lowercase() in setOf("salutejazz.ru", "jazz.sber.ru") && uri.port in setOf(-1, 443))
+                val parts = uri.path.removeSuffix("/").split('/')
+                require(parts.size == 4 && parts[0].isEmpty() && parts[1] == "call")
+                require(parts.drop(2).all { Regex("[a-zA-Z0-9_-]{1,128}").matches(it) })
+            }
             TransportType.jitsi -> {
                 require(uri.scheme == "https" && uri.rawQuery == null && uri.rawFragment == null)
                 val parts = uri.path.trim('/').split('/')

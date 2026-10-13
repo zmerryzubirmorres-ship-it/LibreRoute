@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:padding="16dp" android:background="@drawable/bg_menu_popup">
+    <TextView android:id="@+id/invite_qr_full_title"
+        android:layout_width="0dp" android:layout_height="wrap_content"
+        android:text="@string/invite_qr_description" android:textSize="20sp" android:textColor="@color/text_primary"
+        app:layout_constraintTop_toTopOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+    <ImageView android:id="@+id/invite_qr_full_image"
+        android:layout_width="0dp" android:layout_height="0dp" android:layout_marginVertical="16dp"
+        android:background="#FFFFFF" android:padding="8dp" android:scaleType="fitCenter"
+        android:contentDescription="@string/invite_qr_description" app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintTop_toBottomOf="@id/invite_qr_full_title"
+        app:layout_constraintBottom_toTopOf="@id/invite_qr_full_close"
+        app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent" />
+    <TextView android:id="@+id/invite_qr_full_error"
+        android:layout_width="0dp" android:layout_height="wrap_content" android:visibility="gone"
+        android:text="@string/invite_qr_full_failed" android:textColor="@color/text_primary" android:gravity="center"
+        app:layout_constraintTop_toBottomOf="@id/invite_qr_full_title"
+        app:layout_constraintBottom_toTopOf="@id/invite_qr_full_close"
+        app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/invite_qr_full_close"
+        android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/invite_close"
+        app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

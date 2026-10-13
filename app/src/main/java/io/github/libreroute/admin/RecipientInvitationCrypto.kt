@@ -117,6 +117,33 @@ class RecipientInvitationCrypto(private val store: InvitationStateStore) {
     fun getOrCreatePublicKeyBase64(): String = Base64.getEncoder().encodeToString(keyPair().public.encoded)
 
     @Synchronized
+    fun importIdentity(privateEncoded: String, publicEncoded: String) {
+        val factory = KeyFactory.getInstance("EC")
+        val privateKey = factory.generatePrivate(PKCS8EncodedKeySpec(decode(privateEncoded))) as java.security.interfaces.ECPrivateKey
+        val publicKey = factory.generatePublic(X509EncodedKeySpec(decode(publicEncoded))) as java.security.interfaces.ECPublicKey
+        val parameters = AlgorithmParameters.getInstance("EC").apply { init(ECGenParameterSpec("secp256r1")) }
+            .getParameterSpec(ECParameterSpec::class.java)
+        require(privateKey.params.order == parameters.order && publicKey.params.order == parameters.order &&
+            privateKey.params.curve.field.fieldSize == 256 && publicKey.params.curve.field.fieldSize == 256) { "Jazz требует ключ P-256" }
+        val challenge = "LibreRoute/portable-identity/v1".toByteArray()
+        val sig = Signature.getInstance("SHA256withECDSA").run { initSign(privateKey); update(challenge); sign() }
+        require(Signature.getInstance("SHA256withECDSA").run { initVerify(publicKey); update(challenge); verify(sig) }) { "Ключ устройства Jazz не совпадает" }
+        val normalizedPrivate = Base64.getEncoder().encodeToString(privateKey.encoded)
+        val normalizedPublic = Base64.getEncoder().encodeToString(publicKey.encoded)
+        require(store.get(PRIVATE_KEY).let { it == null || it == normalizedPrivate } &&
+            store.get(PUBLIC_KEY).let { it == null || it == normalizedPublic }) { "Нельзя заменить ключ существующего устройства" }
+        store.put(PRIVATE_KEY, normalizedPrivate)
+        store.put(PUBLIC_KEY, normalizedPublic)
+    }
+
+    /** Only for the short-lived private native pipe; never persist in a route. */
+    @Synchronized
+    fun privateKeyForNativePipe(expectedFingerprint: String): String {
+        require(publicKeyHashHex() == expectedFingerprint) { "Ключ устройства Jazz не совпадает" }
+        return Base64.getEncoder().encodeToString(keyPair().private.encoded)
+    }
+
+    @Synchronized
     fun decrypt(ephemeralPublicKey: String, nonce: String, encryptedPayload: String): ByteArray {
         val ephemeral = decode(ephemeralPublicKey)
         require(ephemeral.size == 65 && ephemeral[0] == 4.toByte()) { "Invalid P-256 ephemeral public key" }

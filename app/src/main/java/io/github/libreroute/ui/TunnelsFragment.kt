@@ -74,6 +74,14 @@ import java.util.Locale
 
 class TunnelsFragment : BaseFragment() {
 
+    private val dialogs by lazy { DialogScreens(this) { key, args ->
+        when (key) {
+            "add" -> showAddQrBottomSheet()
+            "import" -> showImportLinkDialog()
+            "configs" -> showConfigBottomSheet()
+            "jitsi" -> vm.tunnels.value.firstOrNull { it.tunnel.id == args.getLong("id") }?.let { showJitsiRoomHelp(it.tunnel) }
+        }
+    } }
     private val vm: TunnelsViewModel by activityViewModels()
 
     private lateinit var connectButton: View
@@ -195,6 +203,12 @@ class TunnelsFragment : BaseFragment() {
           rows.addView(CalmViews.row(requireContext(), "Оформление", "Тема и элементы интерфейса") {
               startActivity(Intent(requireContext(), AppearanceActivity::class.java))
           })
+        rows.addView(CalmViews.row(requireContext(), getString(R.string.zapret_profiles_title), getString(R.string.zapret_profiles_summary)) {
+            startActivity(Intent(requireContext(), ZapretProfilesActivity::class.java))
+        })
+        rows.addView(CalmViews.row(requireContext(), getString(R.string.routing_title), getString(R.string.routing_summary)) {
+            startActivity(Intent(requireContext(), TrafficRulesActivity::class.java))
+        })
         rows.addView(CalmViews.row(requireContext(), "Дополнительно", "DNS, приложения, MTU, журналы и резервная копия") {
             startActivity(Intent(requireContext(), SettingsActivity::class.java))
         })
@@ -226,9 +240,13 @@ class TunnelsFragment : BaseFragment() {
         button.text = if (jitsi) "Открыть комнату Jitsi" else "Открыть проверку"
         if (pendingYandex || pendingJitsi) {
             renderConnectAccent(R.color.state_connecting)
-            statusText.text = if (pendingJitsi) "Нужен запуск или обновление комнаты" else "Нужна проверка"
+            statusText.text = if (pendingJitsi && EventBus.pendingJitsiIssue()?.reason == JitsiAuthReason.KEY_UNAVAILABLE)
+                "JaaS не принимает ключ доступа"
+                else if (pendingJitsi) "Нужен запуск или обновление комнаты" else "Нужна проверка"
             val jitsiIssue = EventBus.pendingJitsiIssue()
-            view?.findViewById<TextView>(R.id.homeEvent)?.text = if (pendingJitsi && jitsiIssue?.reason == JitsiAuthReason.TOKEN_EXPIRED)
+            view?.findViewById<TextView>(R.id.homeEvent)?.text = if (pendingJitsi && jitsiIssue?.reason == JitsiAuthReason.KEY_UNAVAILABLE)
+                "Администратору нужно проверить активный API-ключ в кабинете JaaS, затем повторить подключение"
+                else if (pendingJitsi && jitsiIssue?.reason == JitsiAuthReason.TOKEN_EXPIRED)
                 "Токен организатора истёк. Организатору нужно снова войти через браузер, затем проверьте комнату"
                 else if (pendingJitsi)
                 "Попросите администратора запустить комнату, затем проверьте подключение ещё раз"
@@ -252,6 +270,16 @@ class TunnelsFragment : BaseFragment() {
         }
         val issue = EventBus.pendingJitsiIssue()
         val screen = CalmDetailDialog(requireContext(), "Комната Jitsi Meet")
+        if (issue?.roomUrl == url && issue.reason == JitsiAuthReason.KEY_UNAVAILABLE) {
+            screen.text("JaaS не может получить публичный ключ для проверки доступа. Администратору нужно открыть кабинет JaaS, выбрать приложение и проверить ключ в разделе API Keys. После восстановления ключа повторите подключение.")
+            screen.action("Проверить снова", secondary = true) {
+                screen.dismiss()
+                EventBus.clearPendingJitsiIssue()
+                vm.restartCurrent()
+            }
+            dialogs.show(screen, "jitsi", Bundle().apply { putLong("id", tunnel.id) })
+            return
+        }
         if (issue?.reason == JitsiAuthReason.TOKEN_EXPIRED) {
             screen.text("Токен организатора истёк. Обычному участнику токен не нужен: попросите организатора снова войти через Google или GitHub и запустить комнату.")
             screen.action("Сообщить администратору", secondary = true) {
@@ -277,7 +305,7 @@ class TunnelsFragment : BaseFragment() {
             EventBus.clearPendingJitsiIssue()
             vm.restartCurrent()
         }
-        screen.show()
+        dialogs.show(screen, "jitsi", Bundle().apply { putLong("id", tunnel.id) })
     }
 
     private val splitTunnelLauncher = registerForActivityResult(
@@ -385,7 +413,7 @@ class TunnelsFragment : BaseFragment() {
 
 
 
-        dialog.show()
+        dialogs.show(dialog, "add", Bundle())
     }
 
     private fun showImportLinkDialog() {
@@ -433,7 +461,7 @@ class TunnelsFragment : BaseFragment() {
             }
         }
 
-        dialog.show()
+        dialogs.show(dialog, "import", Bundle())
         inputEdit.requestFocus()
     }
 
@@ -506,6 +534,11 @@ class TunnelsFragment : BaseFragment() {
         }
         updateAdminConsoleCard()
 
+        view.findViewById<View>(R.id.cardTrafficRules).setOnClickListener {
+            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
+            startActivity(Intent(requireContext(), TrafficRulesActivity::class.java))
+        }
+
         cardSplitTunnel = view.findViewById(R.id.cardSplitTunnel)
         splitTunnelIcon = view.findViewById(R.id.splitTunnelIcon)
         splitTunnelTitle = view.findViewById(R.id.splitTunnelTitle)
@@ -529,6 +562,18 @@ class TunnelsFragment : BaseFragment() {
         }
 
         setupCalmNavigation(view, savedInstanceState)
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (selectedCalmTab != R.id.nav_home) {
+                    view.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.userNavigation).selectedItemId = R.id.nav_home
+                } else {
+                    isEnabled = false
+                    requireActivity().onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+        dialogs.restore()
         observe()
     }
 
@@ -573,6 +618,7 @@ class TunnelsFragment : BaseFragment() {
 
     private fun updateSplitTunnelCard() {
         if (!::cardSplitTunnel.isInitialized || !::splitTunnelSubtitle.isInitialized) return
+        if (!cardSplitTunnel.isVisible) return
         val ctx = context ?: return
         val splitPrefs = io.github.libreroute.util.SplitTunnelPreferences(ctx)
         val isEnabled = splitPrefs.isEnabled
@@ -924,13 +970,13 @@ class TunnelsFragment : BaseFragment() {
             }
         }
 
-        dialog.setOnDismissListener {
+        val onSheetDismiss: () -> Unit = {
             sheetCollectorsJob.cancel()
             chevron.animate().rotation(0f).setDuration(180L).setInterpolator(DecelerateInterpolator()).start()
             configSheetDialog = null
         }
 
-        dialog.show()
+        dialogs.show(dialog, "configs", onDismiss = onSheetDismiss)
     }
 
     data class TunnelConfigItem(
@@ -974,15 +1020,20 @@ class TunnelsFragment : BaseFragment() {
                 nameView.text = tunnel.name
 
                 when (TransportType.from(tunnel.transportType)) {
+                    TransportType.channelGroup -> {
+                        iconView.setImageResource(R.drawable.ic_split_tunnel)
+                        iconView.imageTintList = ContextCompat.getColorStateList(card.context, R.color.text_primary)
+                        transportLabel.text = "Объединённые каналы"
+                    }
                     TransportType.directDpi -> {
                         iconView.setImageResource(R.drawable.ic_split_tunnel)
                         iconView.imageTintList = ContextCompat.getColorStateList(card.context, R.color.text_primary)
-                        transportLabel.text = "Прямой обход DPI · zapret"
+                        transportLabel.setText(R.string.zapret_connection_summary)
                     }
-                    TransportType.mqtt, TransportType.jitsi -> {
+                    TransportType.mqtt, TransportType.jitsi, TransportType.jazz -> {
                         iconView.setImageResource(R.drawable.ic_split_tunnel)
                         iconView.imageTintList = ContextCompat.getColorStateList(card.context, R.color.text_primary)
-                        transportLabel.text = card.context.getString(if (tunnel.transportType == "mqtt") R.string.mqtt_backend else R.string.jitsi_backend)
+                        transportLabel.text = card.context.getString(if (tunnel.transportType == "mqtt") R.string.mqtt_backend else if (tunnel.transportType == "jazz") R.string.jazz_backend else R.string.jitsi_backend)
                     }
                     TransportType.yandex -> {
                         iconView.imageTintList = null
@@ -1062,13 +1113,17 @@ class TunnelsFragment : BaseFragment() {
 
         nameView.text = tunnel.name
         when (TransportType.from(tunnel.transportType)) {
+            TransportType.channelGroup -> {
+                iconView.setImageResource(R.drawable.ic_split_tunnel)
+                subView.text = "Объединённые каналы"
+            }
             TransportType.directDpi -> {
                 iconView.setImageResource(R.drawable.ic_split_tunnel)
-                subView.text = "Прямой обход DPI · zapret"
+                subView.setText(R.string.zapret_connection_summary)
             }
-            TransportType.mqtt, TransportType.jitsi -> {
+            TransportType.mqtt, TransportType.jitsi, TransportType.jazz -> {
                 iconView.setImageResource(R.drawable.ic_split_tunnel)
-                subView.text = getString(if (tunnel.transportType == "mqtt") R.string.mqtt_backend else R.string.jitsi_backend)
+                subView.text = getString(if (tunnel.transportType == "mqtt") R.string.mqtt_backend else if (tunnel.transportType == "jazz") R.string.jazz_backend else R.string.jitsi_backend)
             }
             TransportType.yandex -> {
                 iconView.imageTintList = null
@@ -1239,6 +1294,7 @@ class TunnelsFragment : BaseFragment() {
     }
 
     override fun onDestroyView() {
+        dialogs.detach()
         popup?.dismiss()
         popup = null
         currentVisualState = null

@@ -20,7 +20,9 @@ data class RouteCandidate(
     val encryption_layout: String = "packet",
     val parameters: Map<String, String> = emptyMap(),
     val revision: Long = 1,
-    val status: String = "ready"
+    val status: String = "ready",
+    val pair_channel: PairChannelBinding? = null,
+    val channel_group: ChannelGroupBinding? = null
 )
 
 /** A verified, decrypted candidate. It must still be redeemed by the server before activation. */
@@ -193,10 +195,20 @@ class ServerIssuedInvitation(
             )
         }
         for (r in resolvedRoutes) {
+            r.channel_group?.let { group ->
+                require(r.transport == "channel-group" && r.url == group.endpoint && r.pair_channel == null &&
+                    r.secret_key.matches(Regex("[0-9a-f]{64}")) && r.codec == "batched") { "Некорректная конфигурация объединённых каналов" }
+                group.validate(r.server_id, recipientCrypto.publicKeyHashHex(), recipientCrypto.getOrCreatePublicKeyBase64())
+            }
+            require(r.transport != "channel-group" || r.channel_group != null) { "Отсутствует выданная конфигурация каналов" }
+            r.pair_channel?.let { binding ->
+                require(r.transport == "jazz" && r.secret_key.matches(Regex("[0-9a-f]{64}")) && r.codec == "batched") { "Некорректная конфигурация Jazz V2" }
+                binding.validate(r.server_id, recipientCrypto.publicKeyHashHex(), recipientCrypto.getOrCreatePublicKeyBase64())
+            }
             require(r.name.isNotBlank()) { "Route name is missing" }
             if (r.url.isNotBlank()) {
                 val transport = io.github.libreroute.data.TransportType.from(r.transport.ifBlank { "vyandex" })
-                val validEndpoint = if (transport in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi)) {
+                val validEndpoint = if (transport in setOf(io.github.libreroute.data.TransportType.mqtt, io.github.libreroute.data.TransportType.jitsi, io.github.libreroute.data.TransportType.jazz)) {
                     io.github.libreroute.util.ServiceRouteEndpoint.isValid(transport, r.url)
                 } else {
                     val rUrl = URI(r.url)

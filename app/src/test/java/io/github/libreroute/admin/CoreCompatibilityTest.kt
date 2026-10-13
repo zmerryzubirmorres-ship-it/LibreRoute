@@ -37,6 +37,9 @@ class CoreCompatibilityTest {
         assertTrue(current.copy(capabilities = current.capabilities - "mqtt-wss-readiness-v1").needsUpdate)
         assertTrue(current.copy(capabilities = current.capabilities - "setup-auth-worker-cookies-v1").needsUpdate)
         assertTrue(current.copy(version = "1.2.20").needsUpdate)
+        assertTrue(current.copy(version = "1.2.25").needsUpdate)
+        assertTrue(current.copy(version = "1.2.26").needsUpdate)
+        assertTrue(current.copy(version = "1.2.31").needsUpdate)
         assertFalse(current.copy(version = "99.0.0").needsUpdate)
         assertTrue(current.copy(version = "unknown").needsUpdate)
     }

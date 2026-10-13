@@ -122,6 +122,77 @@ class ServerInstallationStateTest {
         assertEquals("keep", restarted.getServerNode(node.id)?.password)
     }
 
+    @Test fun oldCoreBridgeRestoresSameCoordinatorAndConfirmsWithoutReissuingOwner() {
+        val backend = Backend()
+        val initial = repo(backend)
+        initial.addServerNode(node); initial.planServerInstallation(node, "initial")
+        assertTrue(initial.installServer(node, "initial") is AdminOpResult.Success)
+        val oldGrant = initial.getActiveGrant(node.id)
+        val oldProfiles = initial.managedProfilesFlow.value
+        val artifact = java.io.File.createTempFile("bootstrap-core", ".bin").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        try {
+            val target = buildJsonObject {
+                put("arch", "amd64"); put("version", "1.2.31"); put("size", artifact.length())
+                put("sha256", java.security.MessageDigest.getInstance("SHA-256").digest(artifact.readBytes()).hex())
+            }
+            val manifest = buildJsonObject {
+                put("payload", Base64.getUrlEncoder().withoutPadding().encodeToString(target.toString().toByteArray()))
+                put("signature", "fixture-signature")
+            }
+            val actions = mutableListOf<String>()
+            val client = AdminSshClient(AdminRepository.createDummyContext(), commandExecutor = { cmd, input ->
+                assertEquals(listOf("admin", "ssh-exec"), cmd.takeLast(2))
+                val request = Json.parseToJsonElement(input).jsonObject
+                val sent = AdminEnvelope.fromJson(request.getValue("envelope").toString())!!
+                val command = Json.parseToJsonElement(String(Base64.getUrlDecoder().decode(sent.payload))).jsonObject
+                val update = command.getValue("core_update").jsonObject
+                val action = update.string("action"); actions += action
+                assertEquals("bridge-update", update.string("operation_id"))
+                assertEquals("node-isolated", request.string("remote_namespace"))
+                assertEquals(manifest, request.getValue("update_bootstrap").jsonObject.getValue("manifest"))
+                assertEquals(oldGrant!!.profileId, sent.profileId)
+                // The server may have accepted begin when its ACK was lost.
+                if (action == "begin") Pair(1, "") else {
+                    val data = buildJsonObject {
+                        put("operation_id", "bridge-update"); put("server_id", node.id)
+                        put("server_public_key", keys.getPublicKeyBase64()); put("control_profile_id", oldGrant.profileId)
+                        put("namespace", "node-isolated"); put("operation_kind", "core-update"); put("plan_hash", "shared-hash")
+                        put("manifest", target); put("signed_manifest", manifest)
+                        put("stage", if (action == "confirm") "committed" else "awaiting_confirmation")
+                        put("runtime", buildJsonObject {
+                            put("version", "1.2.31"); put("build_id", target.getValue("sha256")); put("arch", "amd64")
+                        })
+                    }
+                    val body = buildJsonObject { put("op_id", sent.opId); put("status", "applied"); put("data", data) }
+                    val response = keys.signEnvelope(sent.copy(subtype = AdminEnvelope.SUBTYPE_RESPONSE, sender = "server", rev = sent.rev + 1,
+                        payload = Base64.getUrlEncoder().withoutPadding().encodeToString(body.toString().toByteArray())))
+                    Pair(0, response.toJson())
+                }
+            })
+            fun current() = AdminRepository(keyManager = keys, storage = state, sshClient = client,
+                installationBackend = backend, coreArtifactProvider = { artifact to manifest })
+            val repository = current()
+            repository.planCoreUpdate(repository.getServerNode(node.id)!!, "bridge-update", AdminChannel.DIRECT_SSH)
+            val planned = repository.loadServerInstallation("bridge-update")!!
+            assertTrue(planned.coordinator); assertEquals(manifest.toString(), planned.bootstrapManifest)
+            assertNull(planned.join)
+            assertTrue(repository.installServer(node, "bridge-update") is AdminOpResult.Failure)
+            assertEquals(ServerInstallOperation.UNKNOWN, repository.loadServerInstallation("bridge-update")!!.stage)
+            val restarted = current()
+            assertTrue(restarted.checkCoreUpdateOverChannel(node, "bridge-update", AdminChannel.SSH_VDS) is AdminOpResult.Success)
+            val completed = restarted.loadServerInstallation("bridge-update")!!
+            assertEquals(ServerInstallOperation.READY, completed.stage)
+            assertEquals("shared-hash", completed.planHash)
+            assertEquals(AdminChannel.SSH_VDS, completed.channel)
+            assertEquals(listOf("plan", "begin", "status", "confirm"), actions)
+            assertEquals(oldGrant, restarted.getActiveGrant(node.id))
+            assertEquals(oldProfiles.map { it.copy(lastCheckTimestamp = 0) },
+                restarted.managedProfilesFlow.value.map { it.copy(lastCheckTimestamp = 0) })
+            assertEquals(1, backend.installs)
+            assertEquals("keep", restarted.getServerNode(node.id)!!.password)
+        } finally { artifact.delete() }
+    }
+
     @Test fun interruptedLocalCommitReplaysDurableReceiptAtStartup() {
         val backend = Backend()
         val failing = object : AdminStorage by state {

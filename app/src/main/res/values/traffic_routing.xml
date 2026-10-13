@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="routing_title">Раздельное туннелирование</string>
+    <string name="routing_group_all">Все</string>
+    <string name="routing_group_direct">Напрямую</string>
+    <string name="routing_group_zapret">Через zapret</string>
+    <string name="routing_group_tunnel">Через туннель</string>
+    <string name="routing_group_inherit">По правилам сайтов</string>
+    <string name="routing_visible_count">Показано: %1$d</string>
+    <string name="routing_empty_group">В этой группе пока нет правил. Выберите «Все», чтобы назначить способ подключения.</string>
+    <string name="routing_russian_preset">Россия напрямую</string>
+    <string name="routing_preset_apply">Применить</string>
+    <string name="routing_russian_preset_description">Сайты в зонах .ru, .рф, .su и российские сервисы будут подключаться напрямую. Установленные приложения из российского списка тоже получат прямой доступ. Остальное — по переключателю «Вне списков — через туннель».\n\nВаши отдельные правила и профили zapret сохранятся и останутся приоритетными. Правила сайтов и приложений будут включены. На Android ниже 10 применятся только правила сайтов. После применения переподключитесь к выбранному подключению.</string>
+    <string name="routing_default_tunnel">Вне списков — через туннель</string>
+    <string name="routing_default_hint_tunnel">Нет подходящего правила приложения или сайта — через туннель. Переключатель общий для обеих вкладок.</string>
+    <string name="routing_default_hint_direct">Нет подходящего правила приложения или сайта — напрямую. Переключатель общий для обеих вкладок.</string>
+    <string name="routing_summary">Приложения, сайты и профили zapret</string>
+    <string name="routing_apps">Приложения</string>
+    <string name="routing_sites">Сайты</string>
+    <string name="routing_search">Поиск</string>
+    <string name="routing_system">Системные</string>
+    <string name="routing_enabled_apps">Правила приложений</string>
+    <string name="routing_enabled_sites">Правила сайтов</string>
+    <string name="routing_count">Выбрано: %1$d</string>
+    <string name="routing_select_all">Выбрать все</string>
+    <string name="routing_clear_selection">Снять выбор</string>
+    <string name="routing_selection_hint">Отметьте приложения или сайты, затем выберите способ подключения.</string>
+    <string name="routing_apply">Применить к выбранным</string>
+    <string name="routing_inherit">Убрать правило приложения</string>
+    <string name="routing_remove_sites">Удалить выбранные сайты</string>
+    <string name="routing_create_profile">Создать профиль zapret</string>
+    <string name="routing_edit_profile">Изменить профиль</string>
+    <string name="routing_profile_names_hint">Например: YouTube или Instagram. Один профиль можно назначить нескольким приложениям и сайтам.</string>
+    <string name="routing_saved">Правила сохранены. Переподключитесь, чтобы применить изменения.</string>
+    <string name="routing_off_hint">Правила этой вкладки выключены. Включите переключатель и переподключитесь.</string>
+    <string name="routing_on_hint">Цвет показывает сохранённое правило, галочки выбирают, что изменить. Изменения применяются при переподключении выбранного подключения.</string>
+    <string name="routing_standalone_hint">Выбрано подключение zapret без сервера: «Через zapret» использует профиль правила, «Напрямую» — прямой доступ, «Через туннель» — общий выбранный профиль zapret. Вне списков: тумблер включён — общий zapret, выключен — напрямую.</string>
+    <string name="routing_help">Как работают правила</string>
+    <string name="routing_help_text">Для каждого приложения и сайта можно выбрать прямой доступ, zapret с отдельным профилем или туннель. Правило приложения важнее правила сайта. Если подходящего правила нет, маршрут задаёт переключатель «Вне списков — через туннель». В серверном подключении он выбирает туннель или прямой доступ.\n\nВ подключении «Прямой обход DPI · zapret» правила тоже работают: «Напрямую» — прямой доступ, «Через zapret» — профиль правила, «Через туннель» — общий выбранный профиль zapret. Вне списков: тумблер включён — общий zapret, выключен — напрямую.\n\nВключите «Правила приложений» и/или «Правила сайтов», чтобы применять их назначения. После изменения правил или профиля переподключитесь. Правила приложений заменяют прежние исключения из VPN и требуют Android 10 или новее.</string>
+    <string name="routing_legacy">Прежние правила</string>
+    <string name="routing_empty_apps">Приложения не найдены</string>
+    <string name="routing_empty_sites">Добавьте сайт, затем выберите, как к нему подключаться.</string>
+    <string name="routing_no_search_matches">Ничего не найдено. Попробуйте изменить поиск.</string>
+    <string name="routing_delete_sites_confirm">Удалить выбранные сайты? Они будут подключаться по общим правилам.</string>
+    <string name="routing_profile_usage_hint">Профили для отдельных приложений и сайтов назначаются в «Раздельном туннелировании». Это работает и с сервером, и в подключении «Прямой обход DPI · zapret» без сервера. В режиме без сервера правила «Через туннель» используют общий выбранный профиль zapret.</string>
+</resources>

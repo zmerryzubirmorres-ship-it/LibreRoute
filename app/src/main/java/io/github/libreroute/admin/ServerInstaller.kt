@@ -72,6 +72,29 @@ class ServerInstaller(private val context: Context) {
     fun controlProfile(node: ServerNode): String = "control-" + namespace(node)
     fun newOperationId(): String = UUID.randomUUID().toString()
 
+    internal fun coreArtifact(architecture: String): Pair<File, JsonObject> {
+        val arch = when (architecture) { "x86_64", "amd64" -> "amd64"; "aarch64", "arm64" -> "arm64"; else -> error("Нет подписанной сборки для выбранной архитектуры") }
+        val directory = File(context.noBackupFilesDir, "install-artifacts").apply { mkdirs() }
+        val artifact = File(directory, "libreroute-linux-$arch")
+        val manifest = context.assets.open("install/manifest-$arch.json").bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonObject }
+        val payload = Json.parseToJsonElement(String(java.util.Base64.getUrlDecoder().decode(manifest.getValue("payload").jsonPrimitive.content), Charsets.UTF_8)).jsonObject
+        val expected = payload.getValue("sha256").jsonPrimitive.content
+        val currentHash = if (artifact.isFile) artifact.inputStream().use { input ->
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val bytes = ByteArray(64 * 1024)
+            while (true) { val size = input.read(bytes); if (size < 0) break; digest.update(bytes, 0, size) }
+            digest.digest().hex()
+        } else ""
+        if (currentHash != expected) {
+            val staged = File.createTempFile("core-$arch-", ".part", directory)
+            try {
+                staged.outputStream().use { output -> context.assets.open("install/libreroute-linux-$arch").use { it.copyTo(output) } }
+                Files.move(staged.toPath(), artifact.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } finally { staged.delete() }
+        }
+        return artifact to manifest
+    }
+
     private fun request(node: ServerNode, inventory: ServerInventory, operationId: String, action: String): JsonObject {
         val connection = connectionRequest(node, operationId, action)
         val arch = when (inventory.arch) { "x86_64", "amd64" -> "amd64"; "aarch64", "arm64" -> "arm64"; else -> error("Нет подписанной сборки для ${inventory.arch}") }

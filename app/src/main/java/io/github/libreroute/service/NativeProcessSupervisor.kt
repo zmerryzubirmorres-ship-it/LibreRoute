@@ -12,17 +12,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class NativeProcessSupervisor(private val context: Context) {
 
+    data class AdminCarrier(val path: String, val transport: String, val serverId: String? = null,
+                            val bindingKey: String? = null, val ready: Boolean = false)
+
     companion object {
         private const val TAG = "NativeProcSupervisor"
         private const val STARTUP_FALLBACK_TIMEOUT_MS = 8_500L
         private const val NATIVE_LIB = "liblibreroute_client.so"
+        private val siteRoutesJson = kotlinx.serialization.json.Json { encodeDefaults = true }
         @Volatile var activeLogLevel: String = ""
+        @Volatile var activeAdminCarrier: AdminCarrier? = null
+        @Volatile var activeTunnelId: Long? = null
+        @Synchronized fun bindAdminCarrier(carrier: AdminCarrier, serverId: String) {
+            if (activeAdminCarrier == carrier) activeAdminCarrier = carrier.copy(serverId = serverId)
+        }
     }
 
     class ProcessInstance(
         val proc: Process,
         val isCancelled: AtomicBoolean = AtomicBoolean(false),
-        val authIssueReported: AtomicBoolean = AtomicBoolean(false)
+        val authIssueReported: AtomicBoolean = AtomicBoolean(false),
+        val dpiEngines: List<TpwsEngine> = emptyList(),
+        val siteRoutesFile: java.io.File? = null,
+        val appRouteServer: AppRouteServer? = null
     )
 
     private val handler = Handler(Looper.getMainLooper())
@@ -31,12 +43,13 @@ class NativeProcessSupervisor(private val context: Context) {
     @Volatile private var stdoutThread: Thread? = null
     @Volatile private var gracePeriodRunnable: Runnable? = null
     @Volatile private var delayedConnectRunnable: Runnable? = null
-    @Volatile private var dpiEngine: TpwsEngine? = null
 
     private val running = AtomicBoolean(false)
     private val connected = AtomicBoolean(false)
     private val shuttingDown = AtomicBoolean(false)
+    private val launchGeneration = java.util.concurrent.atomic.AtomicLong()
 
+    @Volatile private var currentAdminCarrierPath: String? = null
     @Volatile private var currentTunSocketName: String? = null
     val tunSocketName: String? get() = currentTunSocketName
 
@@ -48,7 +61,7 @@ class NativeProcessSupervisor(private val context: Context) {
         return io.github.libreroute.util.NativeFdPasser.sendFd(sockName, fd)
     }
 
-    fun start(transportType: String, payload: List<String>) {
+    fun start(transportType: String, payload: List<String>, tunnelId: Long? = null) {
         if (process?.isAlive == true || running.get()) {
             Logx.w(TAG, "Previous native process was still active during start(); stopping it first")
             stop()
@@ -60,20 +73,29 @@ class NativeProcessSupervisor(private val context: Context) {
         EventBus.clearPendingJitsiIssue()
         if (transportType !in setOf("yandex", "vyandex")) EventBus.clearPendingYandexAuthIssue()
         Logx.i(TAG, "start transport=$transportType")
-        spawn(transportType, payload)
+        spawn(io.github.libreroute.data.TransportType.fromOrNull(transportType)?.cliName ?: transportType, payload, tunnelId, launchGeneration.incrementAndGet())
     }
 
     fun stop() {
         Logx.i(TAG, "stop()")
         shuttingDown.set(true)
+        launchGeneration.incrementAndGet()
         running.set(false)
         connected.set(false)
         currentInstance?.isCancelled?.set(true)
         cleanup()
     }
 
-    private fun spawn(transportType: String, payload: List<String>) {
+    private fun spawn(transportType: String, payload: List<String>, tunnelId: Long?, generation: Long) {
+        activeTunnelId = tunnelId
         val libPath = "${context.applicationInfo.nativeLibraryDir}/$NATIVE_LIB"
+        val launchDpiEngines = mutableListOf<TpwsEngine>()
+        var launchSiteRoutesFile: java.io.File? = null
+        var launchAppRouteServer: AppRouteServer? = null
+        var launchedProcess: Process? = null
+        fun checkLaunchActive() {
+            check(!shuttingDown.get() && launchGeneration.get() == generation) { "Запуск отменён" }
+        }
         try {
             val appSettings = io.github.libreroute.util.AppSettings(context)
             val currentLogLevel = activeLogLevel.ifBlank { appSettings.connectionLogLevel }
@@ -97,6 +119,10 @@ class NativeProcessSupervisor(private val context: Context) {
                     }
                     arg == "--tun-socket" || arg == "--tun-mtu" -> pIdx += 2
                     arg.startsWith("--tun-socket=") || arg.startsWith("--tun-mtu=") -> pIdx++
+                    arg == "--admin-carrier-socket" -> pIdx += 2
+                    arg.startsWith("--admin-carrier-socket=") -> pIdx++
+                    arg == "--site-routes-file" || arg == "-site-routes-file" -> pIdx += 2
+                    arg.startsWith("--site-routes-file=") || arg.startsWith("-site-routes-file=") -> pIdx++
                     else -> {
                         cleanPayload.add(arg)
                         pIdx++
@@ -110,23 +136,84 @@ class NativeProcessSupervisor(private val context: Context) {
                 }
             }
             val isServiceTransport = transportType.equals("mqtt", true) || transportType.equals("jitsi", true)
-            if (transportType.equals("direct-dpi", true) || transportType.equals("directDpi", true)) {
+            val isDirectDpi = transportType.equals("direct-dpi", true) || transportType.equals("directDpi", true)
+            val routingProfiles = if (isDirectDpi || !appSettings.proxyOnlyMode)
+                io.github.libreroute.util.ZapretProfilePreferences(context).load() else null
+            val startedProfilePorts = mutableMapOf<String, Int>()
+            if (isDirectDpi) {
+                val profile = requireNotNull(routingProfiles).active
+                checkLaunchActive()
                 val engine = TpwsEngine(context)
-                val dpiPort = engine.start()
-                dpiEngine = engine
-                cleanPayload.removeAll { it == "--dpi-proxy" || it.startsWith("--dpi-proxy=") }
-                cleanPayload.add("--dpi-proxy")
-                cleanPayload.add("127.0.0.1:$dpiPort")
+                launchDpiEngines.add(engine)
+                val dpiPort = engine.start(profile)
+                startedProfilePorts[profile.id] = dpiPort
+                val runtimePayload = zapretLaunchOptions(cleanPayload, profile, dpiPort)
+                cleanPayload.clear()
+                cleanPayload.addAll(runtimePayload)
+            }
+            // All entry points (UI, tile, boot and reconnect) use this supervisor.
+            // Both VPN modes use the same rules. In standalone mode the common
+            // local zapret dialer supplies the path labelled "tunnel".
+            if (isDirectDpi || !appSettings.proxyOnlyMode) {
+                val routes = io.github.libreroute.util.SiteRoutingPreferences(context).load()
+                val apps = io.github.libreroute.util.AppRoutingPreferences(context).load()
+                // The common default also applies when both rule lists are disabled.
+                run {
+                    val profiles = requireNotNull(routingProfiles)
+                    routes.validate(profiles)
+                    apps.validate(profiles)
+                    val usedProfiles = ((if (routes.enabled) routes.rules.filter { it.action == "zapret" }.map { it.profile } else emptyList()) +
+                        (if (apps.enabled) apps.rules.filter { it.action == "zapret" }.map { it.profile } else emptyList())).distinct()
+                    val ports = usedProfiles.associateWith { id ->
+                        checkLaunchActive()
+                        startedProfilePorts.getOrPut(id) {
+                            val engine = TpwsEngine(context)
+                            // Register before start so a partial launch is cleaned up.
+                            launchDpiEngines.add(engine)
+                            engine.start(profiles.profiles.first { it.id == id })
+                        }
+                    }
+                    checkLaunchActive()
+                    if (apps.enabled) launchAppRouteServer = AppRouteServer(context, apps)
+                    val runtime = io.github.libreroute.data.nativeTrafficRoutes(routes, apps, profiles, ports, launchAppRouteServer?.address ?: "")
+                    val file = java.io.File.createTempFile("site-routes-", ".json", context.filesDir)
+                    launchSiteRoutesFile = file
+                    file.writeText(siteRoutesJson.encodeToString(io.github.libreroute.data.NativeSiteRoutes.serializer(), runtime))
+                    cleanPayload.add("--site-routes-file=${file.absolutePath}")
+                }
             }
             if (isServiceTransport && cleanPayload.none { it == "--peer-health" || it == "--peer-health=true" }) {
                 cleanPayload.removeAll { it == "--peer-health=false" }
                 cleanPayload.add("--peer-health")
             }
+            // Import identity only at runtime, into the existing private pipe.
+            // A stored/exported Tunnel never contains a device private key.
+            val pairConfig = cleanPayload.windowed(2).firstOrNull { it[0] == "--pair-channel-config" }?.getOrNull(1)
+            val groupConfig = cleanPayload.windowed(2).firstOrNull { it[0] == "--channel-group-config" }?.getOrNull(1)
+                ?: cleanPayload.firstOrNull { it.startsWith("--channel-group-config=") }?.substringAfter('=')
+            val group = groupConfig?.let {
+                require(transportType.equals("channel-group", true) && pairConfig == null) { "Некорректный тип объединения каналов" }
+                val binding = kotlinx.serialization.json.Json.decodeFromString<io.github.libreroute.admin.ChannelGroupBinding>(it)
+                val first = binding.lanes.firstOrNull()?.binding ?: error("В группе нет каналов")
+                val crypto = io.github.libreroute.admin.routeIdentity(io.github.libreroute.admin.SecureInvitationStateStore(context), first.device_fingerprint)
+                binding.validate(first.server_id, crypto.publicKeyHashHex(), crypto.getOrCreatePublicKeyBase64())
+                cleanPayload.add("--pair-device-private-key")
+                cleanPayload.add(crypto.privateKeyForNativePipe(first.device_fingerprint))
+                binding
+            }
+            if (pairConfig != null) {
+                require(transportType.equals("jazz", true)) { "Jazz V2 requires Jazz transport" }
+                val binding = kotlinx.serialization.json.Json.decodeFromString<io.github.libreroute.admin.PairChannelBinding>(pairConfig)
+                val crypto = io.github.libreroute.admin.routeIdentity(io.github.libreroute.admin.SecureInvitationStateStore(context), binding.device_fingerprint)
+                binding.validate(binding.server_id, crypto.publicKeyHashHex(), crypto.getOrCreatePublicKeyBase64())
+                cleanPayload.add("--pair-device-private-key")
+                cleanPayload.add(crypto.privateKeyForNativePipe(binding.device_fingerprint))
+            }
             val readiness = NativeTransportReadiness(cleanPayload)
 
             val documentUrl = cleanPayload.windowed(2, 1).firstOrNull { it[0] == "--url" }?.getOrNull(1)
                 ?: cleanPayload.firstOrNull { it.startsWith("--url=") }?.substringAfter('=')
-            val isYandexTransport = transportType.equals("vyandex", true) || transportType.equals("yandex", true)
+            val isYandexTransport = transportType.equals("vyandex", true) || transportType.equals("yandex", true) || group?.hasYandex == true
             val allowedYandexDocumentUrl = documentUrl?.takeIf { raw ->
                 runCatching {
                     val uri = android.net.Uri.parse(raw)
@@ -138,8 +225,11 @@ class NativeProcessSupervisor(private val context: Context) {
             val socketName = "@libreroute_tun_${System.currentTimeMillis()}"
             currentTunSocketName = socketName
 
+            val adminCarrierPath = java.io.File(context.filesDir, "admin-carrier-${System.nanoTime()}.sock").absolutePath
+            currentAdminCarrierPath = adminCarrierPath
             val cmd = buildList {
                 add(libPath)
+                if (transportType.lowercase() in setOf("vyandex", "yandex", "jazz", "jitsi", "mqtt", "channel-group")) add("--admin-carrier-socket=$adminCarrierPath")
                 if (isDebug) {
                     add("--debug")
                 }
@@ -178,10 +268,10 @@ class NativeProcessSupervisor(private val context: Context) {
                 if (!hasTunMtu) {
                     add("--tun-mtu=${appSettings.mtu}")
                 }
-                if (transportType.equals("vyandex", true) || transportType.equals("yandex", true)) {
+                if (isYandexTransport) {
                     val cookieFile = java.io.File(context.filesDir, "yandex_webview_cookies.json")
                     add("--yandex-cookie-file=${cookieFile.absolutePath}")
-                    if (transportType.equals("vyandex", true)) add("--yandex-mobile")
+                    if (transportType.equals("vyandex", true) || group != null) add("--yandex-mobile")
                 }
                 addAll(cleanPayload)
             }
@@ -189,18 +279,25 @@ class NativeProcessSupervisor(private val context: Context) {
             // Never print the command line, even with selective redaction.
             Logx.i(TAG, "starting locally built LibreRoute core for $transportType")
 
-            // This core uses one document per process. The service can rotate
-            // --url on reconnect, but it does not maintain simultaneous lanes.
-            val isMultiLane = false
+            // One native process owns the full group and its one tunnel.
+            val isMultiLane = group != null && group.lanes.size > 1
 
             val pb = ProcessBuilder(libPath, "--config-stdin")
                 .directory(context.filesDir)
                 .redirectErrorStream(true)
-            val proc = pb.start()
+            val carrierBinding = io.github.libreroute.admin.AdminRepository.getInstance(context).adminCarrierBinding(tunnelId)
+            checkLaunchActive()
+              val proc = pb.start()
+            launchedProcess = proc
+            checkLaunchActive()
             val logRedactor = io.github.libreroute.util.NativeLogRedactor(cmd.drop(1))
-            val instance = ProcessInstance(proc)
+            val instance = ProcessInstance(proc, dpiEngines = launchDpiEngines.toList(), siteRoutesFile = launchSiteRoutesFile, appRouteServer = launchAppRouteServer)
             currentInstance = instance
             process = proc
+            if (transportType.lowercase() in setOf("vyandex", "yandex", "jazz", "jitsi", "mqtt", "channel-group")) {
+                val (serverId, bindingKey) = carrierBinding
+                activeAdminCarrier = AdminCarrier(adminCarrierPath, transportType.lowercase(), serverId, bindingKey)
+            }
             proc.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
                 writer.write(org.json.JSONArray(cmd.drop(1)).toString())
             }
@@ -212,31 +309,36 @@ class NativeProcessSupervisor(private val context: Context) {
                         while (r.readLine().also { line = it } != null) {
                             val l = line ?: continue
                             if (l.isBlank()) continue
+                            if (group != null && l.contains("[GROUP] failed:")) proc.destroy()
                             if (instance.isCancelled.get() || currentInstance !== instance) {
                                 break
                             }
                             val lClean = logRedactor.redact(l.replace(" (gVisor)", ""))
                             android.util.Log.d("NativeStdout", lClean)
                             io.github.libreroute.util.FileLogger.append(lClean)
-                            if (isYandexTransport && allowedYandexDocumentUrl != null && "[VOLGA] authorization established" in l) {
-                                EventBus.clearPendingYandexAuthIssue(allowedYandexDocumentUrl)
+                            val groupAuthEvent = group?.let { ChannelGroupAuthEvent.parse(it, l) }
+                            val authDocumentUrl = groupAuthEvent?.url ?: allowedYandexDocumentUrl?.takeIf { group == null }
+                            if (authDocumentUrl != null && (groupAuthEvent?.reason == null && groupAuthEvent != null || group == null && "[VOLGA] authorization established" in l)) {
+                                EventBus.clearPendingYandexAuthIssue(authDocumentUrl)
                                 io.github.libreroute.admin.InstallationLog.append(context, "client_yandex_authorized", "cookies_present=${java.io.File(context.filesDir, "yandex_webview_cookies.json").isFile}")
                             }
-                            val authIssue = if (isYandexTransport && allowedYandexDocumentUrl != null) {
+                            val authIssue = groupAuthEvent?.reason ?: if (group == null && isYandexTransport && allowedYandexDocumentUrl != null) {
                                 YandexAuthIssueDetector.classify(l)
                             } else null
                             if (authIssue != null) {
                                 if (instance.authIssueReported.compareAndSet(false, true)) {
                                     io.github.libreroute.admin.InstallationLog.append(context, "client_yandex_auth_required", "reason=${authIssue.name} cookies_present=${java.io.File(context.filesDir, "yandex_webview_cookies.json").isFile}")
-                                    EventBus.dispatch(AppEvent.YandexAuthIssue(allowedYandexDocumentUrl!!, authIssue))
+                                    EventBus.dispatch(AppEvent.YandexAuthIssue(authDocumentUrl!!, authIssue))
                                     EventBus.dispatch(AppEvent.LogMessage("[VOLGA] Яндекс требует проверки авторизации в WebView"))
                                 }
                             }
 
                             if (transportType.equals("jitsi", true) &&
-                                ("[JITSI_AUTH] moderator-required" in l || "[JITSI_AUTH] token-expired" in l) &&
+                                ("[JITSI_AUTH] moderator-required" in l || "[JITSI_AUTH] token-expired" in l || "[JITSI_AUTH] key-unavailable" in l) &&
                                 documentUrl != null) {
-                                val reason = if ("[JITSI_AUTH] token-expired" in l)
+                                val reason = if ("[JITSI_AUTH] key-unavailable" in l)
+                                    io.github.libreroute.event.JitsiAuthReason.KEY_UNAVAILABLE
+                                else if ("[JITSI_AUTH] token-expired" in l)
                                     io.github.libreroute.event.JitsiAuthReason.TOKEN_EXPIRED
                                 else io.github.libreroute.event.JitsiAuthReason.MODERATOR_REQUIRED
                                 EventBus.dispatch(AppEvent.JitsiModeratorRequired(documentUrl, reason))
@@ -246,7 +348,7 @@ class NativeProcessSupervisor(private val context: Context) {
                             if (isMultiLane && (l.contains("lane", ignoreCase = true) || l.contains("channel", ignoreCase = true)) &&
                                 (l.contains("fail", ignoreCase = true) || l.contains("disconnect", ignoreCase = true) || l.contains("reconnect", ignoreCase = true) || l.contains("recover", ignoreCase = true))
                             ) {
-                                EventBus.dispatch(AppEvent.LogMessage("[TRANSPORT] Один канал Yandex Docs восстанавливается; туннель продолжает работать"))
+                                if (connected.get()) EventBus.dispatch(AppEvent.LogMessage("[TRANSPORT] Один из каналов восстанавливается; подключение продолжает работать"))
                                 Logx.i(TAG, "Multi-lane recovery active: $lClean")
                             }
 
@@ -258,16 +360,15 @@ class NativeProcessSupervisor(private val context: Context) {
                                     l.contains("connection reset by peer", ignoreCase = true) ||
                                     l.contains("broken pipe", ignoreCase = true)
 
-                            val isDrop = if (isMultiLane) {
-                                l.contains("close 1005", ignoreCase = true) ||
-                                        l.contains("all lanes failed", ignoreCase = true) ||
-                                        l.contains("all channels disconnected", ignoreCase = true)
+                            val isDrop = if (group != null) {
+                                l.contains("[GROUP] disconnected") || l.contains("[GROUP] failed:")
                             } else {
                                 isGeneralDrop || l.contains("Read error:", ignoreCase = true)
                             }
 
                             if (connected.get() && isDrop) {
                                 if (connected.getAndSet(false)) {
+                                      setAdminCarrierReady(false)
                                     Logx.w(TAG, "Post-connect transport drop detected: $lClean")
                                     EventBus.dispatch(AppEvent.TransportDisconnected)
                                     EventBus.dispatch(AppEvent.LogMessage("[W] Обрыв транспорта: $lClean"))
@@ -312,6 +413,7 @@ class NativeProcessSupervisor(private val context: Context) {
                                         delayedConnectRunnable = null
                                         if (running.get() && !instance.isCancelled.get() && currentInstance === instance && proc.isAlive) {
                                             if (!connected.getAndSet(true)) {
+                                                  setAdminCarrierReady(true)
                                                 EventBus.dispatch(AppEvent.TransportConnected)
                                                 Logx.i(TAG, "Native transport confirmed connected from stdout (delayed): $lClean")
                                             }
@@ -324,6 +426,7 @@ class NativeProcessSupervisor(private val context: Context) {
                                     delayedConnectRunnable = null
                                     if (running.get() && !instance.isCancelled.get() && currentInstance === instance && proc.isAlive) {
                                         if (!connected.getAndSet(true)) {
+                                                  setAdminCarrierReady(true)
                                             EventBus.dispatch(AppEvent.TransportConnected)
                                             Logx.i(TAG, "Native transport confirmed connected from stdout: $lClean")
                                         }
@@ -359,17 +462,19 @@ class NativeProcessSupervisor(private val context: Context) {
                         Logx.w(TAG, "stdout reader error: ${e.message}")
                     }
                 } finally {
-                    if ((transportType.equals("direct-dpi", true) || transportType.equals("directDpi", true)) && currentInstance === instance) {
-                        dpiEngine?.stop()
-                        dpiEngine = null
+                    instance.dpiEngines.forEach { it.stop() }
+                    instance.siteRoutesFile?.delete()
+                    instance.appRouteServer?.close()
+                    if (currentInstance === instance) {
+                        delayedConnectRunnable?.let { handler.removeCallbacks(it) }
+                        delayedConnectRunnable = null
+                        gracePeriodRunnable?.let { handler.removeCallbacks(it) }
+                        gracePeriodRunnable = null
                     }
-                    delayedConnectRunnable?.let { handler.removeCallbacks(it) }
-                    delayedConnectRunnable = null
-                    gracePeriodRunnable?.let { handler.removeCallbacks(it) }
-                    gracePeriodRunnable = null
                     val exitCode = try { proc.waitFor() } catch (_: Exception) { null }
                     if (!instance.isCancelled.get() && currentInstance === instance) {
                         Logx.e(TAG, "native process exited unexpectedly with code $exitCode")
+                          setAdminCarrierReady(false)
                         connected.set(false)
                         running.set(false)
                         EventBus.dispatch(AppEvent.TransportDisconnected)
@@ -403,8 +508,11 @@ class NativeProcessSupervisor(private val context: Context) {
             handler.postDelayed(runnable, STARTUP_FALLBACK_TIMEOUT_MS)
 
         } catch (e: Exception) {
-            dpiEngine?.stop()
-            dpiEngine = null
+            launchedProcess?.let { runCatching { it.destroyForcibly() } }
+            launchDpiEngines.forEach { it.stop() }
+            launchSiteRoutesFile?.delete()
+            launchAppRouteServer?.close()
+            if (shuttingDown.get() || launchGeneration.get() != generation) return
             Logx.e(TAG, "spawn failed", e)
             running.set(false)
             connected.set(false)
@@ -413,7 +521,23 @@ class NativeProcessSupervisor(private val context: Context) {
         }
     }
 
+    private fun setAdminCarrierReady(ready: Boolean) {
+        val updated = synchronized(Companion) {
+            val carrier = activeAdminCarrier ?: return
+            if (carrier.path != currentAdminCarrierPath || carrier.ready == ready) return
+            carrier.copy(ready = ready).also { activeAdminCarrier = it }
+        }
+        if (ready && updated.serverId != null) {
+            Thread {
+                runCatching { io.github.libreroute.admin.AdminRepository.getInstance(context).connectAdminCarrier(updated) }
+            }.apply { name = "AdminCarrierReadiness"; isDaemon = true; start() }
+        }
+    }
+
     private fun cleanupInstance(inst: ProcessInstance) {
+        inst.dpiEngines.forEach { it.stop() }
+        inst.siteRoutesFile?.delete()
+        inst.appRouteServer?.close()
         val p = inst.proc
         runCatching { p.outputStream?.close() }
         runCatching { p.inputStream?.close() }
@@ -432,6 +556,10 @@ class NativeProcessSupervisor(private val context: Context) {
     }
 
     private fun cleanup() {
+        if (activeAdminCarrier?.path == currentAdminCarrierPath) activeAdminCarrier = null
+        activeTunnelId = null
+        currentAdminCarrierPath?.let { java.io.File(it).delete() }
+        currentAdminCarrierPath = null
         delayedConnectRunnable?.let { handler.removeCallbacks(it) }
         delayedConnectRunnable = null
         gracePeriodRunnable?.let { handler.removeCallbacks(it) }
@@ -444,8 +572,6 @@ class NativeProcessSupervisor(private val context: Context) {
         currentInstance = null
         process = null
         currentTunSocketName = null
-        dpiEngine?.stop()
-        dpiEngine = null
     }
 
 }

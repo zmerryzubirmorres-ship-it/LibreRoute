@@ -521,9 +521,9 @@
     <!-- Administration -->
     <string name="settings_section_admin">Управление конфигурациями</string>
     <string name="admin_title">Администрирование</string>
-    <string name="admin_home_subtitle">Люди, серверы и приглашения</string>
+    <string name="admin_home_subtitle">Пользователи, серверы и приглашения</string>
     <string name="admin_nav_overview">Обзор</string>
-    <string name="admin_nav_people">Люди</string>
+    <string name="admin_nav_people">Пользователи</string>
     <string name="admin_nav_servers">Серверы</string>
     <string name="jitsi_token_expired">Срок действия Jitsi-токена истёк. Войдите заново в браузере.</string>
     <string name="admin_subtitle">Конфигурации, допуски, выдача и резерв по SSH</string>

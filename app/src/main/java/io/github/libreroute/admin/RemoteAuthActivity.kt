@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -18,12 +17,13 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.libreroute.R
 import io.github.libreroute.util.Logx
 import kotlinx.coroutines.Dispatchers
@@ -91,18 +91,31 @@ class RemoteAuthActivity : AppCompatActivity() {
     private lateinit var tvTunnelBadge: TextView
     private lateinit var tvSessionStatus: TextView
     private lateinit var tvIncidentBanner: TextView
-    private lateinit var progressBar: ProgressBar
     private lateinit var webView: WebView
     private lateinit var tvErrorView: TextView
     private lateinit var btnManualFallback: Button
     private lateinit var btnSendAuth: Button
     private lateinit var btnRetryPage: Button
     private lateinit var addressInput: EditText
+    private lateinit var chrome: io.github.libreroute.ui.BrowserChrome
     private lateinit var btnGo: Button
     private var tunnelReady = false
 
     private lateinit var adminRepo: AdminRepository
-    private lateinit var proxyManager: WebViewTunnelProxyManager
+    private val vm by viewModels<RemoteAuthViewModel>()
+    private val sending by viewModels<io.github.libreroute.ui.ScreenOperationViewModel>()
+    private var savedBrowser: Bundle? = null
+    private var browserLoaded = false
+    private val dialogs by lazy { io.github.libreroute.ui.DialogScreens(this) { key, args ->
+        when (key) {
+            "manual" -> showManualFallbackDialog()
+            "confirm" -> activeSession?.let { session ->
+                val origins = args.getBundle("origins") ?: Bundle()
+                confirmAndDispatch(session, origins.keySet().associateWith { origins.getString(it).orEmpty() })
+            }
+            "applied" -> showAuthApplied(args.getLong("generation"))
+        }
+    } }
 
     private var targetServer: ServerNode? = null
     private var targetProfileId: String = ""
@@ -119,13 +132,13 @@ class RemoteAuthActivity : AppCompatActivity() {
         tvTunnelBadge = findViewById(R.id.tv_tunnel_badge)
         tvSessionStatus = findViewById(R.id.tv_session_status)
         tvIncidentBanner = findViewById(R.id.tv_incident_banner)
-        progressBar = findViewById(R.id.progress_bar)
         webView = findViewById(R.id.web_view)
         tvErrorView = findViewById(R.id.tv_error_view)
         btnManualFallback = findViewById(R.id.btn_manual_fallback)
         btnSendAuth = findViewById(R.id.btn_send_auth)
         btnRetryPage = findViewById(R.id.btn_retry_page)
         addressInput = findViewById(R.id.browser_address)
+        chrome = io.github.libreroute.ui.BrowserChrome(this, savedInstanceState)
         btnGo = findViewById(R.id.browser_go)
         findViewById<View>(R.id.btn_return_server).setOnClickListener { finish() }
         btnReload.isEnabled = false
@@ -133,7 +146,7 @@ class RemoteAuthActivity : AppCompatActivity() {
         btnSendAuth.isEnabled = false
 
         adminRepo = AdminRepository.getInstance(this)
-        proxyManager = WebViewTunnelProxyManager(this)
+        savedBrowser = savedInstanceState?.getBundle("browser")
 
         val targetId = intent.getStringExtra(EXTRA_TARGET_ID).orEmpty()
         targetProfileId = intent.getStringExtra(EXTRA_PROFILE_ID).orEmpty()
@@ -159,7 +172,9 @@ class RemoteAuthActivity : AppCompatActivity() {
             tvTargetInfo.text = "Ошибка: Целевой сервер '$missingTarget' не найден"
             tvSessionStatus.text = "Для работы выберите настроенный SSH-сервер в панели администрирования."
             tvTunnelBadge.text = "Туннель заблокирован"
-            tvTunnelBadge.setTextColor(0xFFFF4444.toInt())
+            tvTunnelBadge.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.state_error))
+            tvErrorView.text = "Сначала выберите сервер в разделе администрирования"
+            tvErrorView.visibility = View.VISIBLE
             btnSendAuth.isEnabled = false
             btnManualFallback.isEnabled = false
             btnReload.isEnabled = false
@@ -167,14 +182,13 @@ class RemoteAuthActivity : AppCompatActivity() {
             return
         }
 
-        val docMasked = if (docUrl.isNotBlank()) " | Док: ${maskDocUrl(docUrl)}" else ""
-        tvTargetInfo.text = "Узел: ${targetServer?.name} | Профиль: $targetProfileId$docMasked"
+        tvTargetInfo.text = "Сервер: ${targetServer?.name}"
 
         btnBack.setOnClickListener { navigateBack() }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = navigateBack()
         })
-        btnReload.setOnClickListener { if (tunnelReady) webView.reload() }
+        chrome.bindReload(webView) { tunnelReady }
         btnRetryPage.setOnClickListener { if (tunnelReady) openAddress(addressInput.text.toString()) }
         btnGo.setOnClickListener { openAddress(addressInput.text.toString()) }
         addressInput.setOnEditorActionListener { _, action, _ ->
@@ -208,12 +222,7 @@ class RemoteAuthActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                if (newProgress in 1..99) {
-                    progressBar.visibility = View.VISIBLE
-                    progressBar.progress = newProgress
-                } else {
-                    progressBar.visibility = View.GONE
-                }
+                chrome.progressChanged(newProgress)
             }
         }
 
@@ -235,6 +244,7 @@ class RemoteAuthActivity : AppCompatActivity() {
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 if (request?.isForMainFrame == true) {
+                    chrome.pageFailed()
                     tvErrorView.text = "Ошибка загрузки: ${error?.description ?: "сбой сети"}"
                     tvErrorView.visibility = View.VISIBLE
                     btnRetryPage.isEnabled = tunnelReady
@@ -254,115 +264,68 @@ class RemoteAuthActivity : AppCompatActivity() {
                         tvSessionStatus.text = "Вход Jitsi подтверждён. Можно подключать маршрут."
                     }
                 }
-                if (!addressInput.hasFocus()) addressInput.setText(url.orEmpty())
+                chrome.pageFinished(url)
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 tvErrorView.visibility = View.GONE
                 btnRetryPage.isEnabled = false
                 btnRetryPage.visibility = View.GONE
-                if (!addressInput.hasFocus()) addressInput.setText(url.orEmpty())
+                chrome.pageStarted(url)
             }
         }
     }
 
     private fun initializeRemoteSession() {
-        val server = targetServer
-        if (server == null) {
-            tvSessionStatus.text = "Ошибка: не выбран целевой сервер"
-            return
-        }
-
+        val server = targetServer ?: return
+        vm.initialize(server, targetProfileId, intent.getStringExtra(EXTRA_DOC_URL).orEmpty())
         lifecycleScope.launch {
-            tvSessionStatus.text = "Инициализация сессии на сервере..."
-            tvTunnelBadge.text = "Туннель: запуск SSH-прокси..."
-            tvTunnelBadge.setTextColor(0xFFFFCC00.toInt())
-
-            // 1. Begin auth session on target server
-            val sessionResult = withContext(Dispatchers.IO) {
-                adminRepo.beginAuthSession(
-                    targetId = server.name,
-                    profileId = targetProfileId,
-                    channel = AdminChannel.DIRECT_SSH,
-                    serverNode = server,
-                    documentUrl = intent.getStringExtra(EXTRA_DOC_URL).orEmpty()
-                )
-            }
-
-            val session = sessionResult.getOrElse { err ->
-                tvSessionStatus.text = "Ошибка создания сессии: ${err.message}"
-                Logx.e(TAG, "beginAuthSession failed: ${err.message}", err)
-                return@launch
-            }
-            activeSession = session
-            InstallationLog.append(this@RemoteAuthActivity, "auth_session", "server=${server.host} document_present=${session.documentUrl.isNotBlank()}")
-            if (session.documentUrl.isBlank()) {
-                tvSessionStatus.text = "Сервер не указал документ для проверки авторизации. Обновите серверное ядро и откройте авторизацию заново."
-                return@launch
-            }
-            tvSessionStatus.text = "Сессия авторизации готова"
-
-            // 2. Start SSH proxy loopback
-            proxyManager.startProxy(
-                serverNode = server,
-                onReady = { port ->
-                    runOnUiThread {
-                        setTunnelReady(true)
-                        tvTunnelBadge.text = "Туннель подключён"
-                        tvTunnelBadge.setTextColor(0xFF00FF88.toInt())
-
-                        // Check active incidents for this profile
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.state.collect { state ->
+                    activeSession = state.session
+                    setTunnelReady(state.ready)
+                    tvTunnelBadge.text = if (state.ready) "Туннель подключён" else "Туннель: ожидание подключения"
+                    tvTunnelBadge.setTextColor(androidx.core.content.ContextCompat.getColor(this@RemoteAuthActivity,
+                        if (state.ready) R.color.state_running else R.color.state_connecting))
+                    if (state.error != null) { tvSessionStatus.text = state.error; webView.stopLoading() }
+                    if (state.ready && !browserLoaded) {
+                        browserLoaded = true
+                        val session = state.session ?: return@collect
                         checkIncidents(session.profileId)
-
-                        // Keep solved CAPTCHA when reopening the same browser context.
-                        // Clear cookies when switching server or profile.
                         val cookieManager = CookieManager.getInstance()
-                        val browserPrefs = getSharedPreferences("remote_browser_context", MODE_PRIVATE)
+                        val prefs = getSharedPreferences("remote_browser_context", MODE_PRIVATE)
                         val contextKey = "${server.id}:$targetProfileId"
-                        val loadInitialPage = {
+                        val sameContext = prefs.getString("context", null) == contextKey
+                        val loadPage = {
                             runOnUiThread {
-                                browserPrefs.edit().putString("context", contextKey).apply()
-                                // A protocol setup may pass a new Yandex
-                                // document while the auth session is anchored
-                                // to the existing OWNER control profile. Open
-                                // the requested document first so CAPTCHA and
-                                // cookie state are collected for that setup.
-                                val initialUrl = intent.getStringExtra(EXTRA_DOC_URL)?.takeIf { it.isNotBlank() }
-                                    ?: session.documentUrl.takeIf { it.isNotBlank() }
-                                    ?: "https://passport.yandex.ru/auth"
-                                openAddress(initialUrl)
+                                if (!isFinishing && !isDestroyed) {
+                                    prefs.edit().putString("context", contextKey).apply()
+                                    val history = savedBrowser.takeIf { sameContext }
+                                    savedBrowser = null
+                                    if (history == null || webView.restoreState(history) == null) {
+                                        openAddress(intent.getStringExtra(EXTRA_DOC_URL)?.takeIf { it.isNotBlank() } ?: session.documentUrl)
+                                    }
+                                    dialogs.restore()
+                                }
                             }
                         }
-                        if (browserPrefs.getString("context", null) == contextKey) {
-                            loadInitialPage()
-                        } else {
-                            cookieManager.removeAllCookies { loadInitialPage() }
-                        }
-                    }
-                },
-                onError = { err ->
-                    runOnUiThread {
-                        setTunnelReady(false)
-                        tvTunnelBadge.text = "Ошибка туннеля"
-                        tvTunnelBadge.setTextColor(0xFFFF4444.toInt())
-                        tvSessionStatus.text = "Сбой SSH-прокси: $err"
-                        Toast.makeText(this@RemoteAuthActivity, err, Toast.LENGTH_LONG).show()
-                    }
-                },
-                onTerminated = { exitCode ->
-                    runOnUiThread {
-                        setTunnelReady(false)
-                        webView.stopLoading()
-                        webView.visibility = View.GONE
-                        tvErrorView.text = "SSH-туннель был неожиданно прерван (код $exitCode). Трафик заблокирован (Fail-Closed)."
-                        tvErrorView.visibility = View.VISIBLE
-                        tvTunnelBadge.text = "Туннель разорван!"
-                        tvTunnelBadge.setTextColor(0xFFFF4444.toInt())
-                        btnSendAuth.isEnabled = false
-                        btnReload.isEnabled = false
+                        if (sameContext) loadPage() else cookieManager.removeAllCookies { loadPage() }
                     }
                 }
-            )
+            }
+        }
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                sending.state.collect { state ->
+                    btnSendAuth.isEnabled = tunnelReady && !state.running
+                    btnSendAuth.text = if (state.running) "Передача и проверка..." else "Передать авторизацию"
+                    state.result?.let { result ->
+                        sending.consumed()
+                        result.onSuccess { showAuthApplied(it as Long) }
+                            .onFailure { tvSessionStatus.text = "Ошибка применения: ${it.message}" }
+                    }
+                }
+            }
         }
     }
 
@@ -372,7 +335,7 @@ class RemoteAuthActivity : AppCompatActivity() {
         btnGo.isEnabled = ready
         btnReload.isEnabled = ready
         btnRetryPage.isEnabled = false
-        btnSendAuth.isEnabled = ready
+        btnSendAuth.isEnabled = ready && !sending.state.value.running
         if (!ready) webView.stopLoading()
     }
 
@@ -383,10 +346,7 @@ class RemoteAuthActivity : AppCompatActivity() {
             Toast.makeText(this, "Введите адрес сайта HTTP или HTTPS", Toast.LENGTH_SHORT).show()
             return
         }
-        addressInput.setText(url)
-        addressInput.clearFocus()
-        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(addressInput.windowToken, 0)
+        chrome.navigate(url)
         tvErrorView.visibility = View.GONE
         webView.loadUrl(url)
     }
@@ -478,7 +438,7 @@ class RemoteAuthActivity : AppCompatActivity() {
                 dispatchAuthBundle(session, origins)
             }
             .setNegativeButton("Отмена", null)
-            .show()
+            .create().let { dialogs.show(it, "confirm", Bundle().apply { putBundle("origins", Bundle().apply { origins.forEach { (key, value) -> putString(key, value) } }) }) }
     }
 
     private fun dispatchAuthBundle(session: AuthSession, origins: Map<String, String>) {
@@ -497,50 +457,23 @@ class RemoteAuthActivity : AppCompatActivity() {
         )
         val finalBundle = bundle.copy(contentHash = bundle.computeContentHash())
 
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                adminRepo.importAuthBundle(
-                    authSessionId = session.id,
-                    serverPub = session.serverPub,
-                    bundle = finalBundle,
-                    channel = AdminChannel.DIRECT_SSH,
-                    serverNode = targetServer
-                )
-            }
-
-            btnSendAuth.isEnabled = tunnelReady
-            btnSendAuth.text = "Передать авторизацию"
-
-            result.fold(
-                onSuccess = {
-                    InstallationLog.append(this@RemoteAuthActivity, "auth_import_success", "server=${targetServer?.host.orEmpty()} generation=${finalBundle.generation} probe_passed=true")
-                    tvSessionStatus.text = "Авторизация успешно применена и проверена! (Gen ${finalBundle.generation})"
-                    tvIncidentBanner.visibility = View.GONE
-                    AlertDialog.Builder(this@RemoteAuthActivity)
-                        .setTitle("Авторизация обновлена")
-                        .setMessage("Сервер подтвердил успешное применение cookies поколения ${finalBundle.generation} и положительный результат проверочного зонда.")
-                        .setPositiveButton("OK") { _, _ ->
-                            // Let the caller resume its durable operation with
-                            // the same protocol/endpoint after the cookie
-                            // handoff has been accepted by the server.
-                            setResult(RESULT_OK)
-                            finish()
-                        }
-                        .show()
-                },
-                  onFailure = { err ->
-                      InstallationLog.append(this@RemoteAuthActivity, "auth_import_error", "server=${targetServer?.host.orEmpty()} message=${err.message.orEmpty()}")
-                    tvSessionStatus.text = "Ошибка применения: ${err.message}"
-                    Logx.e(TAG, "importAuthBundle failed: ${err.message}", err)
-                    AlertDialog.Builder(this@RemoteAuthActivity)
-                        .setTitle("Сбой применения авторизации")
-                        .setMessage("Сервер отклонил авторизацию или зонд завершился ошибкой:\n${err.message}\n\nПроверьте капчу/логин и попробуйте снова.")
-                        .setPositiveButton("Понятно", null)
-                        .show()
-                    checkIncidents(session.profileId)
-                }
-            )
+        val repo = adminRepo
+        val server = targetServer
+        val app = applicationContext
+        sending.run {
+            repo.importAuthBundle(session.id, session.serverPub, finalBundle, AdminChannel.DIRECT_SSH, server).getOrThrow()
+            InstallationLog.append(app, "auth_import_success", "server=${server?.host.orEmpty()} generation=${finalBundle.generation} probe_passed=true")
+            finalBundle.generation
         }
+    }
+
+    private fun showAuthApplied(generation: Long) {
+        tvSessionStatus.text = "Авторизация успешно применена и проверена! (Gen $generation)"
+        tvIncidentBanner.visibility = View.GONE
+        val dialog = AlertDialog.Builder(this).setTitle("Авторизация обновлена")
+            .setMessage("Сервер подтвердил успешное применение cookies поколения $generation и положительный результат проверочного зонда.")
+            .setPositiveButton("OK") { _, _ -> setResult(RESULT_OK); finish() }.create()
+        dialogs.show(dialog, "applied", Bundle().apply { putLong("generation", generation) })
     }
 
     private fun showManualFallbackDialog() {
@@ -604,14 +537,17 @@ class RemoteAuthActivity : AppCompatActivity() {
                 confirmAndDispatch(session, manualOrigins)
             }
             .setNegativeButton("Отмена", null)
-            .show()
+            .create().let { dialogs.show(it, "manual", Bundle()) }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (::chrome.isInitialized) chrome.saveState(outState)
+        if (::webView.isInitialized) outState.putBundle("browser", Bundle().also { webView.saveState(it) })
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
+        if (::webView.isInitialized) { webView.stopLoading(); webView.destroy() }
         super.onDestroy()
-        webView.stopLoading()
-        webView.clearHistory()
-        webView.destroy()
-        proxyManager.stopProxy()
     }
 }

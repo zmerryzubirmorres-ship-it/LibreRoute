@@ -64,6 +64,9 @@ class LogsFragment : BaseFragment() {
     private var activeLogLevelPopup: PopupWindow? = null
     private var activeMoreMenuDialog: BottomSheetDialog? = null
 
+    private val dialogs by lazy { DialogScreens(this) { key, _ ->
+        when (key) { "more" -> showMoreMenu(btnLogsMore); "share" -> showShareDialog() }
+    } }
     private var autoScroll = true
     private val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
 
@@ -87,6 +90,8 @@ class LogsFragment : BaseFragment() {
             requireActivity().onBackPressedDispatcher.onBackPressed()
         }
 
+        autoScroll = savedInstanceState?.getBoolean("auto_scroll", true) ?: true
+        allLogItems.clear()
         textView = view.findViewById(R.id.logs)
         scrollView = view.findViewById(R.id.log_scroll)
         tvLineCount = view.findViewById(R.id.tv_line_count)
@@ -145,6 +150,7 @@ class LogsFragment : BaseFragment() {
             rebuildFilteredLogs()
         }
 
+        dialogs.restore()
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 EventBus.events.collect { ev ->
@@ -152,6 +158,11 @@ class LogsFragment : BaseFragment() {
                 }
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("auto_scroll", autoScroll)
+        super.onSaveInstanceState(outState)
     }
 
     private fun detectCategory(line: String): LogCategory = when {
@@ -277,6 +288,7 @@ class LogsFragment : BaseFragment() {
     }
 
     override fun onDestroyView() {
+        dialogs.detach()
         activeLogLevelPopup?.dismiss()
         activeLogLevelPopup = null
         activeMoreMenuDialog?.dismiss()
@@ -410,7 +422,7 @@ class LogsFragment : BaseFragment() {
             Toast.makeText(requireContext(), R.string.logs_cleared, Toast.LENGTH_SHORT).show()
         }
 
-        dialog.show()
+        dialogs.show(dialog, "more", Bundle())
     }
 
     private fun showShareDialog() {
@@ -433,7 +445,7 @@ class LogsFragment : BaseFragment() {
                     1 -> copyToClipboard(text)
                 }
             }
-            .show()
+            .create().let { dialogs.show(it, "share", Bundle()) }
     }
 
     private fun shareAsFile(text: String) {

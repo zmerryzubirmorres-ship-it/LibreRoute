@@ -15,6 +15,8 @@ class ClientEnrollmentRecoveryTest {
     private lateinit var storage: InMemoryAdminStorage
     private var calls = 0
     private var loseNextResponse = false
+    private var groupEnrollment = false
+    private var foreignGroup = false
     private val committed = mutableMapOf<String, AdminEnvelope>()
     private val requests = mutableListOf<String>()
     private val store = object : TunnelStore {
@@ -26,7 +28,7 @@ class ClientEnrollmentRecoveryTest {
         override fun setSelectedId(id: Long) = Unit
     }
 
-    @Before fun before() { AdminKeyManager.clearFallbackKey(); keys = AdminKeyManager(); storage = InMemoryAdminStorage(); calls = 0; store.tunnels = emptyList(); committed.clear(); requests.clear(); loseNextResponse = false }
+    @Before fun before() { AdminKeyManager.clearFallbackKey(); keys = AdminKeyManager(); storage = InMemoryAdminStorage(); calls = 0; store.tunnels = emptyList(); committed.clear(); requests.clear(); loseNextResponse = false; groupEnrollment = false; foreignGroup = false }
 
     private fun signedResponse(profile: String, operation: String, data: JsonObject): AdminEnvelope {
         val payload = buildJsonObject { put("op_id", operation); put("status", "applied"); put("data", data) }
@@ -56,14 +58,25 @@ class ClientEnrollmentRecoveryTest {
                 override fun put(key: String, value: String) = storage.putString("recipient_identity_$key", value)
             })
             val now = System.currentTimeMillis() / 1000
+            val route = if (groupEnrollment) {
+                val fp = crypto.publicKeyHashHex()
+                val plan = ChannelGroupPlan.fromLinks("https://salutejazz.ru/call/new-device/password\nhttps://docs.yandex.ru/edit/d/group-document")
+                val binding = PairChannelBinding(2, "a".repeat(32), 1, "lease-1", "resource-1", "new-device", 1, 1, 1, 1,
+                    "server-one", fp, if (foreignGroup) "f".repeat(64) else fp, recipient)
+                val group = ChannelGroupBinding(1, plan.mode, plan.min_ready, plan.lanes.mapIndexed { i, lane ->
+                    ChannelGroupLane(lane.provider, lane.url, binding.copy(lane_id = i + 1, lease_id = "lease-${i + 1}",
+                        resource_id = "resource-${i + 1}", resource_identity = endpointIdentity(lane.provider, lane.url)))
+                })
+                RouteCandidate(route_id = "group-one", server_id = "server-one", transport = "channel-group", name = "Объединённые каналы",
+                    url = group.endpoint, secret_key = "b".repeat(64), channel_group = group, codec = "batched", encryption_layout = "batch")
+            } else RouteCandidate(route_id = "jitsi-one", server_id = "server-one", transport = "jitsi", name = "Jitsi access",
+                url = "https://meet.jit.si/isolated-room", secret_key = "server-secret-material-123456")
             val plaintext = buildJsonObject {
                 put("invitation_id", request.opId); put("profile_id", "package-one"); put("name", "My access")
                 put("url", "https://docs.yandex.ru/edit/d/enrollment-control"); put("secret_key", "server-secret-material-123456")
                 put("revision", 1); put("issued_time", now); put("expires_at", now + 600)
                 put("recipient_pub_sha256", crypto.publicKeyHashHex()); put("device_id", crypto.publicKeyHashHex()); put("user_id", "user-one")
-                put("routes", json.encodeToJsonElement(listOf(RouteCandidate(route_id = "mqtt-one", server_id = "server-one",
-                    transport = "mqtt", name = "MQTT access", url = "wss://broker.example/mqtt#isolated",
-                    secret_key = "server-secret-material-123456"))))
+                put("routes", json.encodeToJsonElement(listOf(route)))
             }.toString()
             val (ephemeral, nonce, encrypted) = RecipientInvitationCrypto.encryptForDevice(recipient, plaintext.toByteArray())
             val response = signedResponse(request.profileId, request.opId, buildJsonObject {
@@ -81,10 +94,47 @@ class ClientEnrollmentRecoveryTest {
         assertEquals(AdminRole.NONE, repository.getRole()); assertTrue(repository.getServerNodes().isEmpty())
         val first = repository.redeemInvitation(link)
         assertTrue((first.first as? AdminOpResult.Failure)?.error, first.first is AdminOpResult.Success)
-        val ids = store.tunnels.map { it.id }; assertEquals(1, ids.size); assertEquals("mqtt", store.tunnels.single().transportType)
+        val ids = store.tunnels.map { it.id }; assertEquals(1, ids.size); assertEquals("jitsi", store.tunnels.single().transportType)
         assertFalse(repository.hasAdminAccess()); assertTrue(repository.getServerNodes().isEmpty())
         val replay = repo().redeemInvitation(link)
         assertTrue(replay.first is AdminOpResult.Success); assertEquals(ids, store.tunnels.map { it.id }); assertEquals(1, calls)
+    }
+
+    @Test fun groupInvitationImportsOneCombinedConnectionAndNetworkRetryNeverDuplicatesLanes() {
+        groupEnrollment = true
+        val link = invitation(); loseNextResponse = true
+        assertTrue(repo().redeemInvitation(link).first is AdminOpResult.Failure)
+        assertTrue(store.tunnels.isEmpty())
+        val result = repo().redeemInvitation(link)
+        assertTrue((result.first as? AdminOpResult.Failure)?.error, result.first is AdminOpResult.Success)
+        val tunnel = store.tunnels.single()
+        assertEquals(io.github.libreroute.data.TransportType.channelGroup.name, tunnel.transportType)
+        val configIndex = tunnel.transportConnPayload.indexOf("--channel-group-config")
+        assertTrue(configIndex >= 0)
+        val group = json.decodeFromString<ChannelGroupBinding>(tunnel.transportConnPayload[configIndex + 1])
+        assertEquals(listOf("jazz", "vyandex"), group.lanes.map { it.provider })
+        assertEquals("b".repeat(64), tunnel.encryptionKey)
+        assertEquals(requests.first(), requests.last()); assertEquals(2, calls)
+        assertTrue(repo().redeemInvitation(link).first is AdminOpResult.Success)
+        assertEquals(listOf(tunnel.id), store.tunnels.map { it.id }); assertEquals(2, calls)
+        assertFalse(repo().hasAdminAccess())
+    }
+
+    @Test fun groupReceiptSurvivesInterruptedLocalSaveAsOneStableConnection() {
+        groupEnrollment = true
+        val link = invitation(); store.failSave = true
+        assertTrue(repo().redeemInvitation(link).first is AdminOpResult.Failure)
+        assertTrue(store.tunnels.isEmpty())
+        assertTrue(repo().redeemInvitation(link).first is AdminOpResult.Success)
+        val id = store.tunnels.single().id
+        assertTrue(repo().redeemInvitation(link).first is AdminOpResult.Success)
+        assertEquals(id, store.tunnels.single().id); assertEquals(1, calls)
+    }
+
+    @Test fun groupAddressedToAnotherRecipientIsRejectedBeforeSaving() {
+        groupEnrollment = true; foreignGroup = true
+        assertTrue(repo().redeemInvitation(invitation()).first is AdminOpResult.Failure)
+        assertTrue(store.tunnels.isEmpty())
     }
 
     @Test fun restartBetweenReceiptAndLocalProfileSaveReusesReceiptAndStableIds() {

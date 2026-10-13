@@ -35,9 +35,12 @@ import java.util.UUID
 data class SetupState(val stage: String = "check", val busy: Boolean = false,
                       val summary: String = "", val error: String? = null)
 
+internal data class SetupCheckpoint(val operationId: String, val channel: AdminChannel,
+    val document: String, val profileName: String, val automatic: Boolean, val state: SetupState)
+
 /** Keeps the installation protocol internal; the user sees check → loading → result. */
-class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app) {
-    private val repo = AdminRepository.getInstance(app)
+class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Application,
+    private val repo: AdminRepository = AdminRepository.getInstance(app)) : AndroidViewModel(app) {
     private val mutableState = MutableStateFlow(SetupState())
     val state = mutableState.asStateFlow()
     var node: ServerNode? = null; private set
@@ -48,23 +51,94 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
     private var needsProbe = true
     private var planJson: String = ""
     private var adminProfileName: String = ""
+    var updateChannel: AdminChannel = AdminChannel.AUTO; private set
+    private var initialized = false
+    private var restoredOperationNeedsCheck = false
+
+    init {
+        viewModelScope.launch {
+            repo.installationOperations.collect { operations ->
+                val operation = operations.firstOrNull { it.operationId == operationId } ?: return@collect
+                if (mutableState.value.busy && operation.coordinator) {
+                    mutableState.value = mutableState.value.copy(summary = coreUpdateProgressLabel(operation))
+                }
+            }
+        }
+    }
+
+    fun selectUpdateChannel(channel: AdminChannel) {
+        if (!mutableState.value.busy && updateChannel != channel) {
+            updateChannel = channel
+            mutableState.value = mutableState.value.copy(summary = "Выбран канал: ${channel.displayName}")
+        }
+    }
+    fun cancelPreparation() { repo.cancelCoreUpdatePreparation(operationId) }
+    fun continueUpdate() {
+        val target = node ?: return
+        if (mutableState.value.busy) return
+        val id = operationId
+        val channel = updateChannel
+        mutableState.value = SetupState(stage = "result", busy = true, summary = "Продолжаем обновление…")
+        InstallationLog.append(getApplication(), "core_update_continue_start", "operation_id=$id channel=${channel.name}")
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { repo.continueCoreUpdate(target, id, channel) }
+                node = repo.getServerNode(target.id) ?: target
+                InstallationLog.append(getApplication(), "core_update_continue_result", "operation_id=$id result=${result::class.simpleName} error=${(result as? AdminOpResult.Failure)?.error.orEmpty()}")
+                mutableState.value = SetupState(stage = "result", error = (result as? AdminOpResult.Failure)?.error,
+                    summary = if (result is AdminOpResult.Success) "Обновление подтверждено" else "")
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                InstallationLog.append(getApplication(), "core_update_continue_error", "operation_id=$id message=${e.message.orEmpty()}")
+                mutableState.value = SetupState(stage = "result", error = e.message ?: "Не удалось продолжить обновление")
+            }
+        }
+    }
+
+    fun rollbackUpdate() {
+        val target = node ?: return
+        if (mutableState.value.busy) return
+        val id = operationId
+        val channel = updateChannel
+        mutableState.value = SetupState(stage = "result", busy = true, summary = "Запрашиваем восстановление…")
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repo.rollbackServerInstallation(target, id, channel) }
+            InstallationLog.append(getApplication(), "core_update_cancel_result", "operation_id=$id result=${result::class.simpleName} error=${(result as? AdminOpResult.Failure)?.error.orEmpty()}")
+            mutableState.value = SetupState(stage = "result", error = (result as? AdminOpResult.Failure)?.error)
+        }
+    }
 
     fun restore(saved: Bundle?) {
-        if (saved == null) return
-        operationId = saved.getString("setup_operation_id").orEmpty()
-        document = saved.getString("setup_document").orEmpty()
-        adminProfileName = saved.getString("setup_profile_name").orEmpty()
-        autoProvision = saved.getBoolean("setup_auto_provision", autoProvision)
-        val wasBusy = saved.getBoolean("setup_busy", false)
+        // by viewModels retains this instance and its job on rotation. A Bundle
+        // belongs to process restoration, never to the running retained model.
+        if (initialized || saved == null) return
+        restoreCheckpoint(SetupCheckpoint(saved.getString("setup_operation_id").orEmpty(),
+            runCatching { AdminChannel.valueOf(saved.getString("update_channel").orEmpty()) }.getOrDefault(AdminChannel.AUTO),
+            saved.getString("setup_document").orEmpty(), saved.getString("setup_profile_name").orEmpty(),
+            saved.getBoolean("setup_auto_provision", autoProvision),
+            SetupState(saved.getString("setup_stage") ?: "check", saved.getBoolean("setup_busy", false),
+                saved.getString("setup_summary").orEmpty(), saved.getString("setup_error"))))
+    }
+
+    internal fun restoreCheckpoint(saved: SetupCheckpoint) {
+        if (initialized) return
+        operationId = saved.operationId
+        updateChannel = saved.channel
+        document = saved.document
+        adminProfileName = saved.profileName
+        autoProvision = saved.automatic
+        val wasBusy = saved.state.busy
+        restoredOperationNeedsCheck = wasBusy
         mutableState.value = SetupState(
-            stage = if (wasBusy) "result" else saved.getString("setup_stage") ?: "check",
-            summary = saved.getString("setup_summary").orEmpty(),
-            error = if (wasBusy) "Установка прервалась. Проверим фактическое состояние сервера." else saved.getString("setup_error"))
+            stage = if (wasBusy) "result" else saved.state.stage,
+            summary = saved.state.summary,
+            error = if (wasBusy) null else saved.state.error)
     }
 
     fun save(out: Bundle) {
         val s = mutableState.value
         out.putString("setup_operation_id", operationId)
+        out.putString("update_channel", updateChannel.name)
         out.putString("setup_document", document)
         out.putString("setup_profile_name", adminProfileName)
         out.putString("setup_stage", s.stage)
@@ -75,6 +149,8 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
     }
 
     fun initialize(id: String, recovery: Boolean = false, automatic: Boolean = false, profileName: String = "") {
+        if (initialized) return
+        initialized = true
         // The first Activity may have migrated a temporary SSH node to the
         // server-owned identity.  Android can recreate this Activity with the
         // original Intent extra, so resolve the durable operation before
@@ -119,12 +195,36 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
     }
 
     fun start() {
+        if (restoredOperationNeedsCheck) {
+            restoredOperationNeedsCheck = false
+            if (operationId.isNotBlank() && repo.loadServerInstallation(operationId) != null) reconcile()
+            else {
+                mutableState.value = SetupState(stage = "check")
+                check()
+            }
+            return
+        }
         if (!mutableState.value.busy && mutableState.value.stage == "check" && needsProbe) check()
     }
 
     fun check() {
         if (mutableState.value.busy) return
         val target = node ?: return
+        if (updateChannel == AdminChannel.DOCUMENT || updateChannel == AdminChannel.ACTIVE_TRANSPORT ||
+            (updateChannel == AdminChannel.AUTO && repo.getActiveGrant(target.id) != null)) {
+            mutableState.value = SetupState(stage = "check", busy = true, summary = "Проверяем выбранный канал управления…")
+            viewModelScope.launch {
+                val result = withContext(Dispatchers.IO) { repo.getClusterSnapshot(updateChannel, target) }
+                node = repo.getServerNode(target.id) ?: target
+                needsProbe = false
+                mutableState.value = SetupState(stage = "result", error = result.exceptionOrNull()?.message)
+                if (result.isSuccess && repo.latestServerInstallation(target.id)?.requiresReconciliation == true) {
+                    operationId = repo.latestServerInstallation(target.id)?.operationId.orEmpty()
+                    reconcile()
+                }
+            }
+            return
+        }
         if (needsProbe) {
             mutableState.value = SetupState(stage = "check", busy = true, summary = "Проверяем сервер…")
             InstallationLog.append(getApplication(), "probe_start", "host=${target.host} port=${target.port}")
@@ -207,7 +307,7 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    val plan = repo.planCoreUpdate(target, operationId)
+                    val plan = repo.planCoreUpdate(target, operationId, updateChannel)
                     val originalDocument = plan["document_url"]?.jsonPrimitive?.content.orEmpty()
                     var outcome = repo.installServer(target, operationId, originalDocument)
                     if (outcome is AdminOpResult.Failure && repo.loadServerInstallation(operationId)?.requiresReconciliation == true) {
@@ -215,8 +315,11 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
                     }
                     if (outcome is AdminOpResult.Success) {
                         val updated = repo.getServerNode(target.id) ?: target
-                        val info = repo.refreshServerCore(updated).getOrThrow()
-                        require(info?.needsUpdate == false) { "Обновление записано, но работающее ядро ещё не прошло проверку совместимости. Повторите проверку." }
+                        val info = requireNotNull(if (repo.loadServerInstallation(operationId)?.coordinator == true) updated.coreObservation.info
+                            else repo.refreshServerCore(updated).getOrThrow()) { "Ядро не вернуло сведения о работающей сборке" }
+                        require(info.needsUpdate == false) { "Обновление записано, но работающее ядро ещё не прошло проверку совместимости. Повторите проверку." }
+                        val manifest = plan["manifest"]?.jsonObject ?: error("Нет подписанной целевой сборки")
+                        require(info.buildId == manifest.string("sha256") && info.version == manifest.string("version")) { "Работающее ядро не совпадает с подписанной целевой сборкой" }
                     }
                     outcome
                 }
@@ -248,6 +351,7 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
     }
 
     fun setNamespace(value: String) {
+        if (mutableState.value.busy) return
         val target = node ?: return
         if (value.isNotBlank()) { node = target.copy(managementNamespace = value); repo.updateServerNode(node!!) }
     }
@@ -288,7 +392,10 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
         if (operationId.isBlank() || mutableState.value.busy) return
         mutableState.value = SetupState(stage = "result", busy = true, summary = "Проверяем результат…")
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { repo.checkServerInstallation(target, operationId) }
+            val result = withContext(Dispatchers.IO) {
+                if (repo.loadServerInstallation(operationId)?.coordinator == true) repo.checkCoreUpdateOverChannel(target, operationId, updateChannel)
+                else repo.checkServerInstallation(target, operationId)
+            }
             InstallationLog.append(getApplication(), "status_result", "host=${target.host} operation_id=$operationId error=${(result as? AdminOpResult.Failure)?.error.orEmpty()}")
             mutableState.value = SetupState(stage = "result", error = (result as? AdminOpResult.Failure)?.error)
         }
@@ -310,11 +417,13 @@ class ServerSetupViewModel(app: android.app.Application) : AndroidViewModel(app)
 /** User flow: automatic server check → one loading screen → success or error. */
 class ServerSetupActivity : AppCompatActivity() {
     private val vm: ServerSetupViewModel by viewModels()
+    private val scrollPosition by lazy { io.github.libreroute.ui.ScreenScrollPosition(this, content.parent as ScrollView) }
     private lateinit var content: LinearLayout
     private var protocolsOpened = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        protocolsOpened = savedInstanceState?.getBoolean("protocols_opened") ?: false
         vm.restore(savedInstanceState)
         vm.initialize(intent.getStringExtra("server_id").orEmpty(), intent.getBooleanExtra("owner_recovery", false), intent.getBooleanExtra("auto_provision", false), intent.getStringExtra("admin_profile_name").orEmpty())
         if (vm.node == null) { finish(); return }
@@ -325,14 +434,15 @@ class ServerSetupActivity : AppCompatActivity() {
         root.addView(header)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() = closeWhenIdle() })
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(CalmViews.dp(context, 16), 0, CalmViews.dp(context, 16), CalmViews.dp(context, 24)) }
-        root.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
+        root.addView(ScrollView(this).apply { id = io.github.libreroute.ui.DialogScreens.stateId("server-setup-scroll") }.apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { vm.state.collect { render(it) } } }
         content.post { vm.start() }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) { vm.save(outState); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("protocols_opened", protocolsOpened); vm.save(outState); super.onSaveInstanceState(outState) }
 
     private fun render(state: SetupState) {
+        scrollPosition.beforeRebuild()
         content.removeAllViews()
         val nodeName = vm.node?.name.orEmpty()
         val title = when (state.stage) { "install", "plan", "recovery_plan" -> "Установка"; "result" -> "Результат"; else -> "Проверка сервера" }
@@ -340,6 +450,9 @@ class ServerSetupActivity : AppCompatActivity() {
         if (state.busy) {
             content.addView(ProgressBar(this))
             content.addView(CalmViews.row(this, "Подождите", state.summary.ifBlank { "Проверяем сервер…" }))
+            if (vm.node?.id?.let { AdminRepository.getInstance(this).latestServerInstallation(it)?.stage } == ServerInstallOperation.PLANNED) {
+                action("Отменить подготовку") { vm.cancelPreparation() }
+            }
             return
         }
         state.error?.let { content.addView(CalmViews.row(this, "Не удалось завершить", friendlyError(it))) }
@@ -358,6 +471,13 @@ class ServerSetupActivity : AppCompatActivity() {
     }
 
     private fun renderCheck() {
+        if (vm.node?.id?.let { AdminRepository.getInstance(this).getActiveGrant(it) } != null) renderChannels()
+        if (vm.updateChannel == AdminChannel.DOCUMENT || vm.updateChannel == AdminChannel.ACTIVE_TRANSPORT ||
+            (vm.updateChannel == AdminChannel.AUTO && vm.node?.id?.let { AdminRepository.getInstance(this).getActiveGrant(it) } != null)) {
+            content.addView(CalmViews.row(this, "Управление сервером", "Проверим доступ через выбранный канал управления."))
+            action("Проверить соединение") { vm.check() }
+            return
+        }
         val inventory = vm.node?.inventory
         if (inventory == null) {
             content.addView(CalmViews.row(this, "Проверяем сервер", "Приложение подключается по SSH и определяет состояние LibreRoute."))
@@ -394,12 +514,45 @@ class ServerSetupActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderChannels() {
+        val channels = listOf(AdminChannel.AUTO, AdminChannel.ACTIVE_TRANSPORT, AdminChannel.DOCUMENT, AdminChannel.DIRECT_SSH)
+        content.addView(Spinner(this).apply {
+            adapter = ArrayAdapter(this@ServerSetupActivity, android.R.layout.simple_spinner_dropdown_item, channels.map { it.displayName })
+            setSelection(channels.indexOf(vm.updateChannel).coerceAtLeast(0))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { vm.selectUpdateChannel(channels[position]) }
+            }
+        })
+    }
+
     private fun renderResult(state: SetupState) {
         val repository = AdminRepository.getInstance(this)
         val opState = vm.node?.id?.let(repository::latestServerInstallation)
         val access = vm.node?.id?.let(repository::getServerAccess)
+        renderChannels()
+        if (opState?.requiresReconciliation == true) {
+            content.addView(CalmViews.row(this, "Проверка обновления", coreUpdateProgressLabel(opState)))
+            action("Проверить состояние") { vm.reconcile() }
+            val plannedVersion = runCatching { Json.parseToJsonElement(opState.expectedPlan).jsonObject["manifest"]?.jsonObject?.string("version") }.getOrNull().orEmpty()
+            val targetAvailable = plannedVersion.isBlank() || plannedVersion == CoreCompatibility.REQUIRED_VERSION
+            if (!targetAvailable) content.addView(CalmViews.row(this, "Нужна новая попытка",
+                "Для исправления доступна сборка ${CoreCompatibility.REQUIRED_VERSION}. Отмените прежнюю попытку, проверьте версию ядра и начните обновление через «Прямой SSH к серверу»."))
+            if (targetAvailable && ((opState.coordinator && opState.serverStage in setOf("planned", "receiving", "verified", "prepared")) || opState.serverStage == "receiving")) {
+                action("Продолжить обновление") { vm.continueUpdate() }
+            }
+            if (opState.serverStage in setOf("planned", "receiving", "verified", "prepared", "backing_up", "switching", "checking", "awaiting_confirmation", "recovery_required")) {
+                action(if (opState.serverStage in setOf("planned", "receiving", "verified", "prepared")) "Отменить обновление" else "Вернуть предыдущую версию") { vm.rollbackUpdate() }
+            }
+            action("Проверить соединение") { vm.restartProbe() }
+            return
+        }
+        val block = vm.node?.id?.let { repository.serverMutationBlockReason(it, vm.updateChannel) }
+        if (block != null) content.addView(CalmViews.row(this, "Изменения недоступны", block))
         val ready = state.error == null && access?.state == AdminAccessState.ACTIVE &&
             access.role == AdminRole.OWNER && (opState?.stage == ServerInstallOperation.READY ||
+            ((vm.updateChannel in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT)) && vm.node?.coreObservation?.info != null &&
+                repository.managedProfilesFlow.value.any { it.profileType == ManagedProfile.PROFILE_TYPE_CONTROL && it.serverId == vm.node?.id }) ||
             (vm.node?.inventory?.let { inventory ->
                 val installed = inventory.managedNamespaces.isNotEmpty() ||
                     !inventory.installedLibreRouteVersion.isNullOrBlank()
@@ -411,22 +564,28 @@ class ServerSetupActivity : AppCompatActivity() {
                 }
             } == true))
         val rolledBack = opState?.stage == ServerInstallOperation.ROLLED_BACK
+        if (state.error != null) {
+            content.addView(CalmViews.row(this, "Проверка канала", friendlyError(state.error)))
+            action("Повторить проверку") { vm.restartProbe() }
+            return
+        }
         if (ready) {
             content.addView(CalmViews.row(this, "Готово", "Сервер подключён, управляющая часть и профиль администратора созданы."))
             val currentNode = vm.node?.id?.let(repository::getServerNode) ?: vm.node
             val observation = currentNode?.coreObservation
             if (observation != null && observation.checkedAt != 0L && observation.error == null && observation.info?.needsUpdate != false) {
                 content.addView(CalmViews.row(this, "Нужно обновить ядро", "На сервере старое или несовместимое ядро. Доступно ${CoreCompatibility.REQUIRED_VERSION}. Обновление сохранит SSH, права владельца и настройки."))
-                action("Обновить ядро до ${CoreCompatibility.REQUIRED_VERSION}") {
+                action("Обновить ядро до ${CoreCompatibility.REQUIRED_VERSION}", enabled = block == null) {
                     androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("Обновить ядро сервера?")
                         .setMessage("Будет установлена подписанная сборка ${CoreCompatibility.REQUIRED_VERSION}. Служба кратковременно перезапустится. Доступ и настройки сохранятся; при сбое предусмотрен откат.")
                         .setNegativeButton("Позже", null)
                         .setPositiveButton("Обновить") { _, _ -> vm.updateCore() }.show()
                 }
-            } else {
-                action("Настроить протоколы") { openProtocols() }
             }
+            // Local drafts and browser authorization can be prepared before
+            // a Core update. ProtocolSetup keeps server mutations gated.
+            action("Настроить протоколы") { openProtocols() }
             if (state.summary.isNotBlank()) content.addView(CalmViews.row(this, "Обновление ядра", state.summary))
             action("Проверить версию ядра") { vm.restartProbe() }
             if (intent.getBooleanExtra("auto_provision", false) && !protocolsOpened && observation?.info?.needsUpdate == false && observation.error == null) {
@@ -435,8 +594,6 @@ class ServerSetupActivity : AppCompatActivity() {
             }
         } else if (rolledBack) {
             content.addView(CalmViews.row(this, "Изменения отменены", "Сервер и SSH-доступ сохранены."))
-        } else if (state.error != null) {
-            action("Проверить сервер заново") { vm.restartProbe() }
         } else {
             action("Проверить сервер") { vm.restartProbe() }
         }
@@ -444,6 +601,9 @@ class ServerSetupActivity : AppCompatActivity() {
     }
 
     private fun friendlyError(raw: String): String = when {
+        raw.startsWith("SSH:") -> raw.take(300)
+        raw.contains("baseline", ignoreCase = true) -> "После создания плана изменилось состояние сервера. Отмените эту попытку обновления и подготовьте новую."
+        raw.contains("update rejected", ignoreCase = true) -> "Сервер отклонил старый план обновления. Отмените эту попытку; для нового обновления выберите «Прямой SSH к серверу»."
         raw.contains("квитанц") || raw.contains("другой операции") -> "На сервере уже есть другая операция. Повторим безопасную проверку состояния."
         raw.contains("SSH", ignoreCase = true) -> "Не удалось подключиться к серверу по SSH. Проверьте доступ и повторите."
         else -> raw.take(300)
@@ -453,8 +613,8 @@ class ServerSetupActivity : AppCompatActivity() {
         startActivity(android.content.Intent(this, ProtocolSetupActivity::class.java).putExtra(ProtocolSetupActivity.EXTRA_SERVER_ID, vm.node?.id.orEmpty()))
     }
 
-    private fun action(text: String, click: () -> Unit) {
-        content.addView(MaterialButton(this).apply { this.text = text; isAllCaps = false; setOnClickListener { click() } }, LinearLayout.LayoutParams(-1, CalmViews.dp(this, 56)))
+    private fun action(text: String, enabled: Boolean = true, click: () -> Unit) {
+        content.addView(MaterialButton(this).apply { this.text = text; isAllCaps = false; isEnabled = enabled; setOnClickListener { click() } }, LinearLayout.LayoutParams(-1, CalmViews.dp(this, 56)))
     }
 
     private fun closeWhenIdle() {

@@ -26,6 +26,13 @@ data class ServerInstallOperation(
     val priorLocalNodeId: String? = null,
     val error: String? = null,
     val profileName: String = "",
+    val coordinator: Boolean = false,
+    // Original signed helper manifest survives app/process restart and channel changes.
+    val bootstrapManifest: String? = null,
+    val channel: AdminChannel = AdminChannel.DIRECT_SSH,
+    val serverStage: String = "",
+    val receivedBytes: Long = 0,
+    val totalBytes: Long = 0,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     companion object {
@@ -36,6 +43,8 @@ data class ServerInstallOperation(
         const val READY = "ready"
         const val ROLLED_BACK = "rolled_back"
         const val RECOVERY_REQUIRED = "recovery_required"
+        const val FAILED_BEFORE_SUBMIT = "failed_before_submit"
+        const val CANCELLED_BEFORE_SUBMIT = "cancelled_before_submit"
         const val KIND_INSTALL = "install"
         const val KIND_OWNER_RECOVERY = "recover-owner"
         const val KIND_CORE_UPDATE = "core-update"

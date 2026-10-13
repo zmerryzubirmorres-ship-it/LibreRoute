@@ -5,7 +5,9 @@ function Get-CoreSourceFingerprint([string]$WorkspaceRoot) {
     $coreRoot = Join-Path $WorkspaceRoot 'LibreRoute-Core'
     $paths = [System.Collections.Generic.List[string]]::new()
     foreach ($item in (Get-ChildItem -LiteralPath $coreRoot -Recurse -File)) {
-        if ($item.FullName -match '[\\/]\.git[\\/]') { continue }
+        $coreRelativePath = $item.FullName.Substring($coreRoot.Length + 1).Replace('\', '/')
+        if ($coreRelativePath -match '(^|/)(\.git|\.tmp[^/]*|bin|build|dist|github_output|output|DerivedData)/' -or
+            $coreRelativePath.StartsWith('deploy/vds89/')) { continue }
         if (($item.Extension -eq '.go' -and -not $item.Name.EndsWith('_test.go')) -or
             $item.Name -in @('go.mod', 'go.sum') -or $item.Extension -in @('.ps1', '.sh')) {
             $paths.Add($item.FullName.Substring($WorkspaceRoot.Length + 1).Replace('\', '/'))

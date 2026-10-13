@@ -122,6 +122,13 @@ class SecurePreferences(context: Context, prefsName: String) {
         prefs.edit().putString(key, encrypted).apply()
     }
 
+    /** Flush a secret checkpoint before starting an external operation. Call off the UI thread. */
+    fun putStringCommitted(key: String, value: String?) {
+        val editor = prefs.edit()
+        if (value == null) editor.remove(key) else editor.putString(key, encrypt(value))
+        check(editor.commit()) { "Не удалось сохранить состояние настройки" }
+    }
+
     /** Read plain boolean (not sensitive). */
     fun getBoolean(key: String, default: Boolean): Boolean =
         prefs.getBoolean(key, default)

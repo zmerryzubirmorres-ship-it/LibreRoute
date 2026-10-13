@@ -8,9 +8,17 @@ enum class TransportType(val cliName: String) {
     mailru("mailru"),
     mqtt("mqtt"),
     jitsi("jitsi"),
+    jazz("jazz"),
+    channelGroup("channel-group"),
     directDpi("direct-dpi");
 
+    // Keep legacy parsing compatible while excluding MQTT from app routes.
+    val isAvailable: Boolean get() = this != mqtt
+    val isConnection: Boolean get() = isAvailable
+
     companion object {
+        fun isAvailable(raw: String): Boolean = fromOrNull(raw)?.isAvailable != false
+
         fun from(raw: String): TransportType =
             fromOrNull(raw) ?: throw IllegalArgumentException("Unsupported or unknown transport type: '$raw'")
 

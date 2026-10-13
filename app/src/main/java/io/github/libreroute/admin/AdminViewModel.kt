@@ -55,7 +55,11 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     val problemReports: StateFlow<List<ProblemReport>> = repository.problemReportsFlow
     val installationOperations: StateFlow<List<ServerInstallOperation>> = repository.installationOperations
 
-    fun canPerform(operation: String): Boolean = repository.canPerform(currentServerNode()?.id, operation)
+    fun mutationBlockReason(): String? = currentServerNode()?.id?.let { repository.serverMutationBlockReason(it, selectedChannel.value) }
+    fun canPerform(operation: String): Boolean {
+        val read = operation.startsWith("list") || operation.startsWith("get-") || operation == "sync-routes"
+        return repository.canPerform(currentServerNode()?.id, operation) && (read || mutationBlockReason() == null)
+    }
     fun currentServerAccess(): AdminServerAccess = repository.getServerAccess(currentServerNode()?.id)
 
     private val _serverProfiles = MutableStateFlow<List<ServerManagedProfile>>(emptyList())
@@ -90,7 +94,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedServerNodeId = MutableStateFlow<String?>(null)
     val selectedServerNodeId: StateFlow<String?> = _selectedServerNodeId.asStateFlow()
 
-    private val _selectedChannel = MutableStateFlow(AdminChannel.DOCUMENT)
+    private val _selectedChannel = MutableStateFlow(AdminChannel.AUTO)
     val selectedChannel: StateFlow<AdminChannel> = _selectedChannel.asStateFlow()
 
     private val _uiEvents = MutableSharedFlow<AdminUiEvent>()
@@ -236,9 +240,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun currentServerNode(): ServerNode? {
-        val selected = _selectedServerNodeId.value?.let(repository::getServerNode)
-        return selected?.takeIf { nodeMatchesChannel(it, _selectedChannel.value) }
-            ?: repository.getServerNodes().filter { nodeMatchesChannel(it, _selectedChannel.value) }.singleOrNull()
+        return serverForAdminChannel(repository.getServerNodes(), _selectedServerNodeId.value, _selectedChannel.value)
     }
 
     fun hasPendingUserDocument(userId: String): Boolean = repository.hasPendingUserDocument(userId)
@@ -342,26 +344,10 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun currentHostConfig(): SshHostConfig? {
-        if (_selectedChannel.value == AdminChannel.DOCUMENT) {
+        if (_selectedChannel.value in setOf(AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT)) {
             return null
         }
-        val targetId = _selectedServerNodeId.value
-        if (targetId != null) {
-            val node = repository.getServerNode(targetId)
-            if (node != null && nodeMatchesChannel(node, _selectedChannel.value)) return node.toSshHostConfig()
-        }
-        val firstNode = repository.getServerNodes().firstOrNull { nodeMatchesChannel(it, _selectedChannel.value) }
-        if (firstNode != null) {
-            return firstNode.toSshHostConfig()
-        }
-        return null
-    }
-
-    private fun nodeMatchesChannel(node: ServerNode, channel: AdminChannel): Boolean = when (channel) {
-        AdminChannel.SSH_VDS -> node.nodeType == ServerNodeType.VDS || node.nodeType == ServerNodeType.CUSTOM
-        AdminChannel.SSH_NETCRAZE -> node.nodeType == ServerNodeType.ROUTER_KEENETIC || node.nodeType == ServerNodeType.ROUTER_OPENWRT
-        AdminChannel.DIRECT_SSH -> true
-        AdminChannel.DOCUMENT -> false
+        return currentServerNode()?.toSshHostConfig()
     }
 
     fun requestJoin(targetProfileId: String, desiredRole: AdminRole) {
@@ -681,12 +667,27 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
                     // Recheck capabilities against a fresh signed authority snapshot.
                     val fresh = repository.getClusterSnapshot(channel, authority).getOrThrow()
                     routes.forEach { route ->
+                        route.validateGroupTemplate()
+                        if (route.transport == "channel-group") {
+                            require(devicePublicKey.isNullOrBlank()) { "Это приглашение предназначено для нового телефона" }
+                            require(fresh.coreInfo?.capabilities?.contains(ChannelGroupPlan.ENROLLMENT_CAPABILITY) == true) {
+                                "Обновите ядро сервера: приглашения для объединённых каналов пока не поддерживаются"
+                            }
+                        }
                         require(fresh.methodsFor(route.server_id).any { it.transport == route.transport }) {
                             "Сервер изменил доступные протоколы. Откройте настройку заново"
                         }
                     }
                     val resolved = routes.map { route ->
-                        if (route.transport == "vyandex") route.copy(url = AdminDocumentClaimClient.resolveDocumentUrl(route.url)) else route
+                        when (route.transport) {
+                            "vyandex" -> route.copy(url = AdminDocumentClaimClient.resolveDocumentUrl(route.url))
+                            "channel-group" -> route.copy(channel_group_plan = route.channel_group_plan!!.copy(
+                                lanes = route.channel_group_plan.lanes.map { lane ->
+                                    if (lane.provider == "vyandex") lane.copy(url = AdminDocumentClaimClient.resolveDocumentUrl(lane.url)) else lane
+                                }
+                            )).also { it.validateGroupTemplate() }
+                            else -> route
+                        }
                     }
                     if (devicePublicKey.isNullOrBlank()) {
                         repository.issueBootstrapInvitation(user.id, resolved, channel, authority).getOrThrow()
@@ -723,8 +724,11 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _accessOperation.value = completed
                 repository.saveAccessOperation(completed)
-                if (invitation.isNotEmpty()) _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog(user.id, invitation))
-                _uiEvents.emit(AdminUiEvent.ShowAccessOperation(completed))
+                if (invitation.isNotEmpty()) {
+                    _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog(user.id, invitation))
+                } else {
+                    _uiEvents.emit(AdminUiEvent.ShowAccessOperation(completed))
+                }
             }.onFailure {
                 val message = it.message ?: "Неизвестная ошибка"
                 val isUnknown = it is UnknownAdminOperation
@@ -753,6 +757,19 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
 
     fun issueAssignmentInvitation(assignmentId: String) {
         viewModelScope.launch {
+            val jazzAssignment = assignments.value.firstOrNull { it.id == assignmentId }
+            if (jazzAssignment?.transport == "jazz") {
+                val result = withContext(Dispatchers.IO) {
+                    repository.issuePortableJazzRoute(jazzAssignment.userId, jazzAssignment.serverId,
+                        _selectedChannel.value, selectedServerNode())
+                }
+                result.onSuccess { link -> _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog("jazz", link)) }
+                    .onFailure { error ->
+                        Logx.e("AdminViewModel", "Выдача компактной конфигурации Jazz не выполнена: ${error.message}", error)
+                        _uiEvents.emit(AdminUiEvent.ShowToast("Не удалось выдать компактный Jazz: ${error.message ?: "ошибка сервера"}"))
+                    }
+                return@launch
+            }
             val (result, inviteLink) = withContext(Dispatchers.IO) {
                 repository.issueAssignmentInvitation(
                     assignmentId = assignmentId,
@@ -769,6 +786,20 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
                     _uiEvents.emit(AdminUiEvent.ShowToast("Ошибка: ${result.error}"))
                 }
             }
+        }
+    }
+
+    fun issuePortableJazzInvitation(user: AdminUser, serverId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.issuePortableJazzRoute(user.id, serverId, _selectedChannel.value, selectedServerNode())
+            }
+            result.onSuccess { link -> _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog("jazz", link)) }
+                .onFailure { error ->
+                    Logx.e("AdminViewModel", "Выдача компактной конфигурации Jazz не выполнена: ${error.message}", error)
+                    InstallationLog.append(getApplication(), "compact-jazz-issue-failed", error.message.orEmpty())
+                    _uiEvents.emit(AdminUiEvent.ShowToast("Не удалось выдать Jazz: ${error.message ?: "ошибка сервера"}"))
+                }
         }
     }
 

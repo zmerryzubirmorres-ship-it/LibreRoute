@@ -6,6 +6,7 @@ object Constants {
 
     private const val INTENT_PREFIX = "SOCKS"
     const val INTENT_NAME = INTENT_PREFIX + "NAME"
+    const val INTENT_TUNNEL_ID = INTENT_PREFIX + "TUNNEL_ID"
     const val INTENT_SERVER = INTENT_PREFIX + "SERV"
     const val INTENT_PORT = INTENT_PREFIX + "PORT"
     const val INTENT_USERNAME = INTENT_PREFIX + "UNAME"

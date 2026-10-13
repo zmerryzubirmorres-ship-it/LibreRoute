@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/bg_screen_ambient">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:gravity="center_vertical" android:paddingHorizontal="12dp">
+        <ImageView android:id="@+id/btn_back" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_arrow_back" app:tint="@color/text_primary" android:contentDescription="@string/cancel" android:background="?android:attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/zapret_profiles_title" android:textSize="18sp" android:textColor="@color/text_primary" />
+    </LinearLayout>
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+            <TextView android:id="@+id/zapret_selected" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:textColor="@color/text_primary" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/routing_profile_usage_hint" android:textColor="@color/text_secondary" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/zapret_apply_hint" android:textColor="@color/text_secondary" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/zapret_add" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/zapret_add" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/zapret_rollback" style="?attr/materialButtonOutlinedStyle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/zapret_rollback" />
+            <LinearLayout android:id="@+id/zapret_profiles" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="vertical" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

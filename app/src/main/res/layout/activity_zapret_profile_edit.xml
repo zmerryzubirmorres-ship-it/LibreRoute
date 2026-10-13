@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/bg_screen_ambient">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:gravity="center_vertical" android:paddingHorizontal="12dp">
+        <ImageView android:id="@+id/btn_back" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_arrow_back" app:tint="@color/text_primary" android:contentDescription="@string/cancel" android:background="?android:attr/selectableItemBackgroundBorderless" android:clickable="true" android:focusable="true" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/zapret_edit_title" android:textSize="18sp" android:textColor="@color/text_primary" />
+    </LinearLayout>
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/zapret_name">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/zapret_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapSentences" android:maxLength="80" android:singleLine="true" />
+            </com.google.android.material.textfield.TextInputLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/routing_profile_names_hint" android:textSize="12sp" android:textColor="@color/text_secondary" />
+            <com.google.android.material.chip.ChipGroup android:layout_width="match_parent" android:layout_height="wrap_content">
+                <com.google.android.material.chip.Chip android:id="@+id/zapret_name_youtube" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="YouTube" android:checkable="false" />
+                <com.google.android.material.chip.Chip android:id="@+id/zapret_name_instagram" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Instagram" android:checkable="false" />
+            </com.google.android.material.chip.ChipGroup>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="@string/zapret_split" android:textColor="@color/text_primary" android:labelFor="@id/zapret_split" />
+            <Spinner android:id="@+id/zapret_split" android:layout_width="match_parent" android:layout_height="48dp" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/zapret_tls" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/zapret_tls" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/zapret_method" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/zapret_method" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/zapret_host" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/zapret_host" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/zapret_disorder" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/zapret_disorder" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/zapret_quic" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/zapret_quic" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/zapret_quic_hint" android:textColor="@color/text_secondary" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/zapret_save" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="@string/zapret_save" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

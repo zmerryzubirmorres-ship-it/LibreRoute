@@ -24,6 +24,7 @@ import io.github.libreroute.service.SocksVpnService
 import io.github.libreroute.util.Logx
 import io.github.libreroute.util.JitsiTokenStore
 import io.github.libreroute.util.TunnelLinkParser
+import io.github.libreroute.data.TransportType
 import io.github.libreroute.vpn.VPNConfig
 import io.github.libreroute.vpn.VpnIntentFactory
 import java.io.File
@@ -266,6 +267,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startTunnel(tunnel: Tunnel, forceRestart: Boolean = false) {
+        if (!TransportType.isAvailable(tunnel.transportType)) return
         val running = _active.value
         if (!forceRestart && running is TunnelState.Running && running.tunnel.id == tunnel.id) return
 
@@ -428,6 +430,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         )
         val intent = VpnIntentFactory.build(ctx, cfg).apply {
             putExtra(Constants.INTENT_AUTONOMOUS, true)
+            putExtra(Constants.INTENT_TUNNEL_ID, prepared.id)
         }
 
         // direct-dpi is a local TUN filter; the SOCKS-only service has no TUN
@@ -439,6 +442,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             Logx.i(TAG, "Proxy-only mode: starting LibreRouteProxyService")
             EventBus.dispatch(AppEvent.LogMessage("[I] Режим прокси (без VPN-иконки): запуск LibreRouteProxyService"))
             val proxyIntent = Intent(ctx, io.github.libreroute.service.LibreRouteProxyService::class.java).apply {
+                putExtra(Constants.INTENT_TUNNEL_ID, prepared.id)
                 putExtra(Constants.INTENT_NAME, prepared.name)
                 putExtra(Constants.INTENT_TRANSPORT_TYPE, prepared.transportType)
                 putExtra(Constants.INTENT_TRANSPORT_PAYLOAD, modifiedPayload.toTypedArray())
@@ -756,6 +760,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addTunnel(tunnel: Tunnel) {
+        if (!TransportType.isAvailable(tunnel.transportType)) return
         _accessRevoked.value = false
         val current = repo.load().toMutableList()
         val uniqueTunnel = if (current.any { it.id == tunnel.id }) {
@@ -782,6 +787,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateTunnel(old: Tunnel, new: Tunnel) {
+        if (!TransportType.isAvailable(new.transportType)) return
         val current = repo.load().toMutableList()
         val idx = current.indexOfFirst { it.id == old.id }
         if (idx < 0) return

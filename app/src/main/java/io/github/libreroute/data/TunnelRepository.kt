@@ -10,8 +10,6 @@ class TunnelRepository(context: Context) : TunnelStore {
 
     companion object {
         private val lock = Any()
-        private const val DAMAGED_MQTT_NAME = "\u003f\u003f\u003f\u003f\u003f \u003f\u003f\u003f \u003f MQTT"
-        private const val DEFAULT_MQTT_NAME = "MQTT · умный дом"
     }
 
     private val prefs: SharedPreferences =
@@ -21,27 +19,31 @@ class TunnelRepository(context: Context) : TunnelStore {
 
     override fun load(): List<Tunnel> = synchronized(lock) {
         val stored = encryptedRepo.load()
-        val repaired = stored.map { tunnel ->
-            var t = tunnel
-            if (t.transportType.equals("mqtt", ignoreCase = true)) {
-                if (t.name == DAMAGED_MQTT_NAME) {
-                    t = t.copy(name = DEFAULT_MQTT_NAME)
-                }
-                if (t.transportConnPayload.any { it.contains("broker.hivemq.com:8884") }) {
-                    t = t.copy(transportConnPayload = t.transportConnPayload.map { it.replace("broker.hivemq.com:8884", "broker.emqx.io:8084") })
-                }
-            }
-            DirectDpiProfile.ensureConfigured(t)
-        }
-        val withDirect = if (repaired.none { DirectDpiProfile.isDirect(it) }) {
+        val repaired = stored.filter { TransportType.isAvailable(it.transportType) }
+            .map(DirectDpiProfile::ensureConfigured)
+        // A local zapret connection must also be available without any server profile.
+        val connections = if (repaired.none(DirectDpiProfile::isDirect)) {
             repaired + DirectDpiProfile.create()
         } else repaired
-        if (withDirect != stored) encryptedRepo.save(withDirect)
-        withDirect
+        if (connections != stored) encryptedRepo.save(connections)
+        repairSelection(connections)
+        connections
     }
 
     override fun save(tunnels: List<Tunnel>) = synchronized(lock) {
-        encryptedRepo.save(tunnels)
+        val available = tunnels.filter { TransportType.isAvailable(it.transportType) }
+        encryptedRepo.save(available)
+        repairSelection(available)
+    }
+
+    private fun repairSelection(tunnels: List<Tunnel>) {
+        val selected = getSelectedId() ?: return
+        if (tunnels.any { it.id == selected }) return
+        val replacement = tunnels.firstOrNull()
+        prefs.edit {
+            if (replacement == null) remove(Constants.PREF_SELECTED_TUNNEL_ID)
+            else putLong(Constants.PREF_SELECTED_TUNNEL_ID, replacement.id)
+        }
     }
 
     /** ID последнего выбранного туннеля, или null если не выбран. */

@@ -9,6 +9,8 @@ import io.github.libreroute.data.TransportType
 import io.github.libreroute.data.Tunnel
 import io.github.libreroute.util.ServiceRouteEndpoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -54,12 +56,15 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
     private val _formState = MutableStateFlow(AddEditFormState())
     val formState: StateFlow<AddEditFormState> = _formState.asStateFlow()
 
-    private val _events = MutableSharedFlow<AddEditEvent>()
-    val events: SharedFlow<AddEditEvent> = _events.asSharedFlow()
+    private val _events = Channel<AddEditEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
 
     private var editingTunnel: Tunnel? = null
+    private var initialized = false
 
     fun initWithTunnel(tunnel: Tunnel?) {
+        if (initialized) return
+        initialized = true
         editingTunnel = tunnel
         if (tunnel == null) {
             _formState.value = AddEditFormState()
@@ -74,6 +79,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
             var encKey = tunnel.encryptionKey?.trim().orEmpty()
 
             when (initialTransport) {
+                TransportType.channelGroup -> Unit
                 TransportType.directDpi -> Unit
                 TransportType.yandex, TransportType.vyandex -> {
                     val urlsVal = argValue(tunnel.transportConnPayload, "--urls")
@@ -83,7 +89,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
                     maxToken = argValue(tunnel.transportConnPayload, "--maxToken")
                     maxUid = argValue(tunnel.transportConnPayload, "--maxUid")
                 }
-                TransportType.cups, TransportType.mailru, TransportType.mqtt, TransportType.jitsi -> {
+                TransportType.cups, TransportType.mailru, TransportType.mqtt, TransportType.jitsi, TransportType.jazz -> {
                     docUrl = argValue(tunnel.transportConnPayload, "--url")
                 }
             }
@@ -121,6 +127,8 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setTransport(transport: TransportType) {
+        if (transport == TransportType.channelGroup || editingTunnel?.transportType == TransportType.channelGroup.name) return
+        if (!transport.isAvailable) return
         _formState.update { it.copy(transport = transport) }
     }
 
@@ -142,12 +150,13 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) {
             viewModelScope.launch {
-                _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.NAME, R.string.name_required))
+                _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.NAME, R.string.name_required))
             }
             return
         }
 
         val currentTransport = _formState.value.transport
+        if (!currentTransport.isAvailable) return
         val trimmedUrl = docUrl.trim()
         val trimmedToken = maxToken.trim()
         val trimmedUid = maxUid.trim()
@@ -158,16 +167,21 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
         val trimmedMqttTopic = mqttTopic.trim()
         val trimmedMqttClientId = mqttClientId.trim()
         when (currentTransport) {
+            TransportType.channelGroup -> {
+                val original = editingTunnel ?: return
+                viewModelScope.launch { _events.send(AddEditEvent.Saved(original, original.copy(name = trimmedName))) }
+                return
+            }
             TransportType.directDpi -> Unit
             TransportType.mqtt -> {
                 if (ServiceRouteEndpoint.buildMqttUrl(trimmedMqttBroker, trimmedMqttTopic) == null) {
-                    viewModelScope.launch { _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.mqtt_url_hint)) }
+                    viewModelScope.launch { _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.mqtt_url_hint)) }
                     return
                 }
             }
-            TransportType.jitsi -> {
+            TransportType.jitsi, TransportType.jazz -> {
                 if (!io.github.libreroute.util.ServiceRouteEndpoint.isValid(currentTransport, trimmedUrl)) {
-                    viewModelScope.launch { _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.jitsi_url_hint)) }
+                    viewModelScope.launch { _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, if (currentTransport == TransportType.jazz) R.string.jazz_url_hint else R.string.jitsi_url_hint)) }
                     return
                 }
             }
@@ -175,28 +189,28 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
                 val urls = trimmedUrl.split(Regex("[,\\s\\n\\r]+")).map { it.trim() }.filter { it.isNotEmpty() }
                 if (urls.isEmpty()) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
                     }
                     return
                 }
                 for (u in urls) {
                     if (!u.startsWith("http://", ignoreCase = true) && !u.startsWith("https://", ignoreCase = true)) {
                         viewModelScope.launch {
-                            _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
+                            _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
                         }
                         return
                     }
                     val host = runCatching { URI(u).host }.getOrNull()?.lowercase()
                     if (host.isNullOrEmpty() || !host.contains(".")) {
                         viewModelScope.launch {
-                            _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
+                            _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
                         }
                         return
                     }
                     val isYandexDomain = host.contains("yandex.") || host.contains("yadi.sk") || host.contains("ya.ru")
                     if (!isYandexDomain) {
                         viewModelScope.launch {
-                            _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_yandex_url))
+                            _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_yandex_url))
                         }
                         return
                     }
@@ -205,14 +219,14 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
             TransportType.max -> {
                 if (trimmedToken.isEmpty()) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.TOKEN, R.string.err_max_token_required))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.TOKEN, R.string.err_max_token_required))
                     }
                     return
                 }
                 val uidLong = trimmedUid.toLongOrNull()
                 if (uidLong == null || uidLong <= 0) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.UID, R.string.err_max_uid_required))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.UID, R.string.err_max_uid_required))
                     }
                     return
                 }
@@ -220,14 +234,14 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
             TransportType.cups -> {
                 if (trimmedUrl.isEmpty() || (!trimmedUrl.startsWith("http://", ignoreCase = true) && !trimmedUrl.startsWith("https://", ignoreCase = true))) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
                     }
                     return
                 }
                 val host = runCatching { URI(trimmedUrl).host }.getOrNull()?.lowercase()
                 if (host.isNullOrEmpty() || !host.contains(".") || !host.contains("cups.online")) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_cups_domain_invalid))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_cups_domain_invalid))
                     }
                     return
                 }
@@ -235,7 +249,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
             TransportType.mailru -> {
                 if (trimmedUrl.isEmpty() || (!trimmedUrl.startsWith("http://", ignoreCase = true) && !trimmedUrl.startsWith("https://", ignoreCase = true))) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_invalid_url))
                     }
                     return
                 }
@@ -243,7 +257,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
                 val isMailRuDomain = host != null && (host.contains("mail.ru") || host.contains("my.mail.ru") || host.contains("cloud.mail.ru"))
                 if (!isMailRuDomain) {
                     viewModelScope.launch {
-                        _events.emit(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_mailru_domain_invalid))
+                        _events.send(AddEditEvent.ValidationError(AddEditEvent.FieldError.URL, R.string.err_mailru_domain_invalid))
                     }
                     return
                 }
@@ -260,7 +274,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
               val effectiveMqttTopic = trimmedMqttTopic.ifBlank { "libreroute-${id.toString(16)}" }
               val effectiveMqttClientId = trimmedMqttClientId.ifBlank { "libreroute-${id.toString(16)}" }
 
-              val needsManagedKey = currentTransport in setOf(TransportType.vyandex, TransportType.mqtt, TransportType.jitsi)
+              val needsManagedKey = currentTransport in setOf(TransportType.vyandex, TransportType.mqtt, TransportType.jitsi, TransportType.jazz)
               val keyFile = if (needsManagedKey) {
                   val f = File(app.filesDir, "key_${id}.txt")
                   runCatching {
@@ -297,7 +311,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
               )
 
             _formState.update { it.copy(isSaving = false) }
-            _events.emit(AddEditEvent.Saved(editingTunnel, newTunnel))
+            _events.send(AddEditEvent.Saved(editingTunnel, newTunnel))
         }
     }
 
@@ -313,6 +327,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
         mqttClientId: String = ""
     ): List<String> = buildList {
         when (transport) {
+            TransportType.channelGroup -> error("Channel groups use the signed route builder")
             TransportType.directDpi -> {
                 add("--role=client"); add("--transport"); add(transport.cliName)
                 add("--dpi-block-quic=true")
@@ -329,7 +344,7 @@ class AddEditTunnelViewModel(app: Application) : AndroidViewModel(app) {
                 add("--codec=batched"); add("--encryption-layout=packet"); add("--peer-health")
       }
 
-            TransportType.jitsi -> {
+            TransportType.jitsi, TransportType.jazz -> {
                 add("--role=client"); add("--transport"); add(transport.cliName)
                 add("--url"); add(docUrl)
                 add("--codec=batched"); add("--encryption-layout=packet"); add("--peer-health")

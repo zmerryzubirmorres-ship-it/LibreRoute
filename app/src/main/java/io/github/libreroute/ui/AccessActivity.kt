@@ -107,6 +107,7 @@ class AccessViewModel(app: Application, private val savedState: SavedStateHandle
 /** Validation, success, expired and invalid invitation states share one native screen. */
 class AccessActivity : AppCompatActivity() {
     private val vm: AccessViewModel by viewModels()
+    private val scrollPosition by lazy { io.github.libreroute.ui.ScreenScrollPosition(this, content.parent as ScrollView) }
     private lateinit var content: LinearLayout
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -136,6 +137,7 @@ class AccessActivity : AppCompatActivity() {
         }
     }
     private fun render(state: AccessState) {
+        scrollPosition.beforeRebuild()
         content.removeAllViews()
         if (state.loading) {
             content.addView(CalmViews.row(this, "Проверяем приглашение", "Дождитесь ответа сервера"))

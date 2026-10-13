@@ -1,11 +1,29 @@
 package io.github.libreroute.service
 
+import kotlinx.coroutines.delay
+
 /** Match the last readiness layer configured in the native process. */
 internal class NativeTransportReadiness(arguments: List<String>) {
+	private val channelGroup = arguments.any { it == "--channel-group-config" || it.startsWith("--channel-group-config=") }
+	private val pairChannel = arguments.any { it == "--pair-channel-config" || it.startsWith("--pair-channel-config=") }
     val requiresPeerHealth = flagEnabled(arguments, "peer-health")
     private val sessionNegotiated = flagEnabled(arguments, "session-negotiate")
 
+    /** Reconnects need the same provider handshake window as initial startup. */
+    suspend fun awaitReady(transportType: String, canWait: () -> Boolean, connected: () -> Boolean): Boolean {
+        val steps = if (channelGroup || pairChannel || requiresPeerHealth || sessionNegotiated ||
+            transportType.lowercase() in setOf("mqtt", "jitsi", "jazz")) 240 else 80
+        repeat(steps) {
+            delay(250)
+            if (!canWait()) return false
+            if (connected()) return true
+        }
+        return false
+    }
+
     fun isReady(line: String): Boolean {
+        if (channelGroup) return line.contains("[GROUP] peer ready")
+        if (pairChannel) return line.contains("[CHANNEL] peer ready")
         if (requiresPeerHealth) return line.contains("[HEALTH] peer ready")
         if (sessionNegotiated) return line.contains("[SESSION] ready")
         return line.contains("WebSocket connected", ignoreCase = true) ||

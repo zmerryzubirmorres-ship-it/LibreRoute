@@ -17,4 +17,4 @@ sealed interface AppEvent {
 }
 
 enum class YandexAuthReason { CAPTCHA, SESSION }
-enum class JitsiAuthReason { MODERATOR_REQUIRED, TOKEN_EXPIRED }
+enum class JitsiAuthReason { MODERATOR_REQUIRED, TOKEN_EXPIRED, KEY_UNAVAILABLE }

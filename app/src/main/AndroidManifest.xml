@@ -43,8 +43,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:screenOrientation="portrait">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -117,66 +116,66 @@
         <activity
             android:name=".ui.SplitTunnelActivity"
             android:exported="false"
-            android:label="@string/split_tunneling_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/split_tunneling_title" />
 
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false"
-            android:label="@string/settings_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/settings_title" />
+
+        <activity android:name=".ui.ZapretProfilesActivity" android:exported="false" android:label="@string/zapret_profiles_title" />
+        <activity android:name=".ui.SiteRulesActivity" android:exported="false" android:label="@string/site_rules_title" />
+        <activity android:name=".ui.AppRulesActivity" android:exported="false" android:label="@string/app_rules_title" />
+        <activity android:name=".ui.TrafficRulesActivity" android:exported="false" android:label="@string/routing_title" />
+        <activity android:name=".ui.SiteRuleEditActivity" android:exported="false" android:label="@string/site_edit_title" />
+        <activity android:name=".ui.ZapretProfileEditActivity" android:exported="false" android:label="@string/zapret_edit_title" />
 
         <activity
             android:name=".ui.DnsSettingsActivity"
             android:exported="false"
-            android:label="@string/dns_menu_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/dns_menu_title" />
 
         <activity
             android:name=".ui.AppearanceActivity"
             android:exported="false"
-            android:label="@string/settings_appearance_elements_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/settings_appearance_elements_title" />
 
         <activity
             android:name=".ui.DomainRulesActivity"
             android:exported="false"
-            android:label="@string/domain_rules_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/domain_rules_title" />
 
         <activity
             android:name=".ui.LogsActivity"
             android:exported="false"
-            android:label="@string/settings_event_logs_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/settings_event_logs_title" />
 
         <activity
             android:name=".admin.AdminActivity"
             android:exported="false"
-            android:label="@string/admin_title"
-            android:screenOrientation="portrait" />
+            android:label="@string/admin_title" />
         <activity
             android:name=".admin.AdminSetupActivity"
             android:exported="false"
-            android:label="Первичная привязка"
-            android:screenOrientation="portrait" />
+            android:label="Первичная привязка" />
         <activity
             android:name=".admin.RemoteAuthActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
-            android:label="Удалённая авторизация"
-            android:screenOrientation="portrait" />
+            android:label="Удалённая авторизация" />
         <activity
             android:name=".admin.JitsiAuthActivity"
             android:exported="false"
-            android:label="Jitsi"
-            android:screenOrientation="portrait" />
+            android:label="Jitsi" />
         <activity
             android:name=".ui.YandexCaptchaActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:label="Проверка Яндекса" />
         <activity android:name=".ui.AccessActivity" android:exported="false" android:label="Добавление доступа" />
         <activity android:name=".admin.ServerSetupActivity" android:exported="false" android:label="Настройка сервера" />
         <activity android:name=".admin.ProtocolSetupActivity" android:exported="false" android:label="Протоколы сервера" />
+        <activity android:name=".admin.JazzRoomPolicyActivity" android:exported="false" android:label="Комнаты СберДжаза" />
 
         <service
             android:name=".service.LibreRouteTileService"

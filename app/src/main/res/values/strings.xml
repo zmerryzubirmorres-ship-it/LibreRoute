@@ -521,9 +521,9 @@
     <!-- Administration -->
     <string name="settings_section_admin">Configuration Management</string>
     <string name="admin_title">Administration</string>
-    <string name="admin_home_subtitle">People, servers and invitations</string>
+    <string name="admin_home_subtitle">Users, servers and invitations</string>
     <string name="admin_nav_overview">Overview</string>
-    <string name="admin_nav_people">People</string>
+    <string name="admin_nav_people">Users</string>
     <string name="admin_nav_servers">Servers</string>
     <string name="jitsi_token_expired">This Jitsi token has expired. Sign in again in the browser.</string>
     <string name="admin_subtitle">Configurations, grants, issuance and SSH fallback</string>
@@ -565,6 +565,8 @@
 
     <string name="mqtt_backend">MQTT · умный дом</string>
     <string name="jitsi_backend">Jitsi Meet</string>
+    <string name="jazz_backend">СберДжаз</string>
+    <string name="jazz_url_hint">Гостевая ссылка СберДжаза с паролем</string>
     <string name="mqtt_url_hint">wss://broker.emqx.io:8084/mqtt#имя-канала</string>
     <string name="mqtt_broker_label">MQTT broker (WSS)</string>
     <string name="mqtt_broker_helper">EMQX by default: wss://broker.emqx.io:8084/mqtt</string>

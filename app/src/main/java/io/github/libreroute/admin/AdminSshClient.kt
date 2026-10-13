@@ -8,6 +8,9 @@ import java.net.NetworkInterface
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 internal data class AdminSSHRequest(
@@ -20,8 +23,12 @@ internal data class AdminSSHRequest(
     val passphrase: String? = null,
     val remote_namespace: String? = null,
     val password: String? = null,
-    val envelope: AdminEnvelope
+    val envelope: AdminEnvelope,
+    val update_bootstrap: SSHUpdateBootstrap? = null
 )
+
+@Serializable
+data class SSHUpdateBootstrap(val manifest: JsonObject, val artifact_path: String? = null)
 
 @Serializable
 internal data class AdminSSHProbeRequest(
@@ -209,7 +216,8 @@ class AdminSshClient(
     fun executeAdminEnvelope(
         envelope: AdminEnvelope,
         hostConfig: SshHostConfig,
-        channel: AdminChannel
+        channel: AdminChannel,
+        updateBootstrap: SSHUpdateBootstrap? = null
     ): AdminOpResult {
         // 1. Host Policy Verification
         val isNetcraze = channel == AdminChannel.SSH_NETCRAZE ||
@@ -260,18 +268,30 @@ class AdminSshClient(
             passphrase = hostConfig.passphrase,
             remote_namespace = hostConfig.managementNamespace,
             password = hostConfig.password,
-            envelope = envelope
+            envelope = envelope,
+            update_bootstrap = updateBootstrap
         ))
 
         Logx.i(TAG, "Executing SSH admin command opId=${envelope.opId} target=${hostConfig.host}:${hostConfig.port}")
 
         // 3. Execution (via custom executor or ProcessBuilder)
         return try {
-            val (exitCode, output) = if (commandExecutor != null) {
-                commandExecutor.invoke(cmd, request)
-            } else {
-                runNativeProcess(cmd, request)
+            val update = runCatching {
+                val payload = json.parseToJsonElement(String(java.util.Base64.getUrlDecoder().decode(envelope.payload), Charsets.UTF_8)).jsonObject
+                if (payload["op"]?.jsonPrimitive?.content == "core-update") payload["core_update"]?.jsonObject else null
+            }.getOrNull()
+            val timeoutSeconds = if (updateBootstrap != null) TIMEOUT_SECONDS else if (update != null) 30L else TIMEOUT_SECONDS
+            fun execute() = commandExecutor?.invoke(cmd, request) ?: runNativeProcess(cmd, request, timeoutSeconds)
+            var execution = execute()
+            // Retry only a receiving block, with the identical signed request, and
+            // only when native dial failed before any remote command was sent.
+            if (updateBootstrap == null && update?.get("action")?.jsonPrimitive?.content == "put_chunk" && execution.first != 0 &&
+                sshExecutionFailure(execution.first, execution.second, timeoutSeconds).beforeSend) {
+                val reason = sshExecutionFailure(execution.first, execution.second, timeoutSeconds).code
+                Logx.w(TAG, "SSH connection retry opId=${envelope.opId} reason=$reason attempt=2")
+                execution = execute()
             }
+            val (exitCode, output) = execution
 
             if (exitCode == 0) {
                 Logx.i(TAG, "SSH command returned for opId=${envelope.opId}")
@@ -282,10 +302,9 @@ class AdminSshClient(
                     envelope = responseEnvelope
                 )
             } else {
-                Logx.e(TAG, "SSH command failed with exit code $exitCode")
-                val message = if (exitCode == -1) {
-                    "Сервер не ответил за ${TIMEOUT_SECONDS} с. Результат установки пока неизвестен; повторите проверку."
-                } else "SSH-команда не завершена (код $exitCode). Повторите проверку результата на сервере."
+                val failure = sshExecutionFailure(exitCode, output, timeoutSeconds)
+                Logx.e(TAG, "SSH command failed opId=${envelope.opId} exit=$exitCode reason=${failure.code} before_send=${failure.beforeSend}")
+                val message = failure.message
                 AdminOpResult.Failure(message, UnknownAdminOperation(message))
             }
         } catch (e: Exception) {

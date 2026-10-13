@@ -338,6 +338,7 @@ object TunnelLinkParser {
                         io.github.libreroute.data.TransportType.mailru -> "Mail.ru Docs"
                         io.github.libreroute.data.TransportType.mqtt -> DEFAULT_MQTT_NAME
                         io.github.libreroute.data.TransportType.jitsi -> "Jitsi Meet"
+                        io.github.libreroute.data.TransportType.jazz -> "СберДжаз"
                         else -> "Yandex Docs"
                     },
                     transportType = transType.name,
@@ -359,6 +360,7 @@ object TunnelLinkParser {
                         io.github.libreroute.data.TransportType.mailru -> "Mail.ru Docs"
                         io.github.libreroute.data.TransportType.mqtt -> DEFAULT_MQTT_NAME
                         io.github.libreroute.data.TransportType.jitsi -> "Jitsi Meet"
+                        io.github.libreroute.data.TransportType.jazz -> "СберДжаз"
                         else -> "Yandex Docs"
                     },
                     transportType = transType.name,
@@ -534,6 +536,7 @@ object TunnelLinkParser {
                     io.github.libreroute.data.TransportType.mailru -> "Mail.ru Docs"
                     io.github.libreroute.data.TransportType.mqtt -> DEFAULT_MQTT_NAME
                         io.github.libreroute.data.TransportType.jitsi -> "Jitsi Meet"
+                        io.github.libreroute.data.TransportType.jazz -> "СберДжаз"
                     else -> "Yandex Docs"
                 }
                 val codec = param("codec")
@@ -577,6 +580,9 @@ object TunnelLinkParser {
             }
         }
 
+        if (tunnel != null) require(io.github.libreroute.data.TransportType.isAvailable(tunnel.transportType)) {
+            "MQTT исключён из доступных протоколов"
+        }
         if (tunnel != null && tunnel.transportType in setOf("mqtt", "jitsi")) {
             val type = io.github.libreroute.data.TransportType.from(tunnel.transportType)
             require(ServiceRouteEndpoint.isValid(type, argValue(tunnel.transportConnPayload, "--url")))

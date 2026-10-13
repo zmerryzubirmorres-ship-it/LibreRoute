@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_rules_title">Правила приложений</string>
+    <string name="app_rules_summary">Для каждого приложения: zapret, туннель или напрямую</string>
+    <string name="app_rules_enabled">Использовать правила приложений</string>
+    <string name="app_rules_hint">Подключитесь к серверу в режиме VPN. Правило приложения важнее правила сайта. Для приложений без своего правила действуют правила сайтов, затем туннель. Эти настройки заменяют прежние исключения приложений из VPN. После изменений отключите и снова подключите соединение.</string>
+    <string name="app_rules_unsupported">Правила приложений требуют Android 10 или новее.</string>
+    <string name="app_rules_inherit">По правилам сайтов</string>
+    <string name="app_rules_search">Поиск приложений</string>
+    <string name="app_rules_loading">Загрузка приложений…</string>
+    <string name="app_rules_not_installed">Не установлено</string>
+    <string name="app_profile_in_use">Профиль используется в правилах приложений. Сначала измените эти правила.</string>
+    <string name="app_rules_error">Не удалось загрузить приложения</string>
+</resources>

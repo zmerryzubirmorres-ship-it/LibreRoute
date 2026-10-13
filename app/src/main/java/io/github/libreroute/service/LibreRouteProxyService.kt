@@ -129,7 +129,7 @@ class LibreRouteProxyService : Service() {
 
         serviceScope.launch(Dispatchers.IO) {
             EventBus.dispatch(AppEvent.LogMessage("[I] [PROXY] Запуск LibreRouteCore в режиме SOCKS5-прокси (порт ${session.port})..."))
-            supervisor.start(transportType, proxyPayload)
+            supervisor.start(transportType, proxyPayload, intent?.getLongExtra(Constants.INTENT_TUNNEL_ID, -1L)?.takeIf { it >= 0 })
             if (!supervisor.isRunning) {
                 EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] LibreRoute core did not start"))
                 stopProxy()

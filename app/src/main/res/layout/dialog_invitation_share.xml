@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:background="@drawable/bg_menu_popup">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp">
+        <TextView android:id="@+id/tv_invite_dialog_title"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/admin_dialog_issue_title" android:textColor="@color/text_primary"
+            android:textSize="20sp" android:fontFamily="sans-serif-medium" />
+        <TextView android:id="@+id/tv_invite_profile_name"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:textColor="@color/text_secondary" android:textSize="14sp" />
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp">
+            <ImageView android:id="@+id/img_invite_qr"
+                android:layout_width="0dp" android:layout_height="0dp"
+                android:background="#FFFFFF" android:padding="8dp" android:scaleType="fitCenter"
+                android:contentDescription="@string/invite_qr_description"
+                app:layout_constraintDimensionRatio="1:1"
+                app:layout_constraintTop_toTopOf="parent" app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        <TextView android:id="@+id/tv_invite_qr_status"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:gravity="center" android:text="@string/invite_qr_loading"
+            android:textColor="@color/text_secondary" android:textSize="14sp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_show_invite"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp"
+            android:text="@string/invite_show_link" app:cornerRadius="10dp" />
+        <TextView android:id="@+id/tv_invite_link"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:padding="12dp" android:background="@drawable/bg_screen_ambient"
+            android:textColor="@color/text_primary" android:textSize="13sp" android:fontFamily="monospace"
+            android:textIsSelectable="true" android:visibility="gone" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_copy_invite"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+            android:text="@string/invite_copy" app:icon="@drawable/ic_content_copy" app:cornerRadius="10dp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_share_invite"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/admin_btn_share" app:cornerRadius="10dp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btn_close_invite"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/invite_close" />
+    </LinearLayout>
+</ScrollView>

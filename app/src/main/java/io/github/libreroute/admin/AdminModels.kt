@@ -23,10 +23,32 @@ enum class AdminRole {
  * Channels available for sending administrative envelopes.
  */
 enum class AdminChannel(val displayName: String) {
+    AUTO("Автоматически"),
     DOCUMENT("Документ профиля"),
+    ACTIVE_TRANSPORT("Текущее подключение"),
     DIRECT_SSH("Прямой SSH к серверу"),
     SSH_VDS("SSH: VDS"),
     SSH_NETCRAZE("SSH: Netcraze (LAN)")
+}
+
+/** Selecting a carrier never changes the user's selected server identity. */
+internal fun serverForAdminChannel(nodes: List<ServerNode>, selectedId: String?, channel: AdminChannel): ServerNode? {
+    fun matches(node: ServerNode): Boolean = when (channel) {
+        AdminChannel.SSH_VDS -> node.nodeType == ServerNodeType.VDS || node.nodeType == ServerNodeType.CUSTOM
+        AdminChannel.SSH_NETCRAZE -> node.nodeType == ServerNodeType.ROUTER_KEENETIC || node.nodeType == ServerNodeType.ROUTER_OPENWRT
+        AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT, AdminChannel.DIRECT_SSH -> true
+    }
+    if (selectedId != null) return nodes.firstOrNull { it.id == selectedId }?.takeIf(::matches)
+    return nodes.filter(::matches).singleOrNull()
+}
+
+/** Resolve once before sending; transport failures never trigger a second mutation. */
+internal fun automaticAdminChannel(serverId: String?, hasGrant: Boolean, carrierServerId: String?,
+                                  carrierReady: Boolean, hasSsh: Boolean, hasDocumentSession: Boolean = false): AdminChannel = when {
+    hasGrant && serverId != null && serverId == carrierServerId && carrierReady -> AdminChannel.ACTIVE_TRANSPORT
+    hasGrant && hasDocumentSession -> AdminChannel.DOCUMENT
+    hasSsh -> AdminChannel.DIRECT_SSH
+    else -> AdminChannel.DOCUMENT
 }
 
 /**
@@ -544,7 +566,8 @@ data class AssignProfilePayload(
     @SerialName("server_id") val serverId: String,
     val transport: String = "vyandex",
     @SerialName("url") val documentUrl: String? = null,
-    val parameters: Map<String, String>? = null
+    val parameters: Map<String, String>? = null,
+    val client_channel_schema: Int = 2
 )
 
 @Serializable
@@ -674,7 +697,10 @@ data class AckAuthIncidentPayload(
 @Serializable
 data class AdminAccessMethod(
     val transport: String,
-    @SerialName("endpoint_required") val endpointRequired: Boolean = true
+    @SerialName("endpoint_required") val endpointRequired: Boolean = true,
+    @SerialName("automatic_allocation") val automaticAllocation: Boolean = false,
+    @SerialName("required_client_schema") val requiredClientSchema: Int = 0,
+    @SerialName("placement_modes") val placementModes: List<String> = emptyList()
 )
 
 /** Durable per-protocol installation intent. The operation ID is reused after

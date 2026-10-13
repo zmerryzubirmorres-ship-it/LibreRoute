@@ -31,6 +31,26 @@
                         <TextView android:id="@+id/connectButtonLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="Подключить" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:textColor="@color/m3_on_primary" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTrafficRules"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="@color/m3_outline_variant"
+                    app:cardBackgroundColor="@color/m3_surface_container_low">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp" android:gravity="center_vertical" android:padding="12dp">
+                        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_split_tunnel" app:tint="@color/m3_primary" android:contentDescription="@null" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="10dp" android:orientation="vertical">
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/routing_title" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary" />
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/routing_summary" android:textSize="11sp" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
                 <com.google.android.material.button.MaterialButton android:id="@+id/addButton" style="?attr/materialButtonOutlinedStyle" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:text="Импортировать приглашение" android:textSize="11sp" android:textAllCaps="false" android:textColor="@color/text_primary" app:icon="@drawable/ic_add" app:iconTint="@color/text_primary" app:iconGravity="textStart" app:iconPadding="6dp" />
                 <com.google.android.material.button.MaterialButton android:id="@+id/connectServerButton" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="8dp" android:text="Подключить свой сервер" android:textSize="12sp" android:textAllCaps="false" app:cornerRadius="10dp" />
                 <com.google.android.material.button.MaterialButton android:id="@+id/openAuthCheck" android:layout_width="match_parent" android:layout_height="48dp" android:visibility="gone" android:textAllCaps="false" />

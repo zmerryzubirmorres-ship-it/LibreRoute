@@ -19,9 +19,9 @@ class IndependentClientSyncTest {
         val secondPair = secondKeys.getOrCreateKeyPair()
         assertNotEquals(firstPub, secondPub)
         val state = InMemoryAdminStorage()
-        val manual = Tunnel(10, "Manual", "mqtt", listOf("--url", "wss://manual.example/mqtt#manual"))
-        val first = Tunnel(11, "First", "mqtt", listOf("--url", "wss://one.example/mqtt#first"))
-        val second = Tunnel(12, "Second", "mqtt", listOf("--url", "wss://two.example/mqtt#second"))
+        val manual = Tunnel(10, "Manual", "jitsi", listOf("--url", "https://meet.jit.si/manual-room"))
+        val first = Tunnel(11, "First", "jitsi", listOf("--url", "https://meet.jit.si/first-room"))
+        val second = Tunnel(12, "Second", "jitsi", listOf("--url", "https://meet.jit.si/second-room"))
         val store = object : TunnelStore {
             var tunnels = listOf(manual)
             override fun load() = tunnels

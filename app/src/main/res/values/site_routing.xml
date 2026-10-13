@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="site_rules_title">Правила сайтов</string>
+    <string name="site_rules_summary">Напрямую, через zapret или через туннель</string>
+    <string name="site_enabled">Использовать правила сайтов</string>
+    <string name="site_rules_hint">Работает в режиме VPN при подключении через сервер. Остальные сайты идут через туннель. Эти правила заменяют прежние правила доменов и IP; исключённые из VPN приложения идут напрямую. После изменений отключите и снова подключите соединение.</string>
+    <string name="site_dns_hint">Правило включает поддомены. Более точное правило имеет приоритет. Для определения сайта нужен DNS через VPN: собственный защищённый DNS браузера может мешать. Общий IP у сайтов с разными правилами направляется через туннель. Профиль zapret назначается отдельно каждому правилу.</string>
+    <string name="site_add">Добавить сайт</string>
+    <string name="site_no_rules">Правил пока нет. При включении все сайты будут идти через туннель.</string>
+    <string name="site_edit">Изменить правило</string>
+    <string name="site_delete">Удалить правило</string>
+    <string name="site_edit_title">Правило сайта</string>
+    <string name="site_domain">Домен сайта</string>
+    <string name="site_action">Как подключаться</string>
+    <string name="site_profile">Профиль zapret</string>
+    <string name="site_action_profile">%1$s · %2$s</string>
+    <string name="site_profile_in_use">Этот профиль используется в правилах сайтов. Сначала измените или удалите эти правила.</string>
+    <string name="site_save">Сохранить</string>
+    <string-array name="site_actions">
+        <item>Напрямую</item>
+        <item>Через zapret</item>
+        <item>Через туннель</item>
+    </string-array>
+</resources>
