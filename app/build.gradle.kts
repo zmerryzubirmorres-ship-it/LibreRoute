@@ -45,8 +45,8 @@ android {
         applicationId = "io.github.libreroute"
         minSdk = 26
         targetSdk = 34
-        versionCode = 36
-        versionName = "1.2.32"
+        versionCode = 37
+        versionName = "1.2.33"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"$updateRepository\"")
         buildConfigField("String", "BUNDLED_CORE_VERSION", "\"$bundledCoreVersion\"")
 

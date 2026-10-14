@@ -2405,7 +2405,8 @@ class AdminRepository(
             }
             attachProtocolToOwnerProfile(node.id, route.transport, route.url)
         }
-        context?.let { InstallationLog.append(it, "protocol_restore", "server_id=${node.id} restored=${availableRoutes.size}") }
+        context?.let { InstallationLog.append(it, "protocol_restore",
+            "server_id=${node.id} restored=${availableRoutes.size} transports=${availableRoutes.map { route -> route.transport }.distinct().sorted().joinToString(",")}") }
         restored
     }
 

@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.ViewModelProvider
@@ -49,7 +50,7 @@ class ProtocolSetupActivity : AppCompatActivity() {
     private var lastOutcome = ""
     private var channelGroupDialog: AlertDialog? = null
     private var localSnapshot: ProtocolRestoreViewModel.LocalState? = null
-    private val endpointDrafts = mutableMapOf<String, String>()
+    private val endpointDrafts = ProtocolEndpointDrafts()
     private val jazzSetup by lazy { ViewModelProvider(this)[JazzRoomSetupViewModel::class.java] }
     private val protocolRestore by lazy { ViewModelProvider(this)[ProtocolRestoreViewModel::class.java] }
     private val groupSetup by lazy { ViewModelProvider(this)[ChannelGroupSetupViewModel::class.java] }
@@ -85,7 +86,9 @@ class ProtocolSetupActivity : AppCompatActivity() {
         confirmedJitsiRoom = savedInstanceState?.getString("confirmed_jitsi_room").orEmpty()
         lastOutcome = savedInstanceState?.getString("last_outcome").orEmpty()
         for (id in listOf("vyandex", "jazz", "jitsi")) {
-            savedInstanceState?.getString("endpoint_$id")?.let { endpointDrafts[id] = it }
+            savedInstanceState?.getString("endpoint_$id")
+                ?.takeIf { it.isNotBlank() || savedInstanceState.getBoolean("endpoint_edits_only") }
+                ?.let { endpointDrafts.edit(id, it) }
         }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -164,8 +167,8 @@ class ProtocolSetupActivity : AppCompatActivity() {
         outState.putString("pending_auth_endpoint", pendingAuthEndpoint)
         outState.putString("confirmed_jitsi_room", confirmedJitsiRoom)
         outState.putString("last_outcome", lastOutcome)
-        endpointInputs.forEach { (id, input) -> endpointDrafts[id] = input.text.toString() }
-        endpointDrafts.forEach { (id, value) -> outState.putString("endpoint_$id", value) }
+        outState.putBoolean("endpoint_edits_only", true)
+        endpointDrafts.savedEdits().forEach { (id, value) -> outState.putString("endpoint_$id", value) }
         super.onSaveInstanceState(outState)
     }
 
@@ -180,7 +183,6 @@ class ProtocolSetupActivity : AppCompatActivity() {
     private fun renderSnapshot() {
         val snapshot = localSnapshot ?: return
         scrollPosition.beforeRebuild()
-        endpointInputs.forEach { (id, input) -> endpointDrafts[id] = input.text.toString() }
         content.removeAllViews(); endpointInputs.clear()
         val node = snapshot.node ?: run { finish(); return }
         content.addView(MaterialButton(this).apply {
@@ -307,8 +309,12 @@ class ProtocolSetupActivity : AppCompatActivity() {
             val input = EditText(this).apply {
                 hint = when { id == "jazz" -> "Гостевая ссылка СберДжаза с паролем"; jitsi -> "HTTPS-ссылка комнаты (необязательно)"; else -> "HTTPS-ссылка документа Yandex" }
                 inputType = InputType.TYPE_CLASS_TEXT or if (id == "jazz") InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_URI
-                (endpointDrafts[id] ?: operation?.endpoint?.takeIf { it.isNotBlank() }
-                    ?: generatedEndpoint(node, id).takeIf { it.isNotBlank() })?.let(::setText)
+                val restoredEndpoint = generatedEndpoint(node, id)
+                // Prefer the active route over an obsolete installation attempt.
+                setText(if (installed) endpointDrafts.value(id, restoredEndpoint, operation?.endpoint)
+                    else endpointDrafts.value(id, operation?.endpoint, restoredEndpoint))
+                // Register after setText: a rendered default is not a user edit.
+                doAfterTextChanged { endpointDrafts.edit(id, it?.toString().orEmpty()) }
             }
             endpointInputs[id] = input; card.addView(input)
         }
