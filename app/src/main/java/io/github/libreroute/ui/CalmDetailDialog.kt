@@ -3,6 +3,7 @@ package io.github.libreroute.ui
 import android.app.Dialog
 import android.content.Context
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -19,6 +20,13 @@ class CalmDetailDialog(context: Context, title: String) : Dialog(context, R.styl
         setPadding(CalmViews.dp(context, 16), 0, CalmViews.dp(context, 16), CalmViews.dp(context, 24))
     }
     val scrollView = ScrollView(context).apply { id = DialogScreens.stateId("detail-scroll"); addView(content) }
+    /** Optional fixed actions for forms with long scrollable content. */
+    val footer = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        visibility = View.GONE
+        setPadding(CalmViews.dp(context, 16), CalmViews.dp(context, 8), CalmViews.dp(context, 16), CalmViews.dp(context, 12))
+        setBackgroundColor(ContextCompat.getColor(context, R.color.m3_surface))
+    }
     init {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -27,6 +35,7 @@ class CalmDetailDialog(context: Context, title: String) : Dialog(context, R.styl
         root.fitsSystemWindows = true
         root.addView(CalmViews.header(context, title) { dismiss() })
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(footer, LinearLayout.LayoutParams(-1, -2))
         setContentView(root)
     }
     fun text(value: String) {

@@ -1167,139 +1167,23 @@ class AdminActivity : AppCompatActivity() {
             Toast.makeText(this, "Дождитесь ответа сервера с доступными протоколами", Toast.LENGTH_LONG).show()
             return
         }
-        val screen = io.github.libreroute.ui.CalmDetailDialog(this, "Доступ: ${user.name}")
-        screen.text("Выберите серверы и протоколы для устройства. В приглашение попадут только отмеченные протоколы. Для автоматического СберДжаза сервер выделит комнату.")
-        val selectedServers = mutableSetOf<String>()
-        val selectedProtocols = mutableSetOf<Pair<String, String>>()
-        val fields = mutableMapOf<Pair<String, String>, TextInputEditText>()
-        val assignedServers = vm.assignments.value.filter { it.userId == user.id }.map { it.serverId }.toSet()
-        snapshot.distinctServerIds.sorted().forEach { serverId ->
-            val methods = snapshot.methodsFor(serverId).filter {
-                it.transport in setOf("vyandex", "mqtt", "jitsi", "jazz") &&
-                    io.github.libreroute.data.TransportType.isAvailable(it.transport)
-            }
-            val name = vm.serverNodes.value.firstOrNull { it.id == serverId }?.name ?: serverId
-            val options = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            val checkbox = MaterialCheckBox(this).apply {
-                id = io.github.libreroute.ui.DialogScreens.stateId("server:$serverId")
-                text = name
-                isEnabled = methods.isNotEmpty()
-                isChecked = isEnabled && (snapshot.distinctServerIds.size == 1 || serverId in assignedServers)
-                if (isChecked) selectedServers.add(serverId)
-                setOnCheckedChangeListener { _, checked ->
-                    if (checked) selectedServers.add(serverId) else selectedServers.remove(serverId)
-                    options.visibility = if (checked) View.VISIBLE else View.GONE
+        val form = UserAccessForm(this, snapshot, user, vm.serverNodes.value,
+            vm.assignments.value.filter { it.userId == user.id }.map { it.serverId }.toSet(),
+            AdminRepository.getInstance(this).getPendingUserDocument(user.id).orEmpty(),
+            onCreateLink = { routes ->
+                val automaticJazz = routes.singleOrNull()?.takeIf {
+                    it.transport == "jazz" && it.allocation_mode == "automatic" && it.client_channel_schema == 2
                 }
-            }
-            screen.content.addView(checkbox)
-            options.visibility = if (checkbox.isChecked) View.VISIBLE else View.GONE
-            if (methods.isEmpty()) options.addView(TextView(this).apply { text = "Протоколы не подтверждены" })
-            methods.forEach methodLoop@ { method ->
-                val protocolKey = serverId to method.transport
-                val needsLink = method.endpointRequired && !method.automaticAllocation
-                val linkField = if (needsLink) TextInputLayout(this) else null
-                options.addView(MaterialCheckBox(this).apply {
-                    id = io.github.libreroute.ui.DialogScreens.stateId("protocol:$serverId:${method.transport}")
-                    text = protocolLabel(method.transport)
-                    // A newly issued device gets only automatic Jazz by default;
-                    // every other protocol is an explicit administrator choice.
-                    isChecked = method.transport == "jazz" && method.automaticAllocation
-                    if (isChecked) selectedProtocols.add(protocolKey)
-                    setOnCheckedChangeListener { _, checked ->
-                        if (checked) selectedProtocols.add(protocolKey) else selectedProtocols.remove(protocolKey)
-                        linkField?.visibility = if (checked) View.VISIBLE else View.GONE
-                    }
-                })
-                if (linkField == null) return@methodLoop
-                val input = TextInputEditText(this).apply {
-                    id = io.github.libreroute.ui.DialogScreens.stateId("endpoint:$serverId:${method.transport}")
-                    inputType = InputType.TYPE_CLASS_TEXT or if (method.transport == "jazz") InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_URI
-                    setSingleLine(true)
-                    if (method.transport == "vyandex" && snapshot.distinctServerIds.size == 1)
-                        setText(AdminRepository.getInstance(this@AdminActivity).getPendingUserDocument(user.id).orEmpty())
-                }
-                options.addView(linkField.apply {
-                    visibility = View.GONE
-                    hint = when (method.transport) {
-                        "vyandex" -> "Ссылка на отдельный документ"
-                        "jitsi" -> "Ссылка на комнату организатора"
-                        "jazz" -> "Гостевая ссылка СберДжаза с паролем"
-                        else -> "Ссылка на отдельный канал"
-                    }
-                    addView(input)
-                })
-                fields[protocolKey] = input
-            }
-            screen.content.addView(options)
-        }
-        fun routes(): List<EnrollmentRoute>? {
-            val links = fields.mapValues { it.value.text?.toString()?.trim().orEmpty() }
-            fields.values.forEach { it.error = null }
-            for ((key, value) in links) {
-                if (key.first !in selectedServers || key !in selectedProtocols || value.isEmpty()) continue
-                if (!AutomaticAccessPlan.validLink(key.second, value)) {
-                    fields[key]?.error = "Проверьте ссылку на отдельный документ или комнату"
-                    return null
-                }
-            }
-            return runCatching { AutomaticAccessPlan.build(snapshot, selectedServers, links, selectedProtocols) }.getOrElse {
-                Toast.makeText(this, it.message, Toast.LENGTH_LONG).show()
-                null
-            }
-        }
-        screen.action("Создать приглашение выбранных протоколов") {
-            if (selectedServers.size == 1 && selectedProtocols.count { it.first in selectedServers } == 1 &&
-                selectedProtocols.any { it.first in selectedServers && it.second == "jazz" }) {
-                vm.issuePortableJazzInvitation(user, selectedServers.single())
-                screen.dismiss()
-                return@action
-            }
-            val plan = routes() ?: return@action
-            vm.configureUserAccess(user, plan, null)
-            screen.dismiss()
-        }
-        screen.action("Выдать компактный QR только СберДжаз") {
-            if (selectedServers.size != 1 || selectedProtocols.count { it.first in selectedServers && it.second == "jazz" } != 1) {
-                Toast.makeText(this, "Выберите один сервер и только протокол СберДжаз", Toast.LENGTH_LONG).show()
-                return@action
-            }
-            val serverId = selectedServers.single()
-            val jazz = snapshot.methodsFor(serverId).firstOrNull { it.transport == "jazz" }
-            if (jazz == null || !jazz.automaticAllocation) {
-                Toast.makeText(this, "Сервер не подтвердил автоматический Jazz V2", Toast.LENGTH_LONG).show()
-                return@action
-            }
-            vm.issuePortableJazzInvitation(user, serverId)
-            screen.dismiss()
-        }
-        screen.action("Приглашение для объединённых каналов", secondary = true) {
-            if (selectedServers.size != 1) {
-                Toast.makeText(this, "Выберите один сервер для всей группы каналов", Toast.LENGTH_LONG).show()
-                return@action
-            }
-            val serverId = selectedServers.single()
-            if (snapshot.coreInfo?.capabilities?.contains(ChannelGroupPlan.ENROLLMENT_CAPABILITY) != true ||
-                snapshot.methodsFor(serverId).none { it.transport == "channel-group" }) {
-                Toast.makeText(this, "Обновите ядро выбранного сервера для выдачи приглашений на объединённые каналы", Toast.LENGTH_LONG).show()
-                return@action
-            }
-            ChannelGroupInvitationDialogFragment.show(supportFragmentManager, user.id, serverId)
-        }
-        val key = TextInputEditText(this).apply {
-            hint = "Публичный ключ уже известного устройства"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 2
-        }
-        screen.text("Для уже зарегистрированного телефона можно назначить доступ по его публичному ключу")
-        screen.content.addView(key)
-        screen.action("Назначить устройству", secondary = true) {
-            val publicKey = key.text?.toString()?.trim().orEmpty()
-            if (publicKey.isEmpty()) { key.error = "Введите публичный ключ или создайте QR выше"; return@action }
-            val plan = routes() ?: return@action
-            vm.configureUserAccess(user, plan, publicKey)
-            screen.dismiss()
-        }
-        dialogs.show(screen, "access", Bundle().apply { putString("id", user.id) })
+                if (automaticJazz != null) vm.issuePortableJazzInvitation(user, automaticJazz.server_id)
+                else vm.configureUserAccess(user, routes, null)
+                dialogs.dismiss("access")
+            },
+            onAssignDevice = { routes, key ->
+                vm.configureUserAccess(user, routes, key)
+                dialogs.dismiss("access")
+            },
+            onChannelGroup = { serverId -> ChannelGroupInvitationDialogFragment.show(supportFragmentManager, user.id, serverId) })
+        dialogs.show(form.dialog, "access", Bundle().apply { putString("id", user.id) })
     }
 
     private fun showServerAuthDialog() {
