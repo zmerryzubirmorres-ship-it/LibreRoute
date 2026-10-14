@@ -1,18 +1,18 @@
 {
     "artifacts":  {
                       "linux_arm64":  {
-                                          "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
-                                          "sha256":  "71de8a87359850cfd1feb6d457710a43c4fd829294caa277b340079a1b514c8b",
+                                          "source_sha256":  "4c3923c44455bf224bec7c950d5b47401b7cd14f030515de08b763976c60167b",
+                                          "sha256":  "a7135d7479eefac3fa802fd2984241721fa6c21612ab2f0533fd226fb240ee22",
                                           "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                       },
                       "native_arm64":  {
-                                           "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
-                                           "sha256":  "5822b5d1c52f2c0c6ddb709a3af9dbece3839d60be764606172111c960c55cd9",
+                                           "source_sha256":  "4c3923c44455bf224bec7c950d5b47401b7cd14f030515de08b763976c60167b",
+                                           "sha256":  "0093356dbfbda1414db404221b6cf7dc39e34da649d95d5dfe9c08058874e3ba",
                                            "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                        },
                       "linux_amd64":  {
-                                          "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
-                                          "sha256":  "595681ea9780db83b8b11585ba6a799270d26b1cff322faa8ec56981a3b7d441",
+                                          "source_sha256":  "4c3923c44455bf224bec7c950d5b47401b7cd14f030515de08b763976c60167b",
+                                          "sha256":  "72b7f3caedd52b4cef9b939fd80c30ceb8814ae35d6302265602c8cecbed3b37",
                                           "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                       }
                   },

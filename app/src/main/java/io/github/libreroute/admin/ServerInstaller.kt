@@ -146,7 +146,7 @@ class ServerInstaller(private val context: Context) {
         val readError = Thread { proc.errorStream.bufferedReader().use { reader -> reader.forEachLine { if (errors.length < 1024) errors.append(it.take(200)) } } }.apply { isDaemon = true; start() }
         try {
             proc.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(request.toString()) }
-            require(proc.waitFor(240, TimeUnit.SECONDS)) { "Установка не завершилась; проверьте сохранённый backup на узле" }
+            require(proc.waitFor(240, TimeUnit.SECONDS)) { "Истекло время ожидания SSH. Проверьте состояние операции перед продолжением" }
             readOut.join(1000); readError.join(1000)
             require(!readOut.isAlive && !readError.isAlive && !truncated) { "Ответ сервера не завершён; проверьте результат операции" }
             require(proc.exitValue() == 0) { errors.toString().ifBlank { "Установка не подтверждена" } }

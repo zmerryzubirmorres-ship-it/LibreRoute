@@ -270,4 +270,43 @@ class ServerInstallationStateTest {
         assertEquals(ServerInstallOperation.ROLLED_BACK, restarted.loadServerInstallation("confirmed-rollback")?.stage)
         assertEquals(1, restarted.managedProfilesFlow.value.size)
     }
+
+    @Test fun interruptedOwnerRecoveryContinuesOriginalJoinThroughRecoveryAdapter() {
+        val backend = Backend()
+        val first = repo(backend)
+        first.addServerNode(node)
+        first.planServerInstallation(node, "initial-owner")
+        assertTrue(first.installServer(node, "initial-owner") is AdminOpResult.Success)
+        val profile = first.getActiveGrant(node.id)!!.profileId
+        val join = first.createJoinRequest(profile, AdminRole.OWNER).first
+        val plan = buildJsonObject {
+            put("mode", "update"); put("server_id", node.id)
+            put("server_public_key", keys.getPublicKeyBase64())
+            put("namespace", "node-isolated"); put("plan_hash", "recovery-hash")
+        }
+        val pending = ServerInstallOperation("recovery-resume", node.id, "node-isolated", node,
+            plan.toString(), "recovery-hash", profile, keys.getFingerprint(),
+            ownerRecovery = true, kind = ServerInstallOperation.KIND_OWNER_RECOVERY,
+            join = join.toJson(), stage = ServerInstallOperation.UNKNOWN, serverStage = "receiving")
+        state.putString("admin_install_operations", json.encodeToString(listOf(pending)))
+        var recoveries = 0
+        val adapter = object : ServerInstallationBackend by backend {
+            override fun recoverOwner(node: ServerNode, inventory: ServerInventory, operationId: String,
+                                      documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                                      expectedPlan: JsonObject): JsonObject {
+                recoveries++
+                assertEquals("recovery-resume", operationId)
+                assertEquals(pending.join, join.toJson())
+                assertEquals(plan, expectedPlan)
+                error("Simulated connection loss during recovery")
+            }
+        }
+        val restarted = AdminRepository(keyManager = keys, storage = state,
+            installationBackend = adapter, serverInventoryProbe = { inventory })
+        assertTrue(restarted.continueCoreUpdate(node, pending.operationId) is AdminOpResult.Failure)
+        assertEquals(1, recoveries)
+        assertEquals(1, backend.installs)
+        assertEquals(pending.join, restarted.loadServerInstallation(pending.operationId)?.join)
+        assertEquals(ServerInstallOperation.KIND_OWNER_RECOVERY, restarted.loadServerInstallation(pending.operationId)?.kind)
+    }
 }

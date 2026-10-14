@@ -1127,6 +1127,9 @@ class AdminRepository(
         if (!operation.coordinator) {
             require(operation.serverStage == "receiving" && operation.serverId == node.id) { "Сначала проверьте состояние передачи" }
             saveServerInstallation(operation.copy(stage = ServerInstallOperation.PLANNED))
+            if (operation.kind == ServerInstallOperation.KIND_OWNER_RECOVERY && operation.ownerRecovery) {
+                return recoverOwnerServer(node, operationId, operation.documentUrl)
+            }
             return installServer(node,operationId,operation.documentUrl,operation.ownerRecovery)
         }
         updateCancellation.remove(operationId)
