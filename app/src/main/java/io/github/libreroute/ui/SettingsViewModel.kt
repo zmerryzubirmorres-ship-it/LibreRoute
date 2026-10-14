@@ -187,33 +187,30 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         appSettings.shareLanProxy = enable
         _uiState.update { it.copy(shareHotspot = enable) }
         viewModelScope.launch(Dispatchers.IO) {
-            if (enable) {
-                val session = LocalSocksSession.getActive()
-                HotspotProxyBridge.start(
-                    lanPort = appSettings.lanProxyPort,
-                    targetLocalPort = session.port,
-                    authEnabled = appSettings.socks5AuthEnabled,
-                    username = session.username,
-                    password = session.password
-                )
-            } else {
-                HotspotProxyBridge.stop()
-            }
+            io.github.libreroute.service.ProxySharing.refresh(appSettings)
         }
     }
 
     fun toggleSocks5Auth(enable: Boolean) {
         appSettings.socks5AuthEnabled = enable
         _uiState.update { it.copy(socks5AuthEnabled = enable) }
+        proxyCredentialsChanged()
+    }
+
+    fun proxyCredentialsChanged() {
+        viewModelScope.launch(Dispatchers.IO) {
+            io.github.libreroute.service.ProxySharing.refresh(appSettings)
+            if (LocalSocksSession.getReady() != null) {
+                _events.emit(SettingsEvent.ShowToast("Параметры прокси сохранены. Переподключитесь, чтобы применить авторизацию."))
+            }
+        }
     }
 
     fun toggleProxyOnlyMode(enable: Boolean) {
         appSettings.proxyOnlyMode = enable
         _uiState.update { it.copy(proxyOnlyMode = enable) }
-        if (enable) {
-            viewModelScope.launch {
-                _events.emit(SettingsEvent.ShowToast("Режим прокси: VPN-иконка не будет показана. Перезапустите туннель."))
-            }
+        viewModelScope.launch {
+            _events.emit(SettingsEvent.ShowToast("Режим сохранён. Переподключитесь, чтобы применить его."))
         }
     }
 

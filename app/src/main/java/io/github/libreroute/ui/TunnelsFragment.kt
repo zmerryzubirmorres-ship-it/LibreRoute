@@ -689,6 +689,12 @@ class TunnelsFragment : BaseFragment() {
 
     private fun requestVpnAndStart() {
         checkBatteryOptimizationAndProceed {
+            val target = vm.active.value.tunnel ?: vm.selected.value
+            if (io.github.libreroute.util.AppSettings(requireContext()).proxyOnlyMode &&
+                target != null && !io.github.libreroute.data.DirectDpiProfile.isDirect(target)) {
+                vm.startCurrent()
+                return@checkBatteryOptimizationAndProceed
+            }
             val intent = VpnService.prepare(requireActivity())
             if (intent != null) vpnPermission.launch(intent) else vm.startCurrent()
         }

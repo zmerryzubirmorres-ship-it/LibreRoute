@@ -234,14 +234,7 @@ class SocksVpnService : android.net.VpnService() {
 
                     val appSettings = AppSettings(applicationContext)
                     if (appSettings.shareLanProxy && !isDirectDpi()) {
-                        val session = LocalSocksSession.getActive()
-                        HotspotProxyBridge.start(
-                            lanPort = appSettings.lanProxyPort,
-                            targetLocalPort = session.port,
-                            authEnabled = appSettings.socks5AuthEnabled,
-                            username = session.username,
-                            password = session.password
-                        )
+                        ProxySharing.refresh(appSettings)
                     }
                 } else {
                     Logx.e(TAG, "Failed to pass TUN FD to native core")
@@ -491,14 +484,7 @@ class SocksVpnService : android.net.VpnService() {
 
                         val appSettings = AppSettings(applicationContext)
                         if (appSettings.shareLanProxy && !isDirectDpi() && !HotspotProxyBridge.running) {
-                            val session = LocalSocksSession.getActive()
-                            HotspotProxyBridge.start(
-                                lanPort = appSettings.lanProxyPort,
-                                targetLocalPort = session.port,
-                                authEnabled = appSettings.socks5AuthEnabled,
-                                username = session.username,
-                                password = session.password
-                            )
+                            ProxySharing.refresh(appSettings)
                         }
                     }
                 } else {
@@ -568,42 +554,8 @@ class SocksVpnService : android.net.VpnService() {
         }
     }
 
-    private fun measureRealEndToEndPing(port: Int): Long {
-        val socksProxy = java.net.Proxy(
-            java.net.Proxy.Type.SOCKS,
-            java.net.InetSocketAddress("127.0.0.1", port)
-        )
-        val endpoints = listOf(
-            "https://cp.cloudflare.com/generate_204",
-            "https://connectivitycheck.gstatic.com/generate_204",
-            "https://detectportal.firefox.com/success.txt"
-        )
-        for (ep in endpoints) {
-            try {
-                val url = java.net.URL(ep)
-                val conn = url.openConnection(socksProxy) as java.net.HttpURLConnection
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
-                conn.instanceFollowRedirects = false
-                conn.setRequestProperty("User-Agent", "LibreRoute/1.2.0")
-                conn.setRequestProperty("Connection", "close")
-                val t0 = android.os.SystemClock.elapsedRealtime()
-                try {
-                    val code = conn.responseCode
-                    if (code in 200..399 || code == 204) {
-                        val rtt = android.os.SystemClock.elapsedRealtime() - t0
-                        Logx.d(TAG, "HTTPS ping probe completed endpoint=$ep duration=${rtt}ms")
-                        return rtt.coerceAtLeast(1L)
-                    }
-                } finally {
-                    conn.disconnect()
-                }
-            } catch (e: Exception) {
-                Logx.d(TAG, "Ping probe failed for $ep: ${e.message}")
-            }
-        }
-        return -1L
-    }
+    private fun measureRealEndToEndPing(port: Int): Long =
+        ProxyConnectivityProbe.measure(LocalSocksSession.getActive().copy(port = port), 4000)
 
     private fun stopEverything() {
         if (alreadyStopping.getAndSet(true)) {

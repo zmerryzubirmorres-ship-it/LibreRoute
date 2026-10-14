@@ -8,7 +8,6 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -36,10 +35,16 @@ object HotspotProxyBridge {
         authEnabled: Boolean = false,
         username: String = "",
         password: String = ""
-    ) {
+    ): Boolean {
         if (isRunning.get()) {
             Logx.d(TAG, "Bridge already running, stopping existing instance first")
             stop()
+        }
+        if (lanPort !in 0..65535 || targetLocalPort !in 1..65535 ||
+            (authEnabled && (username.toByteArray(Charsets.UTF_8).size !in 1..255 ||
+                password.toByteArray(Charsets.UTF_8).size !in 1..255))) {
+            Logx.w(TAG, "Invalid proxy listener or authentication settings; sharing remains stopped")
+            return false
         }
         isRunning.set(true)
 
@@ -98,9 +103,11 @@ object HotspotProxyBridge {
                 isDaemon = true
                 start()
             }
+            return true
         } catch (e: Exception) {
             Logx.e(TAG, "Failed to start hotspot bridge on port $lanPort", e)
-            isRunning.set(false)
+            stop()
+            return false
         }
     }
 
@@ -225,8 +232,13 @@ object HotspotProxyBridge {
             }
             cout.write(byteArrayOf(0x01, 0x00)) // RFC 1929 auth success
             cout.flush()
-        } else {
-            cout.write(byteArrayOf(0x05, 0x00)) // no auth
+          } else {
+              if (!methods.contains(0x00.toByte())) {
+                  cout.write(byteArrayOf(0x05, 0xFF.toByte()))
+                  cout.flush()
+                  return
+              }
+              cout.write(byteArrayOf(0x05, 0x00)) // no auth
             cout.flush()
         }
 
@@ -359,9 +371,9 @@ object HotspotProxyBridge {
         if (useAuth) {
             var authOk = false
             if (proxyAuthHeader != null && proxyAuthHeader.startsWith("Basic ", ignoreCase = true)) {
-                val b64 = proxyAuthHeader.substringAfter("Basic ").trim()
+                  val b64 = proxyAuthHeader.substringAfter(' ').trim()
                 val decoded = runCatching {
-                    android.util.Base64.decode(b64, android.util.Base64.DEFAULT).toString(Charsets.UTF_8)
+                      java.util.Base64.getDecoder().decode(b64).toString(Charsets.UTF_8)
                 }.getOrNull()
                 val creds = decoded?.split(":", limit = 2)
                 if (creds != null && creds.size == 2 && creds[0] == expectedUser && creds[1] == expectedPass) {
@@ -379,27 +391,21 @@ object HotspotProxyBridge {
             }
         }
 
-        val destHost: String
-        val destPort: Int
-        if (method == "CONNECT") {
-            val hParts = target.split(":")
-            destHost = hParts[0]
-            destPort = if (hParts.size > 1) hParts[1].toIntOrNull() ?: 443 else 443
-        } else {
-            val uriHost = if (target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)) {
-                runCatching { java.net.URI(target).host }.getOrNull()
-            } else null
-            val rawHost = uriHost ?: hostHeader?.split(":")?.get(0) ?: ""
-            if (rawHost.isEmpty()) {
-                clientSocket.close()
-                return
-            }
-            destHost = rawHost
-            val uriPort = if (target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)) {
-                runCatching { java.net.URI(target).port.takeIf { it > 0 } }.getOrNull()
-            } else null
-            destPort = uriPort ?: hostHeader?.split(":")?.getOrNull(1)?.toIntOrNull() ?: 80
-        }
+          val uri = runCatching {
+              when {
+                  method == "CONNECT" -> java.net.URI("http://$target")
+                  target.startsWith("http://", true) || target.startsWith("https://", true) -> java.net.URI(target)
+                  target.startsWith("/") && hostHeader != null -> java.net.URI("http://$hostHeader$target")
+                  else -> null
+              }
+          }.getOrNull()
+          val destHost = uri?.host
+          val destPort = uri?.port?.takeIf { it >= 0 } ?: if (method == "CONNECT" || uri?.scheme == "https") 443 else 80
+          if (destHost.isNullOrBlank() || destHost.contains(':') || destPort !in 1..65535) {
+              cout.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
+              cout.flush()
+              return
+          }
 
         val targetSocket = try {
             Socket().apply {
@@ -436,13 +442,17 @@ object HotspotProxyBridge {
             cout.flush()
         } else {
             val reqSb = StringBuilder()
-            reqSb.append(firstLine).append("\r\n")
-            for (h in headers) {
-                if (!h.startsWith("Proxy-Connection:", ignoreCase = true)) {
+              val path = uri.rawPath.orEmpty().ifEmpty { "/" } + (uri.rawQuery?.let { "?$it" } ?: "")
+              reqSb.append(method).append(' ').append(path).append(' ').append(parts.getOrElse(2) { "HTTP/1.1" }).append("\r\n")
+              for (h in headers) {
+                  if (!h.startsWith("Proxy-Connection:", ignoreCase = true) &&
+                      !h.startsWith("Connection:", ignoreCase = true) &&
+                      !h.startsWith("Proxy-Authorization:", ignoreCase = true)) {
                     reqSb.append(h).append("\r\n")
                 }
             }
-            reqSb.append("\r\n")
+              // This bridge handles one origin request per HTTP connection.
+              reqSb.append("Connection: close\r\n\r\n")
             tout.write(reqSb.toString().toByteArray(Charsets.UTF_8))
             tout.flush()
         }
@@ -531,48 +541,41 @@ object HotspotProxyBridge {
         clientSocket: Socket,
         targetSocket: Socket
     ) {
-        clientSocket.soTimeout = 30_000
-        targetSocket.soTimeout = 30_000
+        // Handshake deadlines must not terminate idle HTTP CONNECT/WebSocket sessions.
+        clientSocket.soTimeout = 0
+        targetSocket.soTimeout = 0
         activeSockets.add(clientSocket)
         activeSockets.add(targetSocket)
-        val t1 = Thread({
+        val finished = java.util.concurrent.CountDownLatch(2)
+        fun pump(input: InputStream, output: OutputStream, destination: Socket, name: String) = Thread({
             try {
-                pipe(cin, tout)
-            } finally {
-                activeSockets.remove(targetSocket)
-                runCatching { targetSocket.close() }
-                activeSockets.remove(clientSocket)
+                pipe(input, output)
+                // EOF in the upload direction still permits the complete response.
+                runCatching { destination.shutdownOutput() }
+            } catch (_: Exception) {
                 runCatching { clientSocket.close() }
-            }
-        }, "HotspotBridge-ClientToTarget")
-        val t2 = Thread({
-            try {
-                pipe(tin, cout)
-            } finally {
-                activeSockets.remove(clientSocket)
-                runCatching { clientSocket.close() }
-                activeSockets.remove(targetSocket)
                 runCatching { targetSocket.close() }
-            }
-        }, "HotspotBridge-TargetToClient")
-        t1.isDaemon = true
-        t2.isDaemon = true
-        t1.start()
-        t2.start()
+            } finally { finished.countDown() }
+        }, name).apply { isDaemon = true; start() }
+        pump(cin, tout, targetSocket, "HotspotBridge-ClientToTarget")
+        pump(tin, cout, clientSocket, "HotspotBridge-TargetToClient")
+        try {
+            // The accept worker owns clientSocket: do not return until both relays finish.
+            finished.await()
+        } finally {
+            activeSockets.remove(clientSocket)
+            activeSockets.remove(targetSocket)
+            runCatching { clientSocket.close() }
+            runCatching { targetSocket.close() }
+        }
     }
 
     private fun pipe(input: InputStream, output: OutputStream) {
         val buf = ByteArray(16384)
-        try {
-            var n: Int
-            while (input.read(buf).also { n = it } != -1) {
-                output.write(buf, 0, n)
-                output.flush()
-            }
-        } catch (_: Exception) {
-        } finally {
-            runCatching { input.close() }
-            runCatching { output.close() }
+        var n: Int
+        while (input.read(buf).also { n = it } != -1) {
+            output.write(buf, 0, n)
+            output.flush()
         }
     }
 

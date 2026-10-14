@@ -786,18 +786,44 @@ class SettingsActivity : AppCompatActivity() {
     private fun showHotspotBottomSheet() {
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.bottom_sheet_hotspot, null)
-        dialog.setContentView(view)
+        dialog.setContentView(androidx.core.widget.NestedScrollView(this).apply {
+            isFillViewport = true
+            addView(view)
+        })
 
         val textIp = view.findViewById<TextView>(R.id.text_hotspot_ip)
         val textPort = view.findViewById<TextView>(R.id.text_hotspot_port)
         val btnCopy = view.findViewById<View>(R.id.btn_copy_hotspot)
         val btnClose = view.findViewById<View>(R.id.btn_close_hotspot)
 
-        val ip = LocalSocksSession.getLocalIpAddress()
+        var ip = ""
+        var shownState: List<Any?>? = null
         val port = appSettings.lanProxyPort
+        fun renderStatus() {
+            ip = LocalSocksSession.getLocalIpAddress()
+            val ready = LocalSocksSession.getReady()
+            val state = listOf(ip, ready, appSettings.shareLanProxy, appSettings.socks5AuthEnabled,
+                io.github.libreroute.service.HotspotProxyBridge.running)
+            if (shownState == state) return
+            shownState = state
+            view.findViewById<TextView>(R.id.text_hotspot_status).text = when {
+                !appSettings.shareLanProxy -> "Раздача выключена"
+                ready == null -> "Сначала подключитесь к серверу. В режиме zapret раздача прокси недоступна."
+                !io.github.libreroute.service.ProxySharing.canShare(ready, appSettings.socks5AuthEnabled,
+                    appSettings.socks5CustomUser, appSettings.socks5CustomPass) -> "Параметры изменены. Переподключитесь, чтобы включить раздачу."
+                ip.isBlank() -> "Подключите Wi-Fi или включите точку доступа для раздачи другим устройствам."
+                io.github.libreroute.service.HotspotProxyBridge.running -> "Раздача работает · SOCKS5 и HTTP"
+                else -> "Раздача не запущена. Проверьте журнал подключения."
+            }
+            view.findViewById<TextView>(R.id.text_hotspot_local).text = ready?.let {
+                "На этом телефоне: SOCKS5 127.0.0.1:${it.port}" + if (it.isAuthEnabled) " · с паролем" else " · без пароля"
+            } ?: "Адрес локального SOCKS5 появится после подключения."
 
-        textIp.text = ip
-        textPort.text = port.toString()
+            textIp.text = ip.ifBlank { "Нет адреса Wi-Fi или точки доступа" }
+            textPort.text = port.toString()
+            btnCopy.isEnabled = ip.isNotBlank()
+        }
+        renderStatus()
 
         btnCopy.setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -809,12 +835,22 @@ class SettingsActivity : AppCompatActivity() {
 
         btnClose.setOnClickListener { dialog.dismiss() }
         dialogs.show(dialog, "showHotspotBottomSheet", Bundle())
+        dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+        lifecycleScope.launch {
+            while (dialog.isShowing) {
+                renderStatus()
+                kotlinx.coroutines.delay(1000)
+            }
+        }
     }
 
     private fun showSocks5AuthBottomSheet() {
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.bottom_sheet_socks5_auth, null)
-        dialog.setContentView(view)
+        dialog.setContentView(androidx.core.widget.NestedScrollView(this).apply {
+            isFillViewport = true
+            addView(view)
+        })
 
         val inputUser = view.findViewById<TextInputEditText>(R.id.input_socks_user)
         val inputPass = view.findViewById<TextInputEditText>(R.id.input_socks_pass)
@@ -832,12 +868,22 @@ class SettingsActivity : AppCompatActivity() {
 
         btnSave.setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            appSettings.socks5CustomUser = inputUser.text?.toString().orEmpty().trim()
-            appSettings.socks5CustomPass = inputPass.text?.toString().orEmpty().trim()
+            val username = inputUser.text?.toString().orEmpty().trim()
+            val password = inputPass.text?.toString().orEmpty().trim()
+            if (username.toByteArray(Charsets.UTF_8).size > 255) {
+                inputUser.error = "Не более 255 байт UTF-8"; return@setOnClickListener
+            }
+            if (password.toByteArray(Charsets.UTF_8).size > 255) {
+                inputPass.error = "Не более 255 байт UTF-8"; return@setOnClickListener
+            }
+            appSettings.socks5CustomUser = username
+            appSettings.socks5CustomPass = password
+            vm.proxyCredentialsChanged()
             dialog.dismiss()
         }
 
         dialogs.show(dialog, "showSocks5AuthBottomSheet", Bundle())
+        dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
     }
 
     private fun requestBackup(uri: Uri, export: Boolean) {

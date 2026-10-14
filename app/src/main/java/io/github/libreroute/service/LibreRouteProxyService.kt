@@ -10,8 +10,6 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import android.os.Build
 import android.os.IBinder
-import android.os.Process
-import android.net.TrafficStats
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import android.content.pm.ServiceInfo
@@ -19,7 +17,6 @@ import io.github.libreroute.NativeBridge
 import io.github.libreroute.R
 import io.github.libreroute.event.AppEvent
 import io.github.libreroute.event.EventBus
-import io.github.libreroute.ui.MainActivity
 import io.github.libreroute.util.AppIconManager
 import io.github.libreroute.util.AppSettings
 import io.github.libreroute.util.Constants
@@ -61,6 +58,7 @@ class LibreRouteProxyService : Service() {
         private const val NOTIFICATION_ID = 2
 
         @Volatile var isProxyRunning = false
+        @Volatile var isProxyStarting = false
         @Volatile var proxyPort = 0
         @Volatile var activeTunnelName: String? = null
         @Volatile var connectedAtRealtime: Long = 0L
@@ -69,6 +67,7 @@ class LibreRouteProxyService : Service() {
     private lateinit var supervisor: NativeProcessSupervisor
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val alreadyStopping = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var startupJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -84,6 +83,7 @@ class LibreRouteProxyService : Service() {
                     )
                     nm?.notify(NOTIFICATION_ID, notif)
                 }
+                if (ev is AppEvent.TransportDisconnected && isProxyRunning) stopProxy()
             }
         }
     }
@@ -94,24 +94,25 @@ class LibreRouteProxyService : Service() {
             stopProxy()
             return START_NOT_STICKY
         }
-
-        if (isProxyRunning) {
-            Logx.d(TAG, "Proxy already running, ignoring duplicate start")
-            return START_STICKY
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
         }
-
+        if (isProxyRunning || isProxyStarting) {
+            Logx.d(TAG, "Proxy already starting or running, ignoring duplicate start")
+            return START_NOT_STICKY
+        }
         alreadyStopping.set(false)
-
-        val transportType = intent?.getStringExtra(Constants.INTENT_TRANSPORT_TYPE) ?: "yandex"
+        isProxyStarting = true
+        val transportType = intent.getStringExtra(Constants.INTENT_TRANSPORT_TYPE) ?: "yandex"
         val transportPayload = try {
-            intent?.getStringArrayExtra(Constants.INTENT_TRANSPORT_PAYLOAD)
-                ?: intent?.getStringArrayListExtra(Constants.INTENT_TRANSPORT_PAYLOAD)?.toTypedArray()
+            intent.getStringArrayExtra(Constants.INTENT_TRANSPORT_PAYLOAD)
+                ?: intent.getStringArrayListExtra(Constants.INTENT_TRANSPORT_PAYLOAD)?.toTypedArray()
                 ?: emptyArray()
         } catch (e: Exception) {
             Logx.e(TAG, "Failed to read payload", e)
             emptyArray()
         }
-
         val appSettings = AppSettings(applicationContext)
         val session = LocalSocksSession.generateNew(
             authEnabled = appSettings.socks5AuthEnabled,
@@ -120,60 +121,49 @@ class LibreRouteProxyService : Service() {
             shareLan = appSettings.shareLanProxy
         )
         proxyPort = session.port
-
-        // Build the payload: inject SOCKS5 inbound, strip any TUN args
-        val proxyPayload = buildProxyPayload(transportPayload, session)
-
-        val tunnelName = intent?.getStringExtra(Constants.INTENT_NAME) ?: getString(R.string.app_name)
+        val proxyPayload = runCatching { buildProxyPayload(transportPayload, session) }.getOrElse {
+            EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] Проверьте длину логина и пароля SOCKS5 (1–255 байт UTF-8)"))
+            stopProxy()
+            return START_NOT_STICKY
+        }
+        val tunnelName = intent.getStringExtra(Constants.INTENT_NAME) ?: getString(R.string.app_name)
+        activeTunnelName = tunnelName
         startForegroundProxy(tunnelName, session.port)
-
-        serviceScope.launch(Dispatchers.IO) {
-            EventBus.dispatch(AppEvent.LogMessage("[I] [PROXY] Запуск LibreRouteCore в режиме SOCKS5-прокси (порт ${session.port})..."))
-            supervisor.start(transportType, proxyPayload, intent?.getLongExtra(Constants.INTENT_TUNNEL_ID, -1L)?.takeIf { it >= 0 })
-            if (!supervisor.isRunning) {
-                EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] LibreRoute core did not start"))
-                stopProxy()
-                return@launch
-            }
-
-            // Wait for connection (max 20 sec)
-            var ready = false
-            for (step in 1..80) {
-                kotlinx.coroutines.delay(250)
+        startupJob = serviceScope.launch(Dispatchers.IO) {
+            try {
+                EventBus.dispatch(AppEvent.LogMessage("[I] [PROXY] Запуск LibreRouteCore в режиме SOCKS5-прокси (порт ${session.port})..."))
+                supervisor.start(transportType, proxyPayload, intent.getLongExtra(Constants.INTENT_TUNNEL_ID, -1L).takeIf { it >= 0 })
+                if (!supervisor.isRunning) {
+                    EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] LibreRoute core did not start"))
+                    stopProxy()
+                    return@launch
+                }
+                val ready = NativeTransportReadiness(proxyPayload).awaitReady(transportType,
+                    canWait = { !alreadyStopping.get() && supervisor.isRunning },
+                    connected = { supervisor.isConnected })
                 if (alreadyStopping.get()) return@launch
-                if (supervisor.isConnected) {
-                    ready = true
-                    break
+                if (ready) {
+                    isProxyRunning = true
+                    isProxyStarting = false
+                    connectedAtRealtime = android.os.SystemClock.elapsedRealtime()
+                    EventBus.dispatch(AppEvent.LogMessage("[S] [PROXY] SOCKS5-прокси активен на 127.0.0.1:${session.port}"))
+                    EventBus.dispatch(AppEvent.VpnConnected(tunnelName))
+                    Logx.i(TAG, "Proxy mode active on port ${session.port}")
+                    updateNotificationConnected(tunnelName, session.port)
+                    if (appSettings.shareLanProxy) ProxySharing.refresh(appSettings)
+                } else {
+                    EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] Таймаут подключения прокси"))
+                    EventBus.dispatch(AppEvent.TransportDisconnected)
+                    stopProxy()
                 }
-            }
-
-            if (ready) {
-                isProxyRunning = true
-                activeTunnelName = tunnelName
-                connectedAtRealtime = android.os.SystemClock.elapsedRealtime()
-                EventBus.dispatch(AppEvent.LogMessage("[S] [PROXY] SOCKS5-прокси активен на 127.0.0.1:${session.port}"))
-                EventBus.dispatch(AppEvent.VpnConnected(tunnelName))
-                Logx.i(TAG, "Proxy mode active on port ${session.port}")
-
-                updateNotificationConnected(tunnelName, session.port)
-
-                if (appSettings.shareLanProxy) {
-                    HotspotProxyBridge.start(
-                        lanPort = appSettings.lanProxyPort,
-                        targetLocalPort = session.port,
-                        authEnabled = appSettings.socks5AuthEnabled,
-                        username = session.username,
-                        password = session.password
-                    )
-                }
-            } else {
-                EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] Таймаут подключения прокси"))
-                EventBus.dispatch(AppEvent.TransportDisconnected)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] Не удалось запустить прокси"))
                 stopProxy()
             }
         }
-
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -188,6 +178,9 @@ class LibreRouteProxyService : Service() {
         if (alreadyStopping.getAndSet(true)) return
         Logx.i(TAG, "stopProxy()")
         isProxyRunning = false
+        isProxyStarting = false
+        startupJob?.cancel()
+        startupJob = null
         proxyPort = 0
         activeTunnelName = null
         connectedAtRealtime = 0L
@@ -291,55 +284,6 @@ class LibreRouteProxyService : Service() {
      * Removed: --inbound=tun, --tun-socket, --tun-mtu
      * Injected: --inbound=socks5  --socks5 127.0.0.1:<port>
      */
-    private fun buildProxyPayload(original: Array<String>, session: LocalSocksSession.SessionInfo): List<String> {
-        val list = original.toMutableList()
-
-        // Remove TUN-related args
-        fun removeArg(flag: String) {
-            val i = list.indexOf(flag)
-            if (i != -1) {
-                if (i + 1 < list.size && !list[i + 1].startsWith("-")) list.removeAt(i + 1)
-                list.removeAt(i)
-            }
-        }
-        fun removeArgWithValue(flagPrefix: String) {
-            val it = list.iterator()
-            while (it.hasNext()) {
-                val arg = it.next()
-                if (arg == flagPrefix || arg.startsWith("$flagPrefix=")) it.remove()
-            }
-        }
-
-        removeArg("--inbound")
-        removeArg("-inbound")
-        removeArgWithValue("--inbound")
-        removeArg("--tun-socket")
-        removeArgWithValue("--tun-socket")
-        removeArg("--tun-mtu")
-        removeArgWithValue("--tun-mtu")
-        removeArg("--tun")
-        removeArg("-tun")
-
-        // Remove stale --socks5 flag if present (we'll re-add with correct port)
-        removeArg("--socks5")
-        removeArg("-socks5")
-        removeArgWithValue("--socks5")
-        for (flag in listOf("--socks5-user", "--socks5-pass")) {
-            removeArg(flag)
-            removeArgWithValue(flag)
-        }
-
-        // Inject SOCKS5 inbound
-        list.add(0, "--inbound=socks5")
-        list.add("--socks5")
-        list.add("127.0.0.1:${session.port}")
-        if (session.isAuthEnabled) {
-            list.add("--socks5-user")
-            list.add(session.username)
-            list.add("--socks5-pass")
-            list.add(session.password)
-        }
-
-        return list
-    }
+    private fun buildProxyPayload(original: Array<String>, session: LocalSocksSession.SessionInfo): List<String> =
+        localProxyOptions(original.toList(), session, proxyOnly = true)
 }

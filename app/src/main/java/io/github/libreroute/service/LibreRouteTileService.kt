@@ -79,7 +79,7 @@ class LibreRouteTileService : TileService() {
         super.onClick()
         val isVpnActive = runCatching { unifiedService?.isVpnRunning == true }.getOrDefault(false) ||
                 (SocksVpnService.connectedAtRealtime > 0L)
-        val isProxyActive = LibreRouteProxyService.isProxyRunning
+        val isProxyActive = LibreRouteProxyService.isProxyRunning || LibreRouteProxyService.isProxyStarting
         val isRunning = isVpnActive || isProxyActive
 
         if (isRunning) {
@@ -98,7 +98,8 @@ class LibreRouteTileService : TileService() {
             setTileInactive()
         } else {
             val appSettings = AppSettings(this)
-            if (!appSettings.proxyOnlyMode) {
+            val selected = TunnelRepository(this).getSelected()
+            if (!appSettings.proxyOnlyMode || selected?.let { io.github.libreroute.data.DirectDpiProfile.isDirect(it) } == true) {
                 val prepareIntent = android.net.VpnService.prepare(this)
                 if (prepareIntent != null) {
                     val launchIntent = Intent(this, MainActivity::class.java).apply {

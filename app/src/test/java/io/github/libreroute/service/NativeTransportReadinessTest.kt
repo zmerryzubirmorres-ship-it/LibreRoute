@@ -2,8 +2,28 @@ package io.github.libreroute.service
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.currentTime
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class NativeTransportReadinessTest {
+    @Test fun slowJazzProxyHandshakeKeepsItsFullReadinessWindow() = runTest {
+        val readiness = NativeTransportReadiness(emptyList())
+        assertTrue(readiness.awaitReady("jazz", canWait = { true }, connected = { currentTime >= 30_000 }))
+        assertEquals(30_000L, currentTime)
+    }
+
+    @Test fun channelGroupProxyWaitsForPeerForUpToSixtySeconds() = runTest {
+        val readiness = NativeTransportReadiness(listOf("--channel-group-config=public-binding"))
+        assertFalse(readiness.awaitReady("channel-group", canWait = { true }, connected = { false }))
+        assertEquals(60_000L, currentTime)
+    }
+
+    @Test fun stoppedNativeProcessEndsTheReadinessWaitImmediately() = runTest {
+        val readiness = NativeTransportReadiness(emptyList())
+        assertFalse(readiness.awaitReady("jazz", canWait = { false }, connected = { true }))
+        assertEquals(250L, currentTime)
+    }
     @Test fun groupRequiresItsOwnAuthenticatedRoundTrip() {
         val readiness = NativeTransportReadiness(listOf("--channel-group-config", "signed-group", "--peer-health"))
         assertFalse(readiness.isReady("[VOLGA] transport started"))

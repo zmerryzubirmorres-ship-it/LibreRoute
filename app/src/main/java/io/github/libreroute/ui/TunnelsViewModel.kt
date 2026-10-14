@@ -324,7 +324,9 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptySet()
         }
-        if (isSplitEnabled && !appBypass && selectedApps.isEmpty()) {
+        val appSettings = io.github.libreroute.util.AppSettings(ctx)
+        val proxyOnly = appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)
+        if (!proxyOnly && isSplitEnabled && !appBypass && selectedApps.isEmpty()) {
             _active.value = TunnelState.Idle
             EventBus.dispatch(AppEvent.LogMessage("[E] Выберите хотя бы одно приложение для режима «только через туннель»"))
             android.widget.Toast.makeText(ctx, "Выберите приложение для туннеля", android.widget.Toast.LENGTH_LONG).show()
@@ -333,7 +335,6 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         val perApp = isSplitEnabled && (!appBypass || selectedApps.isNotEmpty())
         val appList = selectedApps.toTypedArray()
 
-        val appSettings = io.github.libreroute.util.AppSettings(ctx)
         val session = io.github.libreroute.util.LocalSocksSession.generateNew(
             authEnabled = appSettings.socks5AuthEnabled,
             customUser = appSettings.socks5CustomUser,
@@ -448,10 +449,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
                 putExtra(Constants.INTENT_TRANSPORT_PAYLOAD, modifiedPayload.toTypedArray())
             }
             ContextCompat.startForegroundService(ctx, proxyIntent)
-            _active.value = TunnelState.Running(prepared)
-            _tunnelHealth.value = TunnelHealth.CHECKING
-            startUptimeCounter()
-            startHealthCheckLoop(prepared)
+            // VpnConnected is emitted only after native peer readiness, as in VPN mode.
         } else {
             // ── Normal VPN mode: start SocksVpnService ────────────────────────
             ContextCompat.startForegroundService(ctx, intent)
@@ -490,6 +488,9 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             service = null
             activeTunnelData = null
             Logx.setVerbose(false)
+            // Stop an in-progress proxy launch as well as a connected proxy,
+            // including switches between profiles and between VPN/proxy modes.
+            ctx.stopService(Intent(ctx, io.github.libreroute.service.LibreRouteProxyService::class.java))
 
             if (!preserveActiveState) {
                 try {
@@ -499,17 +500,6 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
                     ctx.startService(disconnectIntent)
                 } catch (e: Exception) {
                     Logx.w(TAG, "Failed sending VPN disconnect intent: ${e.message}")
-                }
-                // Also stop proxy service if it's running
-                if (io.github.libreroute.service.LibreRouteProxyService.isProxyRunning) {
-                    try {
-                        val proxyDisconnect = Intent(ctx, io.github.libreroute.service.LibreRouteProxyService::class.java).apply {
-                            action = io.github.libreroute.service.LibreRouteProxyService.ACTION_DISCONNECT
-                        }
-                        ctx.startService(proxyDisconnect)
-                    } catch (e: Exception) {
-                        Logx.w(TAG, "Failed sending proxy disconnect intent: ${e.message}")
-                    }
                 }
             }
         }
@@ -684,8 +674,8 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // 2. Verify true end-to-end connectivity through SOCKS5 proxy via bridge to remote VPS
-        val socksProxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress("127.0.0.1", sessionPort))
-        val latency = probeLiveConnectivityWithLatency(socksProxy)
+        val latency = io.github.libreroute.service.ProxyConnectivityProbe.measure(
+            io.github.libreroute.util.LocalSocksSession.getActive().copy(port = sessionPort), 2500)
         if (latency < 0) {
             saveHealth(tunnel.id, TunnelHealth.UNAVAILABLE)
             _tunnelHealth.value = TunnelHealth.UNAVAILABLE
@@ -699,39 +689,6 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         saveHealth(tunnel.id, TunnelHealth.AVAILABLE)
         _tunnelHealth.value = TunnelHealth.AVAILABLE
         return true
-    }
-
-    private fun probeLiveConnectivityWithLatency(proxy: java.net.Proxy): Long {
-        val endpoints = listOf(
-            "https://cp.cloudflare.com/generate_204",
-            "https://connectivitycheck.gstatic.com/generate_204",
-            "https://detectportal.firefox.com/success.txt"
-        )
-        for (ep in endpoints) {
-            try {
-                val url = java.net.URL(ep)
-                val conn = url.openConnection(proxy) as java.net.HttpURLConnection
-                conn.connectTimeout = 2500
-                conn.readTimeout = 2500
-                conn.instanceFollowRedirects = false
-                conn.setRequestProperty("User-Agent", "LibreRoute/1.2.0")
-                conn.setRequestProperty("Connection", "close")
-                val t0 = android.os.SystemClock.elapsedRealtime()
-                try {
-                    val code = conn.responseCode
-                    if (code in 200..399 || code == 204) {
-                        val rtt = android.os.SystemClock.elapsedRealtime() - t0
-                        Logx.d(TAG, "End-to-end HTTPS probe completed endpoint=$ep duration=${rtt}ms")
-                        return rtt.coerceAtLeast(1L)
-                    }
-                } finally {
-                    conn.disconnect()
-                }
-            } catch (e: Exception) {
-                Logx.d(TAG, "End-to-end probe failed for $ep: ${e.message}")
-            }
-        }
-        return -1L
     }
 
     private fun triggerFailoverIfNeeded(failedTunnel: Tunnel) {

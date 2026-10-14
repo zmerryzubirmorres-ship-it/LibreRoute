@@ -1,11 +1,9 @@
 package io.github.libreroute.util
 
-import java.net.Authenticator
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
-import java.net.PasswordAuthentication
 import java.net.ServerSocket
 import java.util.UUID
 
@@ -63,18 +61,30 @@ object LocalSocksSession {
 
     fun getActive(): SessionInfo = currentSession
 
+    @Volatile private var readySession: SessionInfo? = null
+
+    fun getReady(): SessionInfo? = readySession?.takeIf { it === currentSession }
+
+    @Synchronized fun markReady(session: SessionInfo) {
+        if (session === currentSession) readySession = session
+    }
+
+    @Synchronized fun clearReady(session: SessionInfo) {
+        if (readySession === session) readySession = null
+    }
+
     fun setupAuthenticator(session: SessionInfo = currentSession) {
         // Core proxy authentication uses explicit per-session credentials. Keep
         // Java's global authenticator untouched; SSH/document control uses its own sockets.
     }
 
     fun clearAuthenticator() {
-        Authenticator.setDefault(null)
+        // Session credentials are explicit; no process-global authenticator was installed.
     }
 
     fun getLocalIpAddress(): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: return "192.168.43.1"
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: return ""
 
             fun isCellularOrVpn(name: String): Boolean {
                 val n = name.lowercase()
@@ -94,7 +104,7 @@ object LocalSocksSession {
                     for (addr in iface.inetAddresses) {
                         if (addr is Inet4Address && !addr.isLoopbackAddress) {
                             val host = addr.hostAddress ?: continue
-                            if (host.startsWith("192.168.") || host.startsWith("172.")) {
+                            if (isPrivateLanIpv4(host)) {
                                 return host
                             }
                         }
@@ -111,14 +121,23 @@ object LocalSocksSession {
                 for (addr in iface.inetAddresses) {
                     if (addr is Inet4Address && !addr.isLoopbackAddress) {
                         val host = addr.hostAddress ?: continue
-                        if (host.startsWith("192.168.")) {
+                          if (isPrivateLanIpv4(host)) {
                             return host
                         }
                     }
                 }
             }
         } catch (_: Exception) { }
-        return "192.168.43.1"
+        return ""
+    }
+
+    internal fun isPrivateLanIpv4(host: String): Boolean {
+        val fields = host.split('.')
+        if (fields.size != 4) return false
+        val parts = fields.map { it.toIntOrNull() ?: return false }
+        if (parts.any { it !in 0..255 }) return false
+        return parts[0] == 10 || (parts[0] == 172 && parts[1] in 16..31) ||
+            (parts[0] == 192 && parts[1] == 168)
     }
 
     private fun findAvailablePort(): Int {
@@ -156,4 +175,3 @@ object LocalSocksSession {
         }
     }
 }
-

@@ -34,7 +34,8 @@ class NativeProcessSupervisor(private val context: Context) {
         val authIssueReported: AtomicBoolean = AtomicBoolean(false),
         val dpiEngines: List<TpwsEngine> = emptyList(),
         val siteRoutesFile: java.io.File? = null,
-        val appRouteServer: AppRouteServer? = null
+        val appRouteServer: AppRouteServer? = null,
+        val socksSession: io.github.libreroute.util.LocalSocksSession.SessionInfo? = null
     )
 
     private val handler = Handler(Looper.getMainLooper())
@@ -137,7 +138,15 @@ class NativeProcessSupervisor(private val context: Context) {
             }
             val isServiceTransport = transportType.equals("mqtt", true) || transportType.equals("jitsi", true)
             val isDirectDpi = transportType.equals("direct-dpi", true) || transportType.equals("directDpi", true)
-            val routingProfiles = if (isDirectDpi || !appSettings.proxyOnlyMode)
+            val proxyOnlyInbound = cleanPayload.any { it == "--inbound=socks5" || it == "-inbound=socks5" } ||
+                cleanPayload.windowed(2).any { it[0] in setOf("--inbound", "-inbound") && it[1] == "socks5" }
+            val socksSession = io.github.libreroute.util.LocalSocksSession.getActive().takeUnless { isDirectDpi }
+            if (socksSession != null) {
+                val options = localProxyOptions(cleanPayload, socksSession)
+                cleanPayload.clear()
+                cleanPayload.addAll(options)
+            }
+            val routingProfiles = if (isDirectDpi || !proxyOnlyInbound)
                 io.github.libreroute.util.ZapretProfilePreferences(context).load() else null
             val startedProfilePorts = mutableMapOf<String, Int>()
             if (isDirectDpi) {
@@ -154,7 +163,7 @@ class NativeProcessSupervisor(private val context: Context) {
             // All entry points (UI, tile, boot and reconnect) use this supervisor.
             // Both VPN modes use the same rules. In standalone mode the common
             // local zapret dialer supplies the path labelled "tunnel".
-            if (isDirectDpi || !appSettings.proxyOnlyMode) {
+            if (isDirectDpi || !proxyOnlyInbound) {
                 val routes = io.github.libreroute.util.SiteRoutingPreferences(context).load()
                 val apps = io.github.libreroute.util.AppRoutingPreferences(context).load()
                 // The common default also applies when both rule lists are disabled.
@@ -291,7 +300,8 @@ class NativeProcessSupervisor(private val context: Context) {
             launchedProcess = proc
             checkLaunchActive()
             val logRedactor = io.github.libreroute.util.NativeLogRedactor(cmd.drop(1))
-            val instance = ProcessInstance(proc, dpiEngines = launchDpiEngines.toList(), siteRoutesFile = launchSiteRoutesFile, appRouteServer = launchAppRouteServer)
+            val instance = ProcessInstance(proc, dpiEngines = launchDpiEngines.toList(), siteRoutesFile = launchSiteRoutesFile,
+                appRouteServer = launchAppRouteServer, socksSession = socksSession)
             currentInstance = instance
             process = proc
             if (transportType.lowercase() in setOf("vyandex", "yandex", "jazz", "jitsi", "mqtt", "channel-group")) {
@@ -368,6 +378,7 @@ class NativeProcessSupervisor(private val context: Context) {
 
                             if (connected.get() && isDrop) {
                                 if (connected.getAndSet(false)) {
+                                    setLocalProxyReady(instance, false)
                                       setAdminCarrierReady(false)
                                     Logx.w(TAG, "Post-connect transport drop detected: $lClean")
                                     EventBus.dispatch(AppEvent.TransportDisconnected)
@@ -413,6 +424,7 @@ class NativeProcessSupervisor(private val context: Context) {
                                         delayedConnectRunnable = null
                                         if (running.get() && !instance.isCancelled.get() && currentInstance === instance && proc.isAlive) {
                                             if (!connected.getAndSet(true)) {
+                                                setLocalProxyReady(instance, true)
                                                   setAdminCarrierReady(true)
                                                 EventBus.dispatch(AppEvent.TransportConnected)
                                                 Logx.i(TAG, "Native transport confirmed connected from stdout (delayed): $lClean")
@@ -426,6 +438,7 @@ class NativeProcessSupervisor(private val context: Context) {
                                     delayedConnectRunnable = null
                                     if (running.get() && !instance.isCancelled.get() && currentInstance === instance && proc.isAlive) {
                                         if (!connected.getAndSet(true)) {
+                                            setLocalProxyReady(instance, true)
                                                   setAdminCarrierReady(true)
                                             EventBus.dispatch(AppEvent.TransportConnected)
                                             Logx.i(TAG, "Native transport confirmed connected from stdout: $lClean")
@@ -466,6 +479,7 @@ class NativeProcessSupervisor(private val context: Context) {
                     instance.siteRoutesFile?.delete()
                     instance.appRouteServer?.close()
                     if (currentInstance === instance) {
+                        setLocalProxyReady(instance, false)
                         delayedConnectRunnable?.let { handler.removeCallbacks(it) }
                         delayedConnectRunnable = null
                         gracePeriodRunnable?.let { handler.removeCallbacks(it) }
@@ -535,6 +549,7 @@ class NativeProcessSupervisor(private val context: Context) {
     }
 
     private fun cleanupInstance(inst: ProcessInstance) {
+        setLocalProxyReady(inst, false)
         inst.dpiEngines.forEach { it.stop() }
         inst.siteRoutesFile?.delete()
         inst.appRouteServer?.close()
@@ -552,6 +567,15 @@ class NativeProcessSupervisor(private val context: Context) {
             if (p.isAlive) {
                 p.destroyForcibly()
             }
+        }
+    }
+
+    private fun setLocalProxyReady(instance: ProcessInstance, ready: Boolean) {
+        val session = instance.socksSession ?: return
+        if (ready) io.github.libreroute.util.LocalSocksSession.markReady(session)
+        else if (io.github.libreroute.util.LocalSocksSession.getReady() === session) {
+            io.github.libreroute.util.LocalSocksSession.clearReady(session)
+            HotspotProxyBridge.stop()
         }
     }
 
