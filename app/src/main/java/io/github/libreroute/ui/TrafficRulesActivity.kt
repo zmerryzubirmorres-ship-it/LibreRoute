@@ -294,7 +294,8 @@ class TrafficRulesActivity : AppCompatActivity() {
         val rows = if (section == "apps") {
             val installedKeys = apps.map { it.key }.toSet()
             val missing = appState.rules.filter { it.packageName !in installedKeys }.map { InstalledApp(it.packageName, it.packageName, null, false, null) }
-            val rules = appState.rules.associateBy { it.packageName }
+            val rules = appState.withPackageDefaults(apps.mapNotNull { app -> app.uid?.let { app.key to it } }.toMap())
+                .rules.associateBy { it.packageName }
             val showSystem = findViewById<MaterialCheckBox>(R.id.routing_show_system).isChecked
             (apps + if (inventoryReady) missing else emptyList()).filter {
                 (showSystem || !it.system || it.key in rules || it.key in selectedApps) && (it.name.contains(query, true) || it.key.contains(query, true))

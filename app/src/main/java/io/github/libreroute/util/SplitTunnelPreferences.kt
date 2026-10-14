@@ -22,7 +22,9 @@ class SplitTunnelPreferences(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     var isEnabled: Boolean
-        get() = prefs.getBoolean(KEY_ENABLED, true)
+        // Fresh installs use TrafficRules, so a hidden legacy bypass must not
+        // take applications out of the VPN before those assignments are applied.
+        get() = prefs.getBoolean(KEY_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_ENABLED, value).apply()
 
     var mode: String

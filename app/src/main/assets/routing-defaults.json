@@ -1,0 +1,3781 @@
+{
+  "version": 1,
+  "profiles": null,
+  "apps": {
+    "enabled": true,
+    "rules": [
+      {
+        "package": "com.idamob.tinkoff.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.iot",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.burgerking",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.dns.shop.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.dodopizza.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.gosuslugi.auto",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.kfc.kfc_delivery",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.kinopoisk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.megafon.mlk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.nspk.mirpay",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.ozon.app.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.pyaterochka.app.browser",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.rshb.dbo",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.rutube.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.sberbankmobile",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.sovcomcard.halva.v1",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.tander.magnit",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.tele2.mytele2",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.disk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.mail",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.music",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.taxi",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.yandexmaps",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.yandexnavi",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.aliexpress.buyer",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.domonap.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.supercell.clashofclans",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "com.supercell.clashroyale",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "com.openai.chatgpt",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "com.supercell.brawlstars",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "ai.x.grok",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "com.instagram.android",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.facebook.orca",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "www.metro.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.vk.store",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.google.android.apps.youtube.music",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.google.android.youtube",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.facebook.katana",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "org.telegram.messenger.web",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.telemost",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.mosmetro.metro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.metro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "apiqa.ru.residentcabinetandroid",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.apegroup.mcdonaldsrussia",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.bestdoctor.release",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.gazfondpn.gazfondpn",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.gpn.azs",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.lamoda.lite",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.octopod.russianpost.client.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.programmisty.emiasapp",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.readyforsky",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.ru.dixy",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.sdkit.search.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.bank",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.browser",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.mobile.drive",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.mobile.plus.game.city",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.searchapp",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.yandex.shedevrus",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.zvooq.openplay",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "dssl.client",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "dssl.client.multiplatform",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "me.ondoc.custom.gutaclinic",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "org.chromium.webapk.a46a8c90f042b5eeb_v2",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "pro.tdnm.gurmanica",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.alfastrah.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.amwine.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.beru.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.cian.main",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.crptech.mark",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.dataprovider.evcharge",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.domopult.mosobleirc.android",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.fns.lkfl",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.foodfox.client",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.ftc.faktura.expressbank",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.gosuslugi.goskey",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.instamart",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.lynx.aero",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.megamarket.marketplace",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.mosgorpass",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.mosparking.appnew",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.mosreg.uslugi.mobile.beta",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.myauchan.droid",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.onlime.my.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.rostel",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.sbcs.store",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.sigma.gisgkh",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.sportmaster.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.tii.lkcomu",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.tinkoff.investing",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.tsk.ftc.bender.qpay",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.urentbike.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.vcr.verniy_all",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.vkusvill",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.mobile.gasstations",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.yandex.rasp",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "me.itcharge.main",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.imo.android.imoim",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.linkedin.android",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.instagram.barcelona",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.viber.voip",
+        "action": "tunnel",
+        "profile": ""
+      },
+      {
+        "package": "ru.evia.voyah.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.whatsapp",
+        "action": "zapret",
+        "profile": "standard"
+      },
+      {
+        "package": "com.punicapp.whoosh",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "com.kaspersky.who_calls",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.salute.b2b.prod",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "package": "ru.kontur.talk",
+        "action": "direct",
+        "profile": ""
+      }
+    ],
+    "directRuPackages": true
+  },
+  "sites": {
+    "enabled": true,
+    "rules": [
+      {
+        "domain": "1018213540.rsc.cdn77.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "1c.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.ae",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.biz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.cz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.kg",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.qa",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.sa",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2gis.uz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "2ip.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "360tv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "5-tv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "5ka.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "adfox.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "admetrica.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "adriver.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "aeroflot.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "afisha.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "agent.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "aif.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "alfabank.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "alfabank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "aliexpress.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "anytimeviewru.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "aoglonass.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "apptracer.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "apteka.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "auto.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avito.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avito.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avito.st",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avitocargo.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avitopro.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avitorealty.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "avtodor-tr.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "b2c-ticket-sentry.onelya.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "beeline.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "belkacar.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "berizaryad.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "betboom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "bitrix.info",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "bkvet.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "burgerking.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cbr.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cdek.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cdn-vk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cdn1.ozonusercontent.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cesarsmart.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "chestnyznak.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "chizhik.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cian.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "citilink.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "citydrive.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "class.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "clck.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cloud.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cms1.dzvr.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "com.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "com.ge",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "com.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "com.tr",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "consultant.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "counter.yadro.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "crrintegro.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "csat.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "cxhub.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "delimobil.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "deliveryclub.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dellin.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "detmir.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "digital.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dixy.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dns-shop.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dobro.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dodopizza.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dodopizza.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dodostatic.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "domclick.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "domrf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dostavista.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "drom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "drweb.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "drweb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dumatv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dv.team",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dzen.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "dzvr.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "edadeal.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "egafon.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "elama.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "eldorado.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "emex.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "emias.info",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "emias.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "eopp-portal.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "epd-portal.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "evotor.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "expf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fairplay-proxy.ott.yandex.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fix-price.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fon.bet",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "forumsdrom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "freestylediabetes.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "freestylelibre.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fsb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fss.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "fssp.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gazeta.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gazprom-neft.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gazprombank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gismeteo.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "globaloet.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "glutec.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gnezdo.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gorzdrav.spb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gosniias.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gosuslugi.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gosuslugi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "government.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gpb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "grandexpress.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "graphql.kinopoisk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "gu-st.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hbrd.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hematonix.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hh.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hr-link.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hrtek.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "hybrid.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "icancgm.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "icq.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "icq.im",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "icq.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "imgsmail.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "importx5.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "inappstory.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "inme.store",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "inme.technology",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "istokmw.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ivi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "iz.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "jivo.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "karusel.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kaspersky.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kaspersky.de",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kaspersky.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kasperskylab.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "khl.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kinopoisk.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kinopoisk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kion.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "koddobra.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kommersant.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kontur.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kp.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "kuper.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lamoda.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lemanapro.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lenta.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lenta.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "leroymerlin.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "libreview.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "life.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "litres.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lizaalert.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lm.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lmcdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lukoil.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "lumiflex.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "m-line.expert",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "m.egafon.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "magnit.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mail.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mail.ua",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mamadeti.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "markirovka.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "matchtv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "max.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "maxunread.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mcclinics.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "medsi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "medtrum.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "megafon.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "megamarket.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "megamarket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mgts.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mintsifry.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mir-connect.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mkb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mobile-vk.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mobileapp.russianpost.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "moex.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "moi-klass.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "more.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mos.city",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mos.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mosenergosbyt.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mosreg.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mradx.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mrgcdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts-bank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts-link.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.cloud",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.digital",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.education",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.global",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.group",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.info",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.it",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.md",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.news",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.plus",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.pro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.shop",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.today",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.tools",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.travel",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.ua",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.video",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.web",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mts.work",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mtsbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mtsdengi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mtstelecom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mvd.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mvk.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mwscdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "my.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "mycdn.me",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nalog.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nalog.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nalog.xn--p1ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "naydex.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nextmobile.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nic.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nornickel.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nornik.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "nspk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ntv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "o-courier.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ocourier.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "odnoklassniki.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ok.games",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ok.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "okcdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "okko.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "okmarket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "oktech.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "oneme.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "onetarget.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "onf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "open.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "otclick-adv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "otkritie.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "oz.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.ae",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.az",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.de",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.dev",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.express",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.ge",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.kg",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.md",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.su",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.uz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozon.vip",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozoncamp.pro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozoncard.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozoncloud.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozoncorporate.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozone.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonfinance.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonfintech.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonglobalevents.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonlogistics.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonmedina.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonru.co.il",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonru.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonru.eu",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonshop.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonsport.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ozonstatus.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "perekrestok.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pesc.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pfr.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pnp.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pobeda.aero",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pochta-bank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pochta.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "pochtabank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "poctechcgm.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "poctechcorp.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "premier.one",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "psb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "psbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "raiffeisen.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rambler.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rbc.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rbk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "reg.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ren.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "reso.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rg.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ria.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "riafan.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ridus.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosagroleasing.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosatom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "roskazna.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosneft.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosreestr.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosselkhozbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rosseti.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rostec.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rostelecom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rostik.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rshb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rskrf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rsscenter.cloud",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rsscenter.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rt.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rtbcdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rtcloud.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rtk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "russia.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rustore.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rutube-cdn.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rutube.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rutube.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ruwiki.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rzd-bonus.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "rzd.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "saby.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "salute.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "salutejazz.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "samokat.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "samokat.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbbol.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.ch",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.f",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.group",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.online",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.pro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.store",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.vin",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sber.wine",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberbank.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberbiz.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbercapital.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbercard.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbercloud.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberdevices.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberhealth.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberid.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberinsurance.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberlabs.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberlogistics.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbermarket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbermegamarket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberonline.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberpm.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbersafe.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbersolutions.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbertech.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberuniversity.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberx.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sberzvuk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbp.nspk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbpay.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbrf.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sbrf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "servicepipe.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "servicepipe.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sferum.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sfr.gov.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "showip.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sitidrive.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "skillbox.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "skillfactory.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sledcom.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "smotrim.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "soloviev.live",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sovcombank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sport24.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sportmail.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sportmaster.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sputnik.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "start.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "stoloto.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "su",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "syai.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "syaiofficial.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "sys.refocus.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "t-bank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "t-cdn.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "t-j.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "t-static.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "t2.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tarantool.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "targetads.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tass.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tbank.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tbank.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tbankcloud.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tcsbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tele2.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "telega.info",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "telega.me",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tensor.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tetrika-school.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tildacdn.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.digital",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.finance",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.flights",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.global",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.legal",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.media",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.news",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.online",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.press",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.pro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.shop",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.support",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.travel",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoff.video",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffbank.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffbroker.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffcredit.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkofffund.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffinsurance.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffjournal.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tinkoffmobile.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "trueconf.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "turbopages.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tutu.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tvzavr.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "tvzvezda.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "uchi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "upravel.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "usedesk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "userapi.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "uxfeedback.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vamprivet.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vgtrk.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vigo.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vitrina.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vitrinatv.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk-analytics.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk-cdn.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk-portal.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.biz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.cc",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.class.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.dev",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.link",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.me",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.sh",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vk.team",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkbt.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkcdn.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkclips.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkconnect.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkfaces.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkid.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vklanding.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkontakte.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkontakte.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkplay.live",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkplay.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vksearch.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkstatic.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkuser.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkuserphoto.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkuservideo.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkusnoitochka.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkusvill.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vkvideo.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vmeste-rf.tv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vshark.ttk.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtb-leasing.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtb24.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtbcapital.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtbmobile.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "vtbonline.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbbasket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbext.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbforever.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbmedia.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbmp.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbnet.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbplus.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbsmb.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbstatic.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wbx.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "webvisor.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "webvisor.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "whiteboxdigital.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wi-fi.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "widevine-proxy.ott.yandex.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.app",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.asia",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.az",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.club",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.ge",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.id",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.in",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.kg",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.md",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.nl",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.se",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.store",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wildberries.uz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "wink.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "winline.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "x5.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "x5club.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "x5id.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "xn--90aijkdmaud0d.xn--p1ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "xn--p1ai",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ya.cc",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "ya.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yads.tech",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex-bank.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex-team.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.aero",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.az",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.bg",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.by",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.ca",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.cloud",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.co.il",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.co.uk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com.am",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com.br",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com.ge",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.com.tr",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.cz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.de",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.ee",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.es",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.eu",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.fi",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.fr",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.gr",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.hu",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.id",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.in",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.io",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.it",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.jobs",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.kg",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.kz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.lt",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.lv",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.md",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.pl",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.pt",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.ro",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.rs",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.se",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.sk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.st",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.sx",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.tj",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.tm",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.tr",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.ua",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.uz",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandex.vn",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexadexchange.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexcloud.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexcom.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexmarket.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexmetrica.com",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexwebcache.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yandexwebcache.org",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yastat.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yastatic-net.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yastatic.net",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yoomoney.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yota.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "youla.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yula.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "yuwellanytime.co.uk",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "znanierussia.ru",
+        "action": "direct",
+        "profile": ""
+      },
+      {
+        "domain": "zvuk.com",
+        "action": "direct",
+        "profile": ""
+      }
+    ],
+    "defaultTunnel": false
+  }
+}

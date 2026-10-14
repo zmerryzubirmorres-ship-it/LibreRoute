@@ -21,9 +21,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Per-flow UID lookup. This socket and its immutable rules belong to one Core launch. */
 class AppRouteServer(context: Context, state: AppRoutingState) : AutoCloseable {
     private val manager = context.getSystemService(ConnectivityManager::class.java)
-    private val rules = appRulesByUid(state, state.rules.mapNotNull { rule ->
-        runCatching { rule.packageName to context.packageManager.getApplicationInfo(rule.packageName, 0).uid }.getOrNull()
-    }.toMap())
+    private val rules = run {
+        // One inventory per Core launch, never a package scan for each flow.
+        val uids = if (state.directRuPackages) context.packageManager.getInstalledApplications(0)
+            .associate { it.packageName to it.uid }
+        else state.rules.mapNotNull { rule ->
+            runCatching { rule.packageName to context.packageManager.getApplicationInfo(rule.packageName, 0).uid }.getOrNull()
+        }.toMap()
+        appRulesByUid(state.withPackageDefaults(uids), uids)
+    }
     private val closed = AtomicBoolean(false)
     private val sockets = ConcurrentHashMap.newKeySet<LocalSocket>()
     private val reported = ConcurrentHashMap.newKeySet<String>()

@@ -7,9 +7,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class AppRoutingPreferences(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("libreroute_app_routing", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    fun load(): AppRoutingState = prefs.getString("state", null)?.let { json.decodeFromString<AppRoutingState>(it) } ?: AppRoutingState()
+    fun load(): AppRoutingState = prefs.getString("state", null)?.let { json.decodeFromString<AppRoutingState>(it) }
+        ?: BundledRoutingDefaults.load(appContext).apps.let {
+            // UID-based routing is available from Android 10 onward.
+            if (android.os.Build.VERSION.SDK_INT >= 29) it else it.copy(enabled = false)
+        }
     fun store(state: AppRoutingState, profiles: ZapretProfileState) {
         state.validate(profiles)
         check(prefs.edit().putString("state", json.encodeToString(state)).commit()) { "Не удалось сохранить правила приложений" }
