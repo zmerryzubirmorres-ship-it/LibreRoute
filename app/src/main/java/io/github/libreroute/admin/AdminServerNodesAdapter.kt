@@ -63,56 +63,55 @@ class AdminServerNodesAdapter(
         val context = holder.itemView.context
 
         holder.tvFlag.text = when (item.nodeType) {
-            ServerNodeType.ROUTER_KEENETIC -> "📡"
-            ServerNodeType.ROUTER_OPENWRT -> "📶"
-            ServerNodeType.CUSTOM -> "⚙"
-            else -> "🖥"
+            ServerNodeType.ROUTER_KEENETIC, ServerNodeType.ROUTER_OPENWRT -> "LAN"
+            ServerNodeType.CUSTOM -> "Узел"
+            else -> "VDS"
         }
 
         holder.tvName.text = item.name
         val osSuffix = if (!item.inventory?.osName.isNullOrBlank()) " (${item.inventory?.osName})" else ""
-        holder.tvEndpoint.text = "${item.host}:${item.port} • ${item.nodeType.displayName}$osSuffix"
+        holder.tvEndpoint.text = "${item.host}:${item.port}$osSuffix"
         holder.tvCore.text = coreVersionSummary(item.coreObservation)
 
         val (statusText, statusColor) = when (item.status) {
-            ServerNodeStatus.ONLINE -> "В СЕТИ" to ContextCompat.getColor(context, R.color.colorSuccess)
-            ServerNodeStatus.DEGRADED -> "ЗАМЕДЛЕН" to ContextCompat.getColor(context, R.color.state_connecting)
-            ServerNodeStatus.OFFLINE -> "ОФЛАЙН" to ContextCompat.getColor(context, R.color.colorError)
-            ServerNodeStatus.UNKNOWN -> "НЕ ПРОВЕРЕН" to ContextCompat.getColor(context, R.color.text_secondary)
+            ServerNodeStatus.ONLINE -> "В сети" to ContextCompat.getColor(context, R.color.calm_success)
+            ServerNodeStatus.DEGRADED -> "Есть проблемы" to ContextCompat.getColor(context, R.color.calm_warning)
+            ServerNodeStatus.OFFLINE -> "Недоступен" to ContextCompat.getColor(context, R.color.calm_error)
+            ServerNodeStatus.UNKNOWN -> "Не проверен" to ContextCompat.getColor(context, R.color.text_secondary)
         }
         holder.tvStatusBadge.text = statusText
         holder.tvStatusBadge.setTextColor(statusColor)
 
         val inv = item.inventory
         if (inv != null && inv.probedAt > 0) {
-            holder.tvLatency.text = if (item.status == ServerNodeStatus.ONLINE) "⚡ Онлайн" else "⚡ Опрошен"
-            holder.tvLatency.setTextColor(ContextCompat.getColor(context, R.color.colorSuccess))
+            holder.tvLatency.text = "Проверено: " + java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(inv.probedAt))
         } else {
-            holder.tvLatency.text = "⚡ Не опрошен"
-            holder.tvLatency.setTextColor(ContextCompat.getColor(context, R.color.text_secondary))
+            holder.tvLatency.text = "Проверка ещё не выполнялась"
         }
+        holder.tvLatency.setTextColor(ContextCompat.getColor(context, R.color.text_secondary))
 
         val clientsCount = serverClientsMap[item.id] ?: 0
-        holder.tvClients.text = if (clientsCount == 1) "👥 1 клиент" else "👥 $clientsCount клиентов"
+        holder.tvClients.text = "Назначено пользователей: $clientsCount"
 
         if (inv != null && inv.probeError == null && (inv.cpuCores > 0 || inv.ramTotalMb > 0)) {
             holder.layoutMetrics.visibility = View.VISIBLE
             holder.tvError.visibility = View.GONE
 
             if (inv.cpuCores > 0) {
-                holder.tvCpuLabel.text = "CPU (${inv.cpuCores} cores, ${inv.arch})"
-                holder.tvCpuVal.text = "Готов"
-                holder.pbCpu.progress = 25
+                holder.tvCpuLabel.text = "Процессор"
+                holder.tvCpuVal.text = "Ядер: ${inv.cpuCores} · ${inv.arch}"
             } else {
-                holder.tvCpuLabel.text = "CPU"
+                holder.tvCpuLabel.text = "Процессор"
                 holder.tvCpuVal.text = "—"
                 holder.pbCpu.progress = 0
             }
+            holder.pbCpu.visibility = View.GONE
 
             if (inv.ramTotalMb > 0) {
                 val usedMb = (inv.ramTotalMb - inv.ramFreeMb).coerceAtLeast(0)
                 val percent = ((usedMb.toDouble() / inv.ramTotalMb.toDouble()) * 100).toInt().coerceIn(0, 100)
-                holder.tvRamVal.text = "$usedMb / ${inv.ramTotalMb} MB ($percent%)"
+                holder.tvRamVal.text = "$usedMb / ${inv.ramTotalMb} МБ · $percent%"
                 holder.pbRam.progress = percent
             } else {
                 holder.tvRamVal.text = "—"

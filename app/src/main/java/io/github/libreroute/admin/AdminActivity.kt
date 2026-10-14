@@ -75,6 +75,7 @@ class AdminActivity : AppCompatActivity() {
             "showAssignmentActionDialog" -> vm.assignments.value.firstOrNull { it.id == args.getString("id") }?.let { showAssignmentActionDialog(it) }
             "person" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showPersonDetails(it) }
             "access" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showAssignDocumentDialog(it) }
+            "management_channel" -> showManagementChannelDialog()
             "server" -> vm.serverNodes.value.firstOrNull { it.id == args.getString("id") }?.let { showServerNodeDetailsDialog(it) }
             "suspend_user" -> confirmSuspendUser(args.getString("id").orEmpty())
             "revoke_assignment" -> confirmRevokeAssignment(args.getString("id").orEmpty())
@@ -140,16 +141,26 @@ class AdminActivity : AppCompatActivity() {
     private lateinit var btnQuickInvite: MaterialButton
     private lateinit var peopleSearch: EditText
     private var peopleFilter: String = "all"
+    private var serverFilter: String = "all"
+    private val tabScrollPositions = mutableMapOf<Int, Int>()
     private var restoredOperationShown = false
     private var adminTab = R.id.nav_overview
 
     private fun setupCalmAdminNavigation(saved: Bundle?) {
         val nav = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.adminNavigation)
+        val scroll = findViewById<androidx.core.widget.NestedScrollView>(R.id.adminScroll)
+        listOf(R.id.nav_overview, R.id.nav_people, R.id.nav_servers).forEach { id ->
+            tabScrollPositions[id] = saved?.getInt("tab_scroll_$id") ?: 0
+        }
+        var navigationReady = false
         nav.setOnItemSelectedListener {
+            if (navigationReady && adminTab != it.itemId) tabScrollPositions[adminTab] = scroll.scrollY
             adminTab = it.itemId
             findViewById<View>(R.id.adminOverview).visibility = if (adminTab == R.id.nav_overview) View.VISIBLE else View.GONE
             layoutTabUsers.visibility = if (adminTab == R.id.nav_people) View.VISIBLE else View.GONE
             layoutTabServers.visibility = if (adminTab == R.id.nav_servers) View.VISIBLE else View.GONE
+            scroll.post { scroll.scrollTo(0, tabScrollPositions[adminTab] ?: 0) }
+            navigationReady = true
             true
         }
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
@@ -162,6 +173,15 @@ class AdminActivity : AppCompatActivity() {
         findViewById<View>(R.id.adminReturnUser).setOnClickListener { finish() }
         findViewById<View>(R.id.overviewInvite).setOnClickListener { showCreateUserDialog() }
         findViewById<View>(R.id.overviewAddServer).setOnClickListener { showAddServerNodeDialog() }
+        findViewById<View>(R.id.adminUsersMetric).setOnClickListener { nav.selectedItemId = R.id.nav_people }
+        findViewById<View>(R.id.adminServersMetric).setOnClickListener { nav.selectedItemId = R.id.nav_servers }
+        findViewById<View>(R.id.adminChannelSummary).setOnClickListener { showManagementChannelDialog() }
+        listOf(R.id.adminPeopleAdvancedToggle to R.id.adminPeopleAdvanced,
+            R.id.adminServersAdvancedToggle to R.id.adminServersAdvanced).forEach { (toggle, body) ->
+            findViewById<MaterialSwitch>(toggle).setOnCheckedChangeListener { _, checked ->
+                findViewById<View>(body).visibility = if (checked) View.VISIBLE else View.GONE
+            }
+        }
         findViewById<View>(R.id.adminAdvancedToggle).setOnClickListener {
             val advanced = findViewById<View>(R.id.adminOverviewAdvanced)
             advanced.visibility = if (advanced.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -173,6 +193,9 @@ class AdminActivity : AppCompatActivity() {
         outState.putBoolean("restored_operation_shown", restoredOperationShown)
         outState.putInt("admin_tab", adminTab)
         outState.putString("people_filter", peopleFilter)
+        outState.putString("server_filter", serverFilter)
+        tabScrollPositions[adminTab] = findViewById<androidx.core.widget.NestedScrollView>(R.id.adminScroll).scrollY
+        tabScrollPositions.forEach { (id, y) -> outState.putInt("tab_scroll_$id", y) }
         outState.putBoolean("audit_expanded", isAuditLogExpanded)
         outState.putBoolean("advanced", findViewById<View>(R.id.adminOverviewAdvanced).visibility == View.VISIBLE)
     }
@@ -180,12 +203,16 @@ class AdminActivity : AppCompatActivity() {
     private fun renderOverviewCounts() {
         val count = findViewById<TextView>(R.id.adminOverviewCounts)
         val nodes = vm.serverNodes.value
-        count.text = "Пользователи: ${vm.users.value.size} · Серверы: ${nodes.size}\n" +
-            when {
+        val users = vm.users.value
+        findViewById<TextView>(R.id.adminOverviewUserCount).text = users.size.toString()
+        findViewById<TextView>(R.id.adminOverviewUserHint).text = "Доступ разрешён: ${users.count { it.isActive }}"
+        findViewById<TextView>(R.id.adminOverviewServerCount).text = nodes.size.toString()
+        findViewById<TextView>(R.id.adminOverviewServerHint).text = "В сети: ${nodes.count { it.status == ServerNodeStatus.ONLINE }}"
+        count.text = when {
                 nodes.isEmpty() -> "Добавьте первый сервер, затем пригласите пользователя"
                 nodes.any { it.status == ServerNodeStatus.OFFLINE } -> "Есть недоступные серверы. Откройте раздел «Серверы»"
                 nodes.any { it.status == ServerNodeStatus.UNKNOWN } -> "Часть серверов ещё не проверена"
-                else -> "Состояние серверов доступно в разделе «Серверы»"
+                else -> "Откройте карточку пользователя для выдачи ссылки или карточку сервера для настройки."
             }
     }
 
@@ -202,15 +229,21 @@ class AdminActivity : AppCompatActivity() {
             }
             statusMatches && (query.isBlank() || user.name.lowercase().contains(query) || user.id.lowercase().contains(query))
         }
+        val assignedByUser = vm.assignments.value.filter { it.status != AdminAssignment.STATUS_REVOKED }.groupBy { it.userId }
+        val serverNames = vm.serverNodes.value.associate { it.id to it.name }
         filtered.forEach { user ->
-            val status = when {
-                user.isRevoked -> "Доступ отозван"
-                user.isSuspended -> "Доступ приостановлен"
-                vm.hasPendingUserDocument(user.id) -> "Ожидаем ключ устройства"
-                else -> "Активен"
-            }
-            rows.addView(io.github.libreroute.ui.CalmViews.row(this, user.name, status) { showPersonDetails(user) })
+            val routes = assignedByUser[user.id].orEmpty()
+                .distinctBy { it.serverId to it.transport }.groupBy { it.serverId }
+                .entries.joinToString("\n") { (id, assigned) ->
+                    val name = serverNames[id] ?: id
+                    "$name · ${assigned.joinToString { protocolLabel(it.transport) }}"
+                }.ifBlank { "Подключения пока не назначены" }
+            rows.addView(adminPeopleCard(this, user, vm.hasPendingUserDocument(user.id), routes) { showPersonDetails(user) })
         }
+        findViewById<View>(R.id.adminPeopleEmpty).visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.adminPeopleEmptyTitle).text = if (vm.users.value.isEmpty()) "Пока нет пользователей" else "Ничего не найдено"
+        findViewById<TextView>(R.id.adminPeopleEmptyHint).text = if (vm.users.value.isEmpty()) "Добавьте пользователя или обновите сведения."
+            else "Измените поиск или выберите другой фильтр."
         findViewById<TextView>(R.id.tv_people_filter_status).text = if (filtered.isEmpty()) {
             if (vm.users.value.isEmpty()) "Пользователи ещё не загружены" else "По заданному фильтру ничего не найдено"
         } else "Показано: ${filtered.size} из ${vm.users.value.size}"
@@ -239,6 +272,49 @@ class AdminActivity : AppCompatActivity() {
                 renderPeople()
             }
         }
+    }
+
+    private fun setupServerSearch() {
+        val search = findViewById<EditText>(R.id.adminServersSearch)
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderServerNodes()
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        findViewById<MaterialButtonToggleGroup>(R.id.serverFilters).check(when (serverFilter) {
+            "online" -> R.id.btn_servers_online; "attention" -> R.id.btn_servers_attention; else -> R.id.btn_servers_all
+        })
+        listOf(R.id.btn_servers_all to "all", R.id.btn_servers_online to "online", R.id.btn_servers_attention to "attention")
+            .forEach { (id, filter) -> findViewById<View>(id).setOnClickListener { serverFilter = filter; renderServerNodes() } }
+    }
+
+    private fun renderServerNodes() {
+        if (!::serverNodesAdapter.isInitialized) return
+        val query = findViewById<EditText>(R.id.adminServersSearch).text?.toString()?.trim().orEmpty()
+        val nodes = vm.serverNodes.value
+        val filtered = nodes.filter {
+            (query.isBlank() || it.name.contains(query, true) || it.host.contains(query, true)) && when (serverFilter) {
+                "online" -> it.status == ServerNodeStatus.ONLINE
+                "attention" -> it.status != ServerNodeStatus.ONLINE
+                else -> true
+            }
+        }
+        tvClusterServersSummary.text = "Показано: ${filtered.size} из ${nodes.size} · В сети: ${nodes.count { it.status == ServerNodeStatus.ONLINE }}"
+        tvEmptyServers.text = if (nodes.isEmpty()) "Добавьте первый сервер, чтобы настроить подключения." else "Серверы не найдены. Измените поиск или фильтр."
+        tvEmptyServers.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        rvServerNodes.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
+        serverNodesAdapter.submitList(filtered)
+    }
+
+    private fun showManagementChannelDialog() {
+        val channels = listOf(AdminChannel.AUTO, AdminChannel.ACTIVE_TRANSPORT, AdminChannel.DOCUMENT)
+        val labels = arrayOf("Автоматически", "Текущее подключение", "Через документ")
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Канал управления")
+            .setSingleChoiceItems(labels, channels.indexOf(vm.selectedChannel.value)) { item, index ->
+                toggleChannel.check(listOf(R.id.btn_channel_auto, R.id.btn_channel_active, R.id.btn_channel_doc)[index])
+                item.dismiss()
+            }.setNegativeButton("Закрыть", null).create()
+        dialogs.show(dialog, "management_channel")
     }
 
     private fun protocolLabel(transport: String): String = when (transport) {
@@ -339,8 +415,10 @@ class AdminActivity : AppCompatActivity() {
         initViews()
         restoredOperationShown = savedInstanceState?.getBoolean("restored_operation_shown") ?: false
         peopleFilter = savedInstanceState?.getString("people_filter") ?: "all"
+        serverFilter = savedInstanceState?.getString("server_filter") ?: "all"
         isAuditLogExpanded = savedInstanceState?.getBoolean("audit_expanded", true) ?: true
         setupPeopleSearch()
+        setupServerSearch()
         setupTopBar()
         setupChannelSelector()
         setupAdapters()
@@ -435,22 +513,6 @@ class AdminActivity : AppCompatActivity() {
         tvClusterSnapshotSummary = findViewById(R.id.tv_cluster_snapshot_summary)
 
         toggleAdminTabs.check(R.id.btn_tab_servers)
-        toggleAdminTabs.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            when (checkedId) {
-                R.id.btn_tab_servers -> {
-                    layoutTabServers.visibility = View.VISIBLE
-                    layoutTabUsers.visibility = View.GONE
-                }
-                R.id.btn_tab_users -> {
-                    layoutTabServers.visibility = View.GONE
-                    layoutTabUsers.visibility = View.VISIBLE
-                    vm.refreshUsers()
-                    vm.refreshAssignments()
-                    vm.refreshClusterSnapshot()
-                }
-            }
-        }
 
         btnProbeServerNode.setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -498,7 +560,7 @@ class AdminActivity : AppCompatActivity() {
     private fun setupTopBar() {
         findViewById<View>(R.id.btn_back).setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            finish()
+            onBackPressedDispatcher.onBackPressed()
         }
         findViewById<View>(R.id.btn_refresh).setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -510,7 +572,14 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private fun setupChannelSelector() {
-        toggleChannel.check(R.id.btn_channel_auto)
+        toggleChannel.isSaveFromParentEnabled = false
+        toggleChannel.check(when (vm.selectedChannel.value) {
+            AdminChannel.ACTIVE_TRANSPORT -> R.id.btn_channel_active
+            AdminChannel.DOCUMENT -> R.id.btn_channel_doc
+            AdminChannel.SSH_VDS -> R.id.btn_channel_vds
+            AdminChannel.SSH_NETCRAZE -> R.id.btn_channel_netcraze
+            else -> R.id.btn_channel_auto
+        })
         toggleChannel.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
             when (checkedId) {
@@ -664,12 +733,9 @@ class AdminActivity : AppCompatActivity() {
                 launch {
                     vm.serverNodes.collect { nodes ->
                         renderOverviewCounts()
+                        renderPeople()
                         findViewById<MaterialButton>(R.id.btn_tab_servers).text = "🖥 Серверы (${nodes.size})"
-                        val activeCount = nodes.count { it.status == ServerNodeStatus.ONLINE }
-                        tvClusterServersSummary.text = if (nodes.isEmpty()) "0 подключено" else "$activeCount/${nodes.size} подключено"
-                        tvEmptyServers.visibility = if (nodes.isEmpty()) View.VISIBLE else View.GONE
-                        rvServerNodes.visibility = if (nodes.isEmpty()) View.GONE else View.VISIBLE
-                        serverNodesAdapter.submitList(nodes)
+                        renderServerNodes()
                         updateServerClientsCount()
 
 
@@ -711,14 +777,14 @@ class AdminActivity : AppCompatActivity() {
                                 iconClusterHealth.setImageResource(R.drawable.ic_check)
                                 iconClusterHealth.setColorFilter(ContextCompat.getColor(this@AdminActivity, R.color.colorSuccess))
                                 tvClusterSnapshotSummary.setTextColor(ContextCompat.getColor(this@AdminActivity, R.color.colorSuccess))
-                                tvClusterSnapshotSummary.text = "Снимок кластера: Ревизия #${snapshot.revision} (Все узлы согласованы ✓)"
+                                tvClusterSnapshotSummary.text = "Сведения о серверах синхронизированы"
                             } else {
                                 cardClusterHealth.setCardBackgroundColor(android.graphics.Color.parseColor("#1AF59E0B"))
                                 cardClusterHealth.strokeColor = android.graphics.Color.parseColor("#33F59E0B")
                                 iconClusterHealth.setImageResource(R.drawable.ic_refresh)
                                 iconClusterHealth.setColorFilter(ContextCompat.getColor(this@AdminActivity, R.color.state_connecting))
                                 tvClusterSnapshotSummary.setTextColor(ContextCompat.getColor(this@AdminActivity, R.color.state_connecting))
-                                tvClusterSnapshotSummary.text = "Снимок кластера: Ревизия #${snapshot.revision} (ожидает синхронизации узлов)"
+                                tvClusterSnapshotSummary.text = "Готовность части серверов ещё не подтверждена"
                             }
                         } else {
                             cardClusterHealth.setCardBackgroundColor(android.graphics.Color.parseColor("#14FFFFFF"))
@@ -764,6 +830,7 @@ class AdminActivity : AppCompatActivity() {
                 }
                 launch {
                     vm.assignments.collect { assignments ->
+                        renderPeople()
                         assignmentsAdapter.submitList(assignments)
                         val isEmpty = assignments.isEmpty()
                         tvEmptyAssignments.visibility = if (isEmpty) View.VISIBLE else View.GONE
@@ -779,7 +846,15 @@ class AdminActivity : AppCompatActivity() {
                     }
                 }
                 launch {
-                    vm.selectedChannel.collect { updateCreateAvailability() }
+                    vm.selectedChannel.collect { channel ->
+                        updateCreateAvailability()
+                        findViewById<MaterialButton>(R.id.adminChannelSummary).text = "Канал управления: " + when (channel) {
+                            AdminChannel.AUTO -> "автоматически"
+                            AdminChannel.ACTIVE_TRANSPORT -> "текущее подключение"
+                            AdminChannel.DOCUMENT -> "через документ"
+                            else -> "SSH"
+                        }
+                    }
                 }
             }
         }
@@ -900,6 +975,7 @@ class AdminActivity : AppCompatActivity() {
                 layoutPendingInfo.visibility = View.GONE
             }
         }
+        if (role == AdminRole.OWNER || role == AdminRole.OPERATOR) btnActionPrimary.visibility = View.GONE
         updateCreateAvailability()
     }
 
@@ -907,6 +983,9 @@ class AdminActivity : AppCompatActivity() {
         if (!::btnAddProfile.isInitialized || !::btnActionPrimary.isInitialized) return
         val supported = vm.canPerform("create-user")
         btnAddProfile.isEnabled = supported
+        btnQuickInvite.isEnabled = supported
+        btnAddUser.isEnabled = supported
+        findViewById<View>(R.id.overviewInvite).isEnabled = supported
         if (vm.role.value == AdminRole.OWNER || vm.role.value == AdminRole.OPERATOR) {
             btnActionPrimary.isEnabled = supported
             btnActionPrimary.text = if (supported) "Добавить пользователя"
@@ -1444,12 +1523,8 @@ class AdminActivity : AppCompatActivity() {
     private fun updateServerClientsCount() {
         if (!::serverNodesAdapter.isInitialized) return
         val assignments = vm.assignments.value
-        val counts = mutableMapOf<String, Int>()
-        for (a in assignments) {
-            if (a.status != AdminAssignment.STATUS_REVOKED) {
-                counts[a.serverId] = (counts[a.serverId] ?: 0) + 1
-            }
-        }
+        val counts = assignments.filter { it.status != AdminAssignment.STATUS_REVOKED }
+            .groupBy { it.serverId }.mapValues { (_, assigned) -> assigned.map { it.userId }.distinct().size }
         serverNodesAdapter.setServerClientsCount(counts)
     }
 
