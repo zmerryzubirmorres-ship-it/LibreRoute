@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
@@ -19,6 +20,60 @@ import java.util.concurrent.atomic.AtomicInteger
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServerSetupLifecycleTest {
     private val node = ServerNode(id = "rotation-node", name = "Test", host = "192.0.2.10")
+
+    @Test fun preparationCancellationSurvivesReceivingAndActivityRecreation() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val store = ViewModelStore()
+        try {
+            val storage = InMemoryAdminStorage()
+            val operation = ServerInstallOperation("update-operation", node.id, "namespace", node,
+                "{}", "plan-hash", "owner", "device", kind = ServerInstallOperation.KIND_CORE_UPDATE, coordinator = true)
+            storage.putString("admin_install_operations", Json.encodeToString(listOf(operation)))
+            val repo = AdminRepository(storage = storage); repo.addServerNode(node)
+            val vm = ServerSetupViewModel(Application(), repo); store.put("setup", vm)
+            vm.initialize(node.id)
+            @Suppress("UNCHECKED_CAST")
+            val mutable = ServerSetupViewModel::class.java.getDeclaredField("mutableState").apply { isAccessible = true }
+                .get(vm) as MutableStateFlow<SetupState>
+            mutable.value = SetupState("install", true, "Передаём сборку…", preparationCancellable = true)
+            val save = AdminRepository::class.java.getDeclaredMethod("saveServerInstallation", ServerInstallOperation::class.java)
+                .apply { isAccessible = true }
+            save.invoke(repo, operation.copy(stage = ServerInstallOperation.SUBMITTING, serverStage = "receiving"))
+            assertTrue(vm.state.value.preparationCancellable)
+            val receiving = vm.state.value
+            vm.restoreCheckpoint(SetupCheckpoint("foreign", AdminChannel.DOCUMENT, "", "", false, SetupState()))
+            vm.initialize(node.id); vm.start()
+            assertEquals(receiving, vm.state.value)
+            vm.cancelPreparation()
+            assertTrue(vm.state.value.cancellationRequested)
+            assertFalse(vm.state.value.preparationCancellable)
+            save.invoke(repo, operation.copy(stage = ServerInstallOperation.SUBMITTING, serverStage = "receiving", receivedBytes = 100))
+            assertTrue(vm.state.value.cancellationRequested)
+            assertFalse(vm.state.value.preparationCancellable)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun preparationCancellationEndsWhenServerStartsSwitching() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val store = ViewModelStore()
+        try {
+            val storage = InMemoryAdminStorage()
+            val operation = ServerInstallOperation("switch-operation", node.id, "namespace", node,
+                "{}", "plan-hash", "owner", "device", kind = ServerInstallOperation.KIND_CORE_UPDATE, coordinator = true)
+            storage.putString("admin_install_operations", Json.encodeToString(listOf(operation)))
+            val repo = AdminRepository(storage = storage); repo.addServerNode(node)
+            val vm = ServerSetupViewModel(Application(), repo); store.put("setup", vm); vm.initialize(node.id)
+            @Suppress("UNCHECKED_CAST")
+            val mutable = ServerSetupViewModel::class.java.getDeclaredField("mutableState").apply { isAccessible = true }
+                .get(vm) as MutableStateFlow<SetupState>
+            mutable.value = SetupState("install", true, preparationCancellable = true)
+            AdminRepository::class.java.getDeclaredMethod("saveServerInstallation", ServerInstallOperation::class.java)
+                .apply { isAccessible = true }.invoke(repo, operation.copy(stage = ServerInstallOperation.SUBMITTING, serverStage = "switching"))
+            assertFalse(vm.state.value.preparationCancellable)
+            vm.cancelPreparation()
+            assertFalse(vm.state.value.cancellationRequested)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
 
     @Test fun freshApplicationNeverReinstallsDetectedCore() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())

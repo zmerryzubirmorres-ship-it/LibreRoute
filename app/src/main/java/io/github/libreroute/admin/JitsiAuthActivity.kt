@@ -15,12 +15,14 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.viewModels
 import io.github.libreroute.util.JitsiTokenStore
 import io.github.libreroute.util.JitsiBrowserHandoff
 import java.net.URI
 
 /** Browser handoff for Jitsi moderator login. The room JWT is returned in the URL fragment. */
 class JitsiAuthActivity : AppCompatActivity() {
+    private val retainedBrowser by viewModels<io.github.libreroute.ui.RetainedWebViewModel>()
     companion object {
         const val EXTRA_ROOM_URL = "extra_room_url"
 
@@ -71,7 +73,7 @@ class JitsiAuthActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 12)
         }
         root.addView(status, LinearLayout.LayoutParams(-1, -2))
-        browser = WebView(this)
+        browser = retainedBrowser.obtain(this)
         root.addView(browser, LinearLayout.LayoutParams(-1, 0, 1f))
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         actions.addView(Button(this).apply {
@@ -118,7 +120,7 @@ class JitsiAuthActivity : AppCompatActivity() {
         completed = savedInstanceState?.getBoolean("completed") ?: false
         savedInstanceState?.getString("status")?.let { status.text = it }
         val browserState = savedInstanceState?.getBundle("browser")
-        if (browserState == null || browser.restoreState(browserState) == null) browser.loadUrl(roomUrl)
+        if (browser.url == null && (browserState == null || browser.restoreState(browserState) == null)) browser.loadUrl(roomUrl)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { if (browser.canGoBack()) browser.goBack() else finish() }
         })
@@ -179,11 +181,8 @@ class JitsiAuthActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (::browser.isInitialized) {
-            browser.stopLoading()
-            browser.destroy()
+            retainedBrowser.detach(this)
         }
         super.onDestroy()
     }
 }
-
-

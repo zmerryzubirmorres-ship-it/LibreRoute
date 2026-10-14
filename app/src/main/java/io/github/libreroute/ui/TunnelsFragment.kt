@@ -80,6 +80,10 @@ class TunnelsFragment : BaseFragment() {
             "import" -> showImportLinkDialog()
             "configs" -> showConfigBottomSheet()
             "jitsi" -> vm.tunnels.value.firstOrNull { it.tunnel.id == args.getLong("id") }?.let { showJitsiRoomHelp(it.tunnel) }
+            "item_menu" -> vm.tunnels.value.firstOrNull { it.tunnel.id == args.getLong("id") }?.let { showItemContextMenu(requireView(), it.tunnel) }
+            "delete_tunnel" -> vm.tunnels.value.firstOrNull { it.tunnel.id == args.getLong("id") }?.let { confirmDelete(it.tunnel) }
+            "connection_error" -> showErrorDialog(args.getString("title").orEmpty(), args.getString("detail"))
+            "battery_prompt" -> showBatteryOptimizationPrompt { requestVpnAndStart() }
         }
     } }
     private val vm: TunnelsViewModel by activityViewModels()
@@ -124,7 +128,7 @@ class TunnelsFragment : BaseFragment() {
     private fun setupCalmNavigation(root: View, saved: Bundle?) {
         val navigation = root.findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.userNavigation)
           selectedCalmTab = saved?.getInt("calm_tab", R.id.nav_home) ?: R.id.nav_home
-          if (selectedCalmTab == R.id.nav_routes || selectedCalmTab == R.id.nav_add) selectedCalmTab = R.id.nav_home
+          if (selectedCalmTab == R.id.nav_add) selectedCalmTab = R.id.nav_home
           navigation.setOnItemSelectedListener { item ->
               if (item.itemId == R.id.nav_add) {
                   // The center action is deliberately an action, not a persistent tab.
@@ -161,7 +165,6 @@ class TunnelsFragment : BaseFragment() {
         // Routes remain reachable from the configuration selector; the primary
         // bottom bar follows the Amnezia pattern (home, add, settings).
         navigation.menu.findItem(R.id.nav_routes).isVisible = false
-        if (selectedCalmTab == R.id.nav_routes) navigation.selectedItemId = R.id.nav_home
     }
 
     private fun renderRoutes() {
@@ -698,7 +701,16 @@ class TunnelsFragment : BaseFragment() {
             val isIgnored = pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true
             if (!isIgnored && !appSettings.batteryOptPrompted) {
                 appSettings.batteryOptPrompted = true
-                MaterialAlertDialogBuilder(ctx)
+                showBatteryOptimizationPrompt(onProceed)
+                return
+            }
+        }
+        onProceed()
+    }
+
+    private fun showBatteryOptimizationPrompt(onProceed: () -> Unit) {
+        val ctx = context ?: return
+        val dialog = MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.battery_opt_prompt_title)
                     .setMessage(R.string.battery_opt_prompt_message)
                     .setPositiveButton(R.string.battery_opt_prompt_action) { _, _ ->
@@ -717,11 +729,8 @@ class TunnelsFragment : BaseFragment() {
                     .setNegativeButton(R.string.battery_opt_prompt_later) { _, _ ->
                         onProceed()
                     }
-                    .show()
-                return
-            }
-        }
-        onProceed()
+                    .create()
+        dialogs.show(dialog, "battery_prompt")
     }
 
     private fun observe() {
@@ -1181,7 +1190,7 @@ class TunnelsFragment : BaseFragment() {
             confirmDelete(tunnel)
         }
 
-        dialog.show()
+        dialogs.show(dialog, "item_menu", Bundle().apply { putLong("id", tunnel.id) })
     }
 
     private fun confirmDelete(tunnel: Tunnel) {
@@ -1204,7 +1213,7 @@ class TunnelsFragment : BaseFragment() {
             .setNegativeButton(R.string.cancel) { dialog, _ ->
                 dialog.dismiss()
             }
-            .show()
+            .create().let { dialogs.show(it, "delete_tunnel", Bundle().apply { putLong("id", tunnel.id) }) }
     }
 
     private fun showErrorDialog(rawOrTitle: String, detail: String? = null) {
@@ -1232,7 +1241,7 @@ class TunnelsFragment : BaseFragment() {
             .setNegativeButton(R.string.cancel) { dialog, _ ->
                 dialog.dismiss()
             }
-            .show()
+            .create().let { dialogs.show(it, "connection_error", Bundle().apply { putString("title", title); putString("detail", msg) }) }
     }
 
     private fun setConnectButtonLabel(value: String) {

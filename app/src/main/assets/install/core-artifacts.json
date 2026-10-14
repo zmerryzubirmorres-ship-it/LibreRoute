@@ -1,17 +1,17 @@
 {
     "artifacts":  {
                       "linux_arm64":  {
-                                          "source_sha256":  "4c8e36fc9124a912c75861e0077b69b64264b8eb5a2941f9e8965a125348cda9",
+                                          "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
                                           "sha256":  "71de8a87359850cfd1feb6d457710a43c4fd829294caa277b340079a1b514c8b",
                                           "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                       },
                       "native_arm64":  {
-                                           "source_sha256":  "4c8e36fc9124a912c75861e0077b69b64264b8eb5a2941f9e8965a125348cda9",
+                                           "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
                                            "sha256":  "5822b5d1c52f2c0c6ddb709a3af9dbece3839d60be764606172111c960c55cd9",
                                            "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                        },
                       "linux_amd64":  {
-                                          "source_sha256":  "4c8e36fc9124a912c75861e0077b69b64264b8eb5a2941f9e8965a125348cda9",
+                                          "source_sha256":  "2341dda62da56e26178658bbfe070e0a118884a65bbfd704357407e146789286",
                                           "sha256":  "595681ea9780db83b8b11585ba6a799270d26b1cff322faa8ec56981a3b7d441",
                                           "install_public_key":  "p66IUc49QPu7r4UCHnI8MH23uYzCYH6mhOVd2clbweI"
                                       }

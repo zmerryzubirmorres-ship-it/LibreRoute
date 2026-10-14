@@ -25,6 +25,7 @@ import java.io.File
 
 /** Human-operated Yandex challenge; no CAPTCHA solver or challenge URL is logged. */
 class YandexCaptchaActivity : AppCompatActivity() {
+    private val retainedBrowser by viewModels<RetainedWebViewModel>()
     private lateinit var browser: WebView
     private lateinit var chrome: BrowserChrome
     private lateinit var status: TextView
@@ -65,7 +66,7 @@ class YandexCaptchaActivity : AppCompatActivity() {
         chrome = BrowserChrome(this, savedInstanceState)
         val pageError = findViewById<TextView>(R.id.tv_error_view)
         val retryPage = findViewById<Button>(R.id.btn_retry_page)
-        browser = findViewById(R.id.web_view)
+        browser = retainedBrowser.replace(this, findViewById(R.id.web_view))
         // WebView itself has no IPv4-only setting. Install a loopback CONNECT
         // proxy before the first navigation; it resolves every destination to
         // an IPv4 address and leaves TLS/cookies end-to-end in Chromium.
@@ -151,7 +152,7 @@ class YandexCaptchaActivity : AppCompatActivity() {
                 if (!installed) {
                     status.text = "Не удалось включить IPv4 для проверки. Проверьте сеть"
                 } else if (!isFinishing && !isDestroyed) {
-                    if (browserState == null || browser.restoreState(browserState) == null) browser.loadUrl(documentUrl)
+                    if (browser.url == null && (browserState == null || browser.restoreState(browserState) == null)) browser.loadUrl(documentUrl)
                 }
             }
         }
@@ -249,8 +250,7 @@ class YandexCaptchaActivity : AppCompatActivity() {
     override fun onDestroy() {
         ipv4Proxy = null
         if (::browser.isInitialized) {
-            browser.stopLoading()
-            browser.destroy()
+            retainedBrowser.detach(this)
         }
         super.onDestroy()
     }

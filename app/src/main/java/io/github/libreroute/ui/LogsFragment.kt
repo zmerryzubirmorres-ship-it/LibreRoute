@@ -91,6 +91,7 @@ class LogsFragment : BaseFragment() {
         }
 
         autoScroll = savedInstanceState?.getBoolean("auto_scroll", true) ?: true
+        val restoreLogLevelPopup = savedInstanceState?.getBoolean("log_level_popup", false) == true
         allLogItems.clear()
         textView = view.findViewById(R.id.logs)
         scrollView = view.findViewById(R.id.log_scroll)
@@ -151,6 +152,7 @@ class LogsFragment : BaseFragment() {
         }
 
         dialogs.restore()
+        if (restoreLogLevelPopup) btnConnectionLogLevel.post { showLogLevelPopup(btnConnectionLogLevel, appSettings) }
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 EventBus.events.collect { ev ->
@@ -162,6 +164,7 @@ class LogsFragment : BaseFragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("auto_scroll", autoScroll)
+        outState.putBoolean("log_level_popup", activeLogLevelPopup?.isShowing == true)
         super.onSaveInstanceState(outState)
     }
 
@@ -426,7 +429,10 @@ class LogsFragment : BaseFragment() {
     }
 
     private fun showShareDialog() {
-        val text = textView.text.toString()
+        val setupLog = runCatching { io.github.libreroute.admin.InstallationLog.file(requireContext())
+            .takeIf { it.isFile }?.readText()?.takeLast(128 * 1024).orEmpty() }.getOrDefault("")
+        val text = listOf(textView.text.toString(), setupLog.takeIf { it.isNotBlank() }
+            ?.let { "Настройка сервера\n$it" }.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n")
         if (text.isBlank()) {
             Toast.makeText(requireContext(), R.string.share_logs_empty, Toast.LENGTH_SHORT).show()
             return

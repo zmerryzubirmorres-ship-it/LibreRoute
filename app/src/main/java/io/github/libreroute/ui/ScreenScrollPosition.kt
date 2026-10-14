@@ -20,6 +20,7 @@ class ScreenScrollPosition(owner: SavedStateRegistryOwner, private val scroll: S
 
     fun beforeRebuild() {
         val position = pending ?: scroll.scrollY
+        pending = position
         listener?.let(scroll::removeOnLayoutChangeListener)
         listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             listener?.let(scroll::removeOnLayoutChangeListener)

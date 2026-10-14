@@ -12,6 +12,8 @@ import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -23,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class Ipv4WebViewProxy {
     private val running = AtomicBoolean(true)
     private val executor = Executors.newCachedThreadPool()
+    private val sockets = ConcurrentHashMap.newKeySet<Socket>()
+    private val proxyCallbackExecutor = Executor { it.run() }
     private val server = ServerSocket(0, 16, java.net.InetAddress.getByName("127.0.0.1"))
     val port: Int get() = server.localPort
 
@@ -31,7 +35,12 @@ internal class Ipv4WebViewProxy {
             while (running.get()) {
                 try {
                     val client = server.accept()
-                    executor.execute { handle(client) }
+                    sockets.add(client)
+                    try { executor.execute { serve(client) } }
+                    catch (error: java.util.concurrent.RejectedExecutionException) {
+                        sockets.remove(client)
+                        client.close()
+                    }
                 } catch (_: Exception) {
                     if (running.get()) continue
                 }
@@ -47,7 +56,7 @@ internal class Ipv4WebViewProxy {
         val config = ProxyConfig.Builder()
             .addProxyRule("http://127.0.0.1:$port")
             .build()
-        ProxyController.getInstance().setProxyOverride(config, Executors.newSingleThreadExecutor(), Runnable {
+        ProxyController.getInstance().setProxyOverride(config, proxyCallbackExecutor, Runnable {
             Handler(Looper.getMainLooper()).post { callback(true) }
         })
     }
@@ -55,12 +64,33 @@ internal class Ipv4WebViewProxy {
     fun close() {
         if (!running.compareAndSet(true, false)) return
         runCatching { server.close() }
-        ProxyController.getInstance().clearProxyOverride(Executors.newSingleThreadExecutor(), Runnable {})
+        runCatching {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+                ProxyController.getInstance().clearProxyOverride(proxyCallbackExecutor, Runnable {})
+            }
+        }
+        sockets.forEach { runCatching { it.close() } }
+        sockets.clear()
         executor.shutdownNow()
     }
 
-    private fun handle(client: Socket) {
-        client.use { socket ->
+    private fun serve(client: Socket) {
+        var connected = false
+        try {
+            handle(client) { connected = true }
+        } catch (_: java.io.IOException) {
+            // A failed provider resource is a browser request failure, never an
+            // uncaught executor exception that terminates the whole application.
+            if (!connected) runCatching { writeError(client.getOutputStream(), "502 Bad Gateway") }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Closing the screen can shut down the relay between CONNECT and submit.
+        } finally {
+            sockets.remove(client)
+            runCatching { client.close() }
+        }
+    }
+
+    private fun handle(socket: Socket, established: () -> Unit) {
             socket.soTimeout = 15_000
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.ISO_8859_1))
             val requestLine = reader.readLine() ?: return
@@ -73,17 +103,21 @@ internal class Ipv4WebViewProxy {
             val colon = target.lastIndexOf(':')
             val host = if (colon > 0) target.substring(0, colon) else target
             val port = target.substringAfterLast(':', "443").toIntOrNull() ?: 443
+            if (port !in 1..65535) { writeError(socket.getOutputStream(), "400 Bad Request"); return }
             // Consume CONNECT headers before opening the IPv4 socket.
             while (reader.readLine()?.isNotEmpty() == true) { }
             val address = java.net.InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }
                 ?: run { writeError(socket.getOutputStream(), "502 Bad Gateway"); return }
             val upstream = Socket()
-            upstream.use {
-                it.connect(InetSocketAddress(address, port), 10_000)
-                socket.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
-                relay(socket, it)
-            }
-        }
+            sockets.add(upstream)
+            try {
+                upstream.use {
+                    it.connect(InetSocketAddress(address, port), 10_000)
+                    socket.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
+                    established()
+                    relay(socket, it)
+                }
+            } finally { sockets.remove(upstream) }
     }
 
     private fun relay(left: Socket, right: Socket) {

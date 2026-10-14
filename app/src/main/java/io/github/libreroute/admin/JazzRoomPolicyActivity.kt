@@ -51,7 +51,7 @@ class JazzRoomPolicyActivity : AppCompatActivity() {
             lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
                 vm.state.collect {
                     render()
-                    it.error?.let { error -> status.text = "$error. Проверьте результат перед повторным изменением." }
+                    if (vm.validationMessage == null) it.error?.let { error -> status.text = "$error. Проверьте результат перед повторным изменением." }
                 }
             }
         }
@@ -70,7 +70,7 @@ class JazzRoomPolicyActivity : AppCompatActivity() {
         content.removeAllViews()
         content.addView(CalmViews.row(this,"СберДжаз · комнаты",repository.getServerNode(nodeId)?.name.orEmpty()))
         button("Назад") { finish() }
-        status = TextView(this).apply { text = if (busy) "Проверяем сервер…" else "Настройки и занятые места подтверждает сервер" }
+        status = TextView(this).apply { text = if (busy) "Проверяем сервер…" else vm.validationMessage ?: "Настройки и занятые места подтверждает сервер" }
         content.addView(status)
         button("Проверить результат") { refresh() }
         val view = projection ?: return
@@ -93,7 +93,11 @@ class JazzRoomPolicyActivity : AppCompatActivity() {
             val chosen = if (modes.checkedRadioButtonId==shared.id) "shared_pool" else "dedicated"
             val p = if (chosen=="dedicated") 1 else pairs.text.toString().toIntOrNull()
             val r = rooms.text.toString().toIntOrNull()
-            if (p == null || p !in 1..2 || r == null || r !in 1..16) { status.text="Укажите 1–2 пары и 1–16 комнат"; return@button }
+            if (p == null || p !in 1..2 || r == null || r !in 1..16) {
+                vm.validationMessage = "Укажите 1–2 пары и 1–16 комнат"
+                status.text = vm.validationMessage
+                return@button
+            }
             pendingMode=chosen; pendingPairs=p.toString(); pendingRooms=r.toString()
             val repo = repository
             runOperation(commitDraft = true) { repo.setJazzRoomPolicy(it,policy.copy(placement_mode=chosen,max_pairs_per_room=p,max_rooms=r)) }

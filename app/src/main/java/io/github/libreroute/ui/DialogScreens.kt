@@ -63,6 +63,10 @@ class DialogScreens(
         }
     }
 
+    fun dismiss(key: String) {
+        screens.toList().asReversed().filter { it.key == key }.forEach { it.dialog.dismiss() }
+    }
+
     /** A Fragment may lose its view while the Fragment itself stays on Back stack. */
     fun detach() {
         pending.addAll(screens.filter { it.dialog.isShowing }.map {

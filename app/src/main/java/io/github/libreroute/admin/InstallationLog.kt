@@ -7,8 +7,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Private diagnostic log for server setup. It is intentionally kept outside the
- * UI: support can pull it with `adb shell run-as` without exposing credentials.
+ * Redacted server setup diagnostics, retained privately and mirrored to logcat.
+ * The log export also includes this file in non-debuggable GitHub builds.
  */
 object InstallationLog {
     private const val FILE_NAME = "admin-installation.log"
@@ -30,6 +30,7 @@ object InstallationLog {
                 }
                 val safe = redact(details).replace('\n', ' ').trim()
                 target.appendText("${format.format(Date())} $event${if (safe.isBlank()) "" else " $safe"}\n")
+                android.util.Log.i("LibreRouteSetup", "$event${if (safe.isBlank()) "" else " $safe"}")
                 target.setReadable(false, false)
                 target.setReadable(true, true)
                 target.setWritable(false, false)

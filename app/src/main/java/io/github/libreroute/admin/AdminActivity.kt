@@ -76,6 +76,9 @@ class AdminActivity : AppCompatActivity() {
             "person" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showPersonDetails(it) }
             "access" -> vm.users.value.firstOrNull { it.id == args.getString("id") }?.let { showAssignDocumentDialog(it) }
             "server" -> vm.serverNodes.value.firstOrNull { it.id == args.getString("id") }?.let { showServerNodeDetailsDialog(it) }
+            "suspend_user" -> confirmSuspendUser(args.getString("id").orEmpty())
+            "revoke_assignment" -> confirmRevokeAssignment(args.getString("id").orEmpty())
+            "delete_server" -> confirmDeleteServer(args.getString("id").orEmpty())
         }
     } }
     private val dialogOperation by viewModels<io.github.libreroute.ui.ScreenOperationViewModel>()
@@ -297,10 +300,7 @@ class AdminActivity : AppCompatActivity() {
             if (user.isActive) screen.action("Настроить доступ") { showAssignDocumentDialog(user) }
             screen.scrollView.post { screen.scrollView.scrollTo(0, readingPosition) }
             if (user.isActive) screen.action("Приостановить доступ", destructive = true) {
-                MaterialAlertDialogBuilder(this).setTitle("Приостановить доступ?")
-                    .setMessage("Пользователь «${user.name}» потеряет доступ к назначенным маршрутам.")
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Приостановить") { _, _ -> vm.suspendUser(user.id); screen.dismiss() }.show()
+                confirmSuspendUser(user.id)
             }
         }
         render()
@@ -561,15 +561,7 @@ class AdminActivity : AppCompatActivity() {
                 vm.issueAssignmentInvitation(assignment.id)
             },
             onRevokeClicked = { assignment ->
-                val userName = vm.users.value.firstOrNull { it.id == assignment.userId }?.name ?: assignment.userId
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Отозвать доступ?")
-                    .setMessage("Отозвать маршрут ${assignment.transport} для пользователя $userName на сервере ${assignment.serverId}?")
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Отозвать") { _, _ ->
-                        vm.revokeAssignment(assignment.id)
-                    }
-                    .show()
+                confirmRevokeAssignment(assignment.id)
             },
             onItemClicked = { assignment ->
                 showAssignmentActionDialog(assignment)
@@ -1398,14 +1390,7 @@ class AdminActivity : AppCompatActivity() {
         if (assignment.status != AdminAssignment.STATUS_REVOKED) {
             options.add("Отозвать назначение")
             actions.add {
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Отозвать доступ?")
-                    .setMessage("Отозвать маршрут ${assignment.transport} для пользователя $userName на сервере ${assignment.serverId}?")
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Отозвать") { _, _ ->
-                        vm.revokeAssignment(assignment.id)
-                    }
-                    .show()
+                confirmRevokeAssignment(assignment.id)
             }
         }
 
@@ -1619,11 +1604,36 @@ class AdminActivity : AppCompatActivity() {
             showMessage("Технические сведения", message)
         }
         screen.action("Удалить сервер", destructive = true) {
-            MaterialAlertDialogBuilder(this).setTitle("Удалить сервер?")
-                .setMessage("Удалить «${node.name}» из списка серверов?")
-                .setNegativeButton("Отмена", null)
-                .setPositiveButton("Удалить") { _, _ -> vm.removeServerNode(node.id); screen.dismiss() }.show()
+            confirmDeleteServer(node.id)
         }
         dialogs.show(screen, "server", Bundle().apply { putString("id", node.id) })
+    }
+
+    private fun confirmSuspendUser(id: String) {
+        val user = vm.users.value.firstOrNull { it.id == id } ?: return
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Приостановить доступ?")
+            .setMessage("Пользователь «${user.name}» потеряет доступ к назначенным маршрутам.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Приостановить") { _, _ -> vm.suspendUser(id); dialogs.dismiss("person") }.create()
+        dialogs.show(dialog, "suspend_user", Bundle().apply { putString("id", id) })
+    }
+
+    private fun confirmRevokeAssignment(id: String) {
+        val assignment = vm.assignments.value.firstOrNull { it.id == id } ?: return
+        val userName = vm.users.value.firstOrNull { it.id == assignment.userId }?.name ?: assignment.userId
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Отозвать доступ?")
+            .setMessage("Отозвать маршрут ${assignment.transport} для пользователя $userName на сервере ${assignment.serverId}?")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Отозвать") { _, _ -> vm.revokeAssignment(id) }.create()
+        dialogs.show(dialog, "revoke_assignment", Bundle().apply { putString("id", id) })
+    }
+
+    private fun confirmDeleteServer(id: String) {
+        val node = vm.serverNodes.value.firstOrNull { it.id == id } ?: return
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Удалить сервер?")
+            .setMessage("Удалить «${node.name}» из списка серверов?")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Удалить") { _, _ -> vm.removeServerNode(id); dialogs.dismiss("server") }.create()
+        dialogs.show(dialog, "delete_server", Bundle().apply { putString("id", id) })
     }
 }

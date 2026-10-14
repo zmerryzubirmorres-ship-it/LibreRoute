@@ -38,6 +38,7 @@ import io.github.libreroute.util.JitsiTokenStore
  * and securely exports the resulting cookies (including HttpOnly) as an encrypted AuthBundle.
  */
 class RemoteAuthActivity : AppCompatActivity() {
+    private val retainedBrowser by viewModels<io.github.libreroute.ui.RetainedWebViewModel>()
 
     companion object {
         private const val TAG = "RemoteAuthActivity"
@@ -113,6 +114,10 @@ class RemoteAuthActivity : AppCompatActivity() {
                 val origins = args.getBundle("origins") ?: Bundle()
                 confirmAndDispatch(session, origins.keySet().associateWith { origins.getString(it).orEmpty() })
             }
+            "missing_session" -> activeSession?.let { session ->
+                val origins = args.getBundle("origins") ?: Bundle()
+                showMissingSessionPrompt(session, origins.keySet().associateWith { origins.getString(it).orEmpty() })
+            }
             "applied" -> showAuthApplied(args.getLong("generation"))
         }
     } }
@@ -132,7 +137,7 @@ class RemoteAuthActivity : AppCompatActivity() {
         tvTunnelBadge = findViewById(R.id.tv_tunnel_badge)
         tvSessionStatus = findViewById(R.id.tv_session_status)
         tvIncidentBanner = findViewById(R.id.tv_incident_banner)
-        webView = findViewById(R.id.web_view)
+        webView = retainedBrowser.replace(this, findViewById(R.id.web_view))
         tvErrorView = findViewById(R.id.tv_error_view)
         btnManualFallback = findViewById(R.id.btn_manual_fallback)
         btnSendAuth = findViewById(R.id.btn_send_auth)
@@ -302,7 +307,7 @@ class RemoteAuthActivity : AppCompatActivity() {
                                     prefs.edit().putString("context", contextKey).apply()
                                     val history = savedBrowser.takeIf { sameContext }
                                     savedBrowser = null
-                                    if (history == null || webView.restoreState(history) == null) {
+                                    if (webView.url == null && (history == null || webView.restoreState(history) == null)) {
                                         openAddress(intent.getStringExtra(EXTRA_DOC_URL)?.takeIf { it.isNotBlank() } ?: session.documentUrl)
                                     }
                                     dialogs.restore()
@@ -410,18 +415,25 @@ class RemoteAuthActivity : AppCompatActivity() {
         }
 
         if (!foundAny) {
-            AlertDialog.Builder(this)
+            showMissingSessionPrompt(session, originsMap)
+            return
+        }
+
+        confirmAndDispatch(session, originsMap)
+    }
+
+    private fun showMissingSessionPrompt(session: AuthSession, originsMap: Map<String, String>) {
+        val dialog = AlertDialog.Builder(this)
                 .setTitle("Сессионный токен не обнаружен")
                 .setMessage("В сохранённых cookies не найден параметр 'Session_id'. Авторизация может быть неполной. Отправить всё равно?")
                 .setPositiveButton("Отправить") { _, _ ->
                     confirmAndDispatch(session, originsMap)
                 }
                 .setNegativeButton("Отмена", null)
-                .show()
-            return
-        }
-
-        confirmAndDispatch(session, originsMap)
+                .create()
+        dialogs.show(dialog, "missing_session", Bundle().apply {
+            putBundle("origins", Bundle().apply { originsMap.forEach { (key, value) -> putString(key, value) } })
+        })
     }
 
     private fun confirmAndDispatch(session: AuthSession, origins: Map<String, String>) {
@@ -547,7 +559,7 @@ class RemoteAuthActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        if (::webView.isInitialized) { webView.stopLoading(); webView.destroy() }
+        if (::webView.isInitialized) retainedBrowser.detach(this)
         super.onDestroy()
     }
 }

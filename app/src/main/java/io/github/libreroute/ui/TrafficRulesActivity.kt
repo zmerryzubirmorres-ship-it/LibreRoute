@@ -63,7 +63,7 @@ class TrafficRulesActivity : AppCompatActivity() {
     private val inventory by viewModels<InstalledAppsViewModel>()
     private val applyingPreset get() = operation.state.value.running
     private val dialogs by lazy { DialogScreens(this) { key, _ ->
-        when (key) { "help" -> showHelp(); "preset" -> showRussianPreset(); "reset" -> resetSelection() }
+        when (key) { "help" -> showHelp(); "preset" -> showRussianPreset(); "reset" -> resetSelection(); "add_site" -> showAddSite() }
     } }
     private var apps: List<InstalledApp> = emptyList()
     private var appState = AppRoutingState()
@@ -205,7 +205,6 @@ class TrafficRulesActivity : AppCompatActivity() {
             }
         }
         loadInventory()
-        if (savedInstanceState?.getBoolean("adding_site") == true) showAddSite(savedInstanceState.getString("new_domain").orEmpty())
         dialogs.restore()
     }
 
@@ -447,8 +446,7 @@ class TrafficRulesActivity : AppCompatActivity() {
                 content.findViewById<TextInputLayout>(R.id.layout_domain_input).error = it.message
             })
         }
-        dialog.setOnDismissListener { if (addDialog === dialog) { addDialog = null; addInput = null } }
-        dialog.show()
+        dialogs.show(dialog, "add_site") { if (addDialog === dialog) { addDialog = null; addInput = null } }
         dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 

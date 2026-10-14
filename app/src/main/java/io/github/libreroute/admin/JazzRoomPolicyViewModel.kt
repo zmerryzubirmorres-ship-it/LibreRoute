@@ -23,11 +23,15 @@ class JazzRoomPolicyViewModel(private val saved: SavedStateHandle) : ViewModel()
     var rooms: String?
         get() = saved["rooms"]
         set(value) { saved["rooms"] = value }
+    var validationMessage: String?
+        get() = saved["validation_message"]
+        set(value) { saved["validation_message"] = value }
     var initialized = false
 
     fun run(node: ServerNode, commitDraft: Boolean, action: (ServerNode) -> Result<JazzPoolProjection>) {
         if (mutable.value.running) return
         initialized = true
+        validationMessage = null
         mutable.value = mutable.value.copy(running = true, error = null)
         viewModelScope.launch {
             val result = try { withContext(Dispatchers.IO) { action(node) } }

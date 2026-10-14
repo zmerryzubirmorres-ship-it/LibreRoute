@@ -33,7 +33,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 
 data class SetupState(val stage: String = "check", val busy: Boolean = false,
-                      val summary: String = "", val error: String? = null)
+                      val summary: String = "", val error: String? = null,
+                      val preparationCancellable: Boolean = false, val cancellationRequested: Boolean = false)
 
 internal data class SetupCheckpoint(val operationId: String, val channel: AdminChannel,
     val document: String, val profileName: String, val automatic: Boolean, val state: SetupState)
@@ -59,8 +60,15 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         viewModelScope.launch {
             repo.installationOperations.collect { operations ->
                 val operation = operations.firstOrNull { it.operationId == operationId } ?: return@collect
-                if (mutableState.value.busy && operation.coordinator) {
-                    mutableState.value = mutableState.value.copy(summary = coreUpdateProgressLabel(operation))
+                if (mutableState.value.busy) {
+                    val state = mutableState.value
+                    mutableState.value = state.copy(
+                        summary = if (operation.coordinator && !state.cancellationRequested) coreUpdateProgressLabel(operation) else state.summary,
+                        preparationCancellable = !state.cancellationRequested && operation.kind == ServerInstallOperation.KIND_CORE_UPDATE &&
+                            operation.stage !in setOf(ServerInstallOperation.READY, ServerInstallOperation.ROLLED_BACK,
+                                ServerInstallOperation.CANCELLED_BEFORE_SUBMIT, ServerInstallOperation.FAILED_BEFORE_SUBMIT) &&
+                            (operation.stage == ServerInstallOperation.PLANNED || operation.coordinator &&
+                                operation.serverStage in setOf("", "planned", "receiving", "verified", "prepared")))
                 }
             }
         }
@@ -72,7 +80,12 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
             mutableState.value = mutableState.value.copy(summary = "Выбран канал: ${channel.displayName}")
         }
     }
-    fun cancelPreparation() { repo.cancelCoreUpdatePreparation(operationId) }
+    fun cancelPreparation() {
+        if (!mutableState.value.preparationCancellable || mutableState.value.cancellationRequested) return
+        mutableState.value = mutableState.value.copy(preparationCancellable = false, cancellationRequested = true,
+            summary = "Останавливаем подготовку. Сохранённый прогресс будет доступен после остановки…")
+        repo.cancelCoreUpdatePreparation(operationId)
+    }
     fun continueUpdate() {
         val target = node ?: return
         if (mutableState.value.busy) return
@@ -309,7 +322,8 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         if (mutableState.value.busy) return
         val target = node ?: return
         operationId = UUID.randomUUID().toString()
-        mutableState.value = SetupState(stage = "install", busy = true, summary = "Обновляем ядро до ${CoreCompatibility.REQUIRED_VERSION}…")
+        mutableState.value = SetupState(stage = "install", busy = true, summary = "Обновляем ядро до ${CoreCompatibility.REQUIRED_VERSION}…",
+            preparationCancellable = true)
         InstallationLog.append(getApplication(), "core_update_start", "host=${target.host} operation_id=$operationId")
         viewModelScope.launch {
             try {
@@ -425,6 +439,9 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
 /** User flow: automatic server check → one loading screen → success or error. */
 class ServerSetupActivity : AppCompatActivity() {
     private val vm: ServerSetupViewModel by viewModels()
+    private val dialogs by lazy { io.github.libreroute.ui.DialogScreens(this) { key, _ ->
+        when (key) { "owner_recovery" -> confirmOwnerRecovery(); "core_update" -> confirmCoreUpdate() }
+    } }
     private val scrollPosition by lazy { io.github.libreroute.ui.ScreenScrollPosition(this, content.parent as ScrollView) }
     private lateinit var content: LinearLayout
     private var protocolsOpened = false
@@ -445,6 +462,7 @@ class ServerSetupActivity : AppCompatActivity() {
         root.addView(ScrollView(this).apply { id = io.github.libreroute.ui.DialogScreens.stateId("server-setup-scroll") }.apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { vm.state.collect { render(it) } } }
         content.post { vm.start() }
+        dialogs.restore()
     }
 
     override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("protocols_opened", protocolsOpened); vm.save(outState); super.onSaveInstanceState(outState) }
@@ -458,7 +476,7 @@ class ServerSetupActivity : AppCompatActivity() {
         if (state.busy) {
             content.addView(ProgressBar(this))
             content.addView(CalmViews.row(this, "Подождите", state.summary.ifBlank { "Проверяем сервер…" }))
-            if (vm.node?.id?.let { AdminRepository.getInstance(this).latestServerInstallation(it)?.stage } == ServerInstallOperation.PLANNED) {
+            if (state.preparationCancellable) {
                 action("Отменить подготовку") { vm.cancelPreparation() }
             }
             return
@@ -519,11 +537,7 @@ class ServerSetupActivity : AppCompatActivity() {
                 content.addView(CalmViews.row(this, "Ядро уже установлено",
                     "Повторная установка не требуется. Чтобы начать управление из этого приложения, восстановите права владельца или примите приглашение администратора."))
                 action("Восстановить права владельца") {
-                    androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("Восстановить доступ к серверу?")
-                        .setMessage("Будут восстановлены права владельца для этого приложения через SSH. Установленное ядро и настройки сохранятся. Для восстановления передаётся служебная сборка; обновление ядра выполняется отдельно.")
-                        .setNegativeButton("Отмена", null)
-                        .setPositiveButton("Восстановить") { _, _ -> vm.requestOwnerRecovery() }.show()
+                    confirmOwnerRecovery()
                 }
             }
             !inventory.installedLibreRouteVersion.isNullOrBlank() -> {
@@ -597,11 +611,7 @@ class ServerSetupActivity : AppCompatActivity() {
             if (observation != null && observation.checkedAt != 0L && observation.error == null && observation.info?.needsUpdate != false) {
                 content.addView(CalmViews.row(this, "Нужно обновить ядро", "На сервере старое или несовместимое ядро. Доступно ${CoreCompatibility.REQUIRED_VERSION}. Обновление сохранит SSH, права владельца и настройки."))
                 action("Обновить ядро до ${CoreCompatibility.REQUIRED_VERSION}", enabled = block == null) {
-                    androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("Обновить ядро сервера?")
-                        .setMessage("Будет установлена подписанная сборка ${CoreCompatibility.REQUIRED_VERSION}. Служба кратковременно перезапустится. Доступ и настройки сохранятся; при сбое предусмотрен откат.")
-                        .setNegativeButton("Позже", null)
-                        .setPositiveButton("Обновить") { _, _ -> vm.updateCore() }.show()
+                    confirmCoreUpdate()
                 }
             }
             // Local drafts and browser authorization can be prepared before
@@ -634,6 +644,24 @@ class ServerSetupActivity : AppCompatActivity() {
         startActivity(android.content.Intent(this, ProtocolSetupActivity::class.java).putExtra(ProtocolSetupActivity.EXTRA_SERVER_ID, vm.node?.id.orEmpty()))
     }
 
+    private fun confirmOwnerRecovery() {
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Восстановить доступ к серверу?")
+            .setMessage("Будут восстановлены права владельца для этого приложения через SSH. Установленное ядро и настройки сохранятся. Для восстановления передаётся служебная сборка; обновление ядра выполняется отдельно.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Восстановить") { _, _ -> vm.requestOwnerRecovery() }.create()
+        dialogs.show(dialog, "owner_recovery")
+    }
+
+    private fun confirmCoreUpdate() {
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Обновить ядро сервера?")
+            .setMessage("Будет установлена подписанная сборка ${CoreCompatibility.REQUIRED_VERSION}. Служба кратковременно перезапустится. Доступ и настройки сохранятся; при сбое предусмотрен откат.")
+            .setNegativeButton("Позже", null)
+            .setPositiveButton("Обновить") { _, _ -> vm.updateCore() }.create()
+        dialogs.show(dialog, "core_update")
+    }
+
     private fun action(text: String, enabled: Boolean = true, click: () -> Unit) {
         content.addView(MaterialButton(this).apply { this.text = text; isAllCaps = false; isEnabled = enabled; setOnClickListener { click() } }, LinearLayout.LayoutParams(-1, CalmViews.dp(this, 56)))
     }
@@ -643,5 +671,4 @@ class ServerSetupActivity : AppCompatActivity() {
         finish()
     }
 }
-
 
