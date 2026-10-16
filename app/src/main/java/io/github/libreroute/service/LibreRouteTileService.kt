@@ -98,8 +98,7 @@ class LibreRouteTileService : TileService() {
             setTileInactive()
         } else {
             val appSettings = AppSettings(this)
-            val selected = TunnelRepository(this).getSelected()
-            if (!appSettings.proxyOnlyMode || selected?.let { io.github.libreroute.data.DirectDpiProfile.isDirect(it) } == true) {
+            if (!appSettings.proxyOnlyMode) {
                 val prepareIntent = android.net.VpnService.prepare(this)
                 if (prepareIntent != null) {
                     val launchIntent = Intent(this, MainActivity::class.java).apply {
@@ -282,9 +281,8 @@ class LibreRouteTileService : TileService() {
             dohUrl = if (effectiveDoh) appSettings.dohUrl else null,
         )
 
-        // direct-dpi needs Android's TUN; the SOCKS-only service cannot carry
-        // the local packet filter. Keep it on SocksVpnService from the tile too.
-        if (appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)) {
+        // Autonomous proxy-only also starts without a TUN.
+        if (appSettings.proxyOnlyMode) {
             val proxyIntent = Intent(this, LibreRouteProxyService::class.java).apply {
                 putExtra(io.github.libreroute.util.Constants.INTENT_NAME, prepared.name)
                 putExtra(io.github.libreroute.util.Constants.INTENT_TRANSPORT_TYPE, prepared.transportType)

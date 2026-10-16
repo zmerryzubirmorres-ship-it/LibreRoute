@@ -78,6 +78,8 @@ class AdminActivity : AppCompatActivity() {
             "management_channel" -> showManagementChannelDialog()
             "server" -> vm.serverNodes.value.firstOrNull { it.id == args.getString("id") }?.let { showServerNodeDetailsDialog(it) }
             "suspend_user" -> confirmSuspendUser(args.getString("id").orEmpty())
+            "delete_user_server" -> confirmDeleteUserFromServer(args.getString("id").orEmpty(),
+                args.getString("server"), args.getString("authority"))
             "revoke_assignment" -> confirmRevokeAssignment(args.getString("id").orEmpty())
             "delete_server" -> confirmDeleteServer(args.getString("id").orEmpty())
         }
@@ -154,6 +156,7 @@ class AdminActivity : AppCompatActivity() {
         }
         var navigationReady = false
         nav.setOnItemSelectedListener {
+            if (it.itemId == R.id.nav_people && !vm.canOpenPeople()) return@setOnItemSelectedListener false
             if (navigationReady && adminTab != it.itemId) tabScrollPositions[adminTab] = scroll.scrollY
             adminTab = it.itemId
             findViewById<View>(R.id.adminOverview).visibility = if (adminTab == R.id.nav_overview) View.VISIBLE else View.GONE
@@ -173,6 +176,11 @@ class AdminActivity : AppCompatActivity() {
         findViewById<View>(R.id.adminReturnUser).setOnClickListener { finish() }
         findViewById<View>(R.id.overviewInvite).setOnClickListener { showCreateUserDialog() }
         findViewById<View>(R.id.overviewAddServer).setOnClickListener { showAddServerNodeDialog() }
+        findViewById<View>(R.id.adminAcquireSsh).setOnClickListener {
+            val node = vm.currentServerNode() ?: return@setOnClickListener
+            startActivity(Intent(this, ServerSetupActivity::class.java).putExtra("server_id", node.id)
+                .putExtra("ssh_administration", true))
+        }
         findViewById<View>(R.id.adminUsersMetric).setOnClickListener { nav.selectedItemId = R.id.nav_people }
         findViewById<View>(R.id.adminServersMetric).setOnClickListener { nav.selectedItemId = R.id.nav_servers }
         findViewById<View>(R.id.adminChannelSummary).setOnClickListener { showManagementChannelDialog() }
@@ -204,8 +212,10 @@ class AdminActivity : AppCompatActivity() {
         val count = findViewById<TextView>(R.id.adminOverviewCounts)
         val nodes = vm.serverNodes.value
         val users = vm.users.value
-        findViewById<TextView>(R.id.adminOverviewUserCount).text = users.size.toString()
-        findViewById<TextView>(R.id.adminOverviewUserHint).text = "Доступ разрешён: ${users.count { it.isActive }}"
+        val canReadUsers = vm.canOpenPeople()
+        findViewById<TextView>(R.id.adminOverviewUserCount).text = if (canReadUsers) users.size.toString() else "—"
+        findViewById<TextView>(R.id.adminOverviewUserHint).text = if (canReadUsers)
+            "Доступ разрешён: ${users.count { it.isActive }}" else "Доступ к пользователям не подтверждён"
         findViewById<TextView>(R.id.adminOverviewServerCount).text = nodes.size.toString()
         findViewById<TextView>(R.id.adminOverviewServerHint).text = "В сети: ${nodes.count { it.status == ServerNodeStatus.ONLINE }}"
         count.text = when {
@@ -307,11 +317,12 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private fun showManagementChannelDialog() {
-        val channels = listOf(AdminChannel.AUTO, AdminChannel.ACTIVE_TRANSPORT, AdminChannel.DOCUMENT)
-        val labels = arrayOf("Автоматически", "Текущее подключение", "Через документ")
+        val channels = listOf(AdminChannel.AUTO, AdminChannel.ACTIVE_TRANSPORT, AdminChannel.DOCUMENT, AdminChannel.DIRECT_SSH)
+        val labels = arrayOf("Автоматически", "Текущее подключение", "Через документ", "Прямой SSH к серверу")
         val dialog = MaterialAlertDialogBuilder(this).setTitle("Канал управления")
             .setSingleChoiceItems(labels, channels.indexOf(vm.selectedChannel.value)) { item, index ->
-                toggleChannel.check(listOf(R.id.btn_channel_auto, R.id.btn_channel_active, R.id.btn_channel_doc)[index])
+                if (index < 3) toggleChannel.check(listOf(R.id.btn_channel_auto, R.id.btn_channel_active, R.id.btn_channel_doc)[index])
+                else vm.selectChannel(channels[index])
                 item.dismiss()
             }.setNegativeButton("Закрыть", null).create()
         dialogs.show(dialog, "management_channel")
@@ -338,6 +349,7 @@ class AdminActivity : AppCompatActivity() {
 
     private fun showPersonDetails(user: AdminUser) {
         val screen = io.github.libreroute.ui.CalmDetailDialog(this, "Детали пользователя")
+        val accessButtonId = io.github.libreroute.ui.DialogScreens.stateId("person-configure-access")
         fun render() {
             val readingPosition = screen.scrollView.scrollY
             screen.content.removeAllViews()
@@ -367,29 +379,50 @@ class AdminActivity : AppCompatActivity() {
             }
             screen.text("Назначенные маршруты")
             val assignments = vm.assignments.value.filter { it.userId == user.id }
-            if (assignments.isEmpty()) screen.text("Доступ ещё не назначен. Настройте серверы и выдайте приглашение")
+            val operation = vm.accessOperation.value?.takeIf { it.userId == user.id }
+            if (operation?.state == AccessOperationState.SUBMITTING) {
+                screen.text("Настраиваем доступ. Подготавливаем устройство и подключение на сервере…")
+            } else if (operation?.state in setOf(AccessOperationState.FAILED, AccessOperationState.UNKNOWN, AccessOperationState.PARTIAL)) {
+                screen.text(if (operation?.state == AccessOperationState.UNKNOWN)
+                    "Сервер не подтвердил завершение настройки. Бронирование могло сохраниться. Повторите выдачу для проверки результата."
+                    else "Не удалось завершить настройку доступа.")
+                operation?.error?.let { screen.text(it) }
+            } else if (assignments.isEmpty()) screen.text(if (operation?.state == AccessOperationState.CONFIRMED)
+                "Ссылка создана. Обновляем сведения о назначении…" else "Доступ ещё не назначен. Настройте серверы и выдайте приглашение")
             assignments.forEach { assignment ->
                 val name = vm.serverNodes.value.firstOrNull { it.id == assignment.serverId }?.name ?: assignment.serverId
                 screen.content.addView(io.github.libreroute.ui.CalmViews.row(this, name,
                     "${protocolLabel(assignment.transport)} · ${assignmentStatusLabel(assignment.status)}") { showAssignmentActionDialog(assignment) })
             }
-            if (user.isActive) screen.action("Настроить доступ") { showAssignDocumentDialog(user) }
+            if (user.isActive && vm.canPerform("assign-profile")) screen.content.addView(
+                io.github.libreroute.ui.CalmViews.action(this, "Настроить доступ") { showAssignDocumentDialog(user) }
+                    .apply { id = accessButtonId })
             screen.scrollView.post { screen.scrollView.scrollTo(0, readingPosition) }
-            if (user.isActive) screen.action("Приостановить доступ", destructive = true) {
+            if (user.isActive && vm.canPerform("suspend-user")) screen.action("Приостановить доступ", destructive = true) {
                 confirmSuspendUser(user.id)
+            }
+            if (vm.canPerform("delete-user")) screen.action("Удалить с сервера…", destructive = true) {
+                confirmDeleteUserFromServer(user.id)
             }
         }
         render()
         val updates = lifecycleScope.launch {
-            kotlinx.coroutines.flow.combine(vm.clusterSnapshot, vm.assignments, vm.serverNodes, vm.clusterSnapshotStatus) { _, _, _, _ -> Unit }
+            kotlinx.coroutines.flow.combine(vm.clusterSnapshot, vm.assignments, vm.serverNodes, vm.clusterSnapshotStatus, vm.liveAccess, vm.accessOperation) { _ -> Unit }
                 .collect { if (screen.isShowing) render() }
         }
-        dialogs.show(screen, "person", Bundle().apply { putString("id", user.id) }) { updates.cancel() }
-        vm.refreshClusterSnapshot()
+        dialogs.show(screen, "person", Bundle().apply { putString("id", user.id) },
+            progressViewIds = setOf(accessButtonId), pendingLabel = {
+                vm.accessOperation.value?.takeIf { it.state == AccessOperationState.SUBMITTING }
+                    ?.let { "Настраиваем доступ…" }
+            }) { updates.cancel() }
+        vm.loadAdminSession()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AdminCommandFeedback.bind(this, window.decorView, AdminRepository.getInstance(this).commandControl,
+            independentViewIds = setOf(R.id.overviewAddServer, R.id.btn_add_server_node, R.id.adminNavigation,
+                R.id.adminAcquireSsh), onIdle = { updateCreateAvailability() })
         themePrefs = ThemePreferences(this)
         themePrefs.applyTheme()
 
@@ -440,18 +473,26 @@ class AdminActivity : AppCompatActivity() {
                 }
             }
         }
-        vm.refreshServerProfiles()
-        vm.refreshUsers()
-        vm.refreshAssignments()
+        vm.loadAdminSession()
         if (savedInstanceState == null) intent.getStringExtra("admin_transfer_ack")?.let {
             showCompleteOwnerTransferDialog(it); intent.removeExtra("admin_transfer_ack")
         }
         dialogs.restore()
     }
 
+    private var adoptedSshOperationId: String? = null
+
     override fun onResume() {
         super.onResume()
         refreshLocalProfiles()
+        val repo = AdminRepository.getInstance(this)
+        val operation = vm.currentServerNode()?.id?.let(repo::latestServerInstallation)
+        if (operation?.preserveOwners == true && operation.stage == ServerInstallOperation.READY &&
+            repo.sessionAdminChannel == AdminChannel.DIRECT_SSH &&
+            adoptedSshOperationId != operation.operationId) {
+            adoptedSshOperationId = operation.operationId
+            vm.useSshSession()
+        }
     }
 
     private fun refreshLocalProfiles() {
@@ -564,9 +605,7 @@ class AdminActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.btn_refresh).setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            vm.refreshServerProfiles()
-            vm.refreshUsers()
-            vm.refreshAssignments()
+            vm.refreshClusterSnapshot()
             refreshLocalProfiles()
         }
     }
@@ -589,7 +628,6 @@ class AdminActivity : AppCompatActivity() {
                 R.id.btn_channel_vds -> vm.selectChannel(AdminChannel.SSH_VDS)
                 R.id.btn_channel_netcraze -> vm.selectChannel(AdminChannel.SSH_NETCRAZE)
             }
-            vm.refreshAssignments()
         }
     }
 
@@ -770,21 +808,21 @@ class AdminActivity : AppCompatActivity() {
                 launch {
                     vm.clusterSnapshot.collect { snapshot ->
                         if (snapshot != null) {
-                            val allReady = snapshot.isComplete && snapshot.perServerStatus.isNotEmpty() && snapshot.perServerStatus.values.all { it.isApplied && it.isReady }
-                            if (allReady) {
+                            val health = adminClusterHealth(snapshot)
+                            if (health.confirmed) {
                                 cardClusterHealth.setCardBackgroundColor(android.graphics.Color.parseColor("#1A22C55E"))
                                 cardClusterHealth.strokeColor = android.graphics.Color.parseColor("#3322C55E")
                                 iconClusterHealth.setImageResource(R.drawable.ic_check)
                                 iconClusterHealth.setColorFilter(ContextCompat.getColor(this@AdminActivity, R.color.colorSuccess))
                                 tvClusterSnapshotSummary.setTextColor(ContextCompat.getColor(this@AdminActivity, R.color.colorSuccess))
-                                tvClusterSnapshotSummary.text = "Сведения о серверах синхронизированы"
+                                tvClusterSnapshotSummary.text = health.message
                             } else {
                                 cardClusterHealth.setCardBackgroundColor(android.graphics.Color.parseColor("#1AF59E0B"))
                                 cardClusterHealth.strokeColor = android.graphics.Color.parseColor("#33F59E0B")
                                 iconClusterHealth.setImageResource(R.drawable.ic_refresh)
                                 iconClusterHealth.setColorFilter(ContextCompat.getColor(this@AdminActivity, R.color.state_connecting))
                                 tvClusterSnapshotSummary.setTextColor(ContextCompat.getColor(this@AdminActivity, R.color.state_connecting))
-                                tvClusterSnapshotSummary.text = "Готовность части серверов ещё не подтверждена"
+                                tvClusterSnapshotSummary.text = health.message
                             }
                         } else {
                             cardClusterHealth.setCardBackgroundColor(android.graphics.Color.parseColor("#14FFFFFF"))
@@ -798,7 +836,8 @@ class AdminActivity : AppCompatActivity() {
                 }
                 launch {
                     vm.clusterSnapshotStatus.collect { status ->
-                        if (vm.clusterSnapshot.value == null) {
+                        if (vm.clusterSnapshot.value == null ||
+                            vm.liveAccess.value[vm.currentServerNode()?.id ?: "legacy"]?.state != AdminLiveAccess.State.READY) {
                             tvClusterSnapshotSummary.text = status
                         }
                     }
@@ -856,6 +895,8 @@ class AdminActivity : AppCompatActivity() {
                         }
                     }
                 }
+                launch { vm.liveAccess.collect { updateCreateAvailability() } }
+                launch { vm.selectedServerNodeId.collect { updateCreateAvailability() } }
             }
         }
     }
@@ -982,10 +1023,55 @@ class AdminActivity : AppCompatActivity() {
     private fun updateCreateAvailability() {
         if (!::btnAddProfile.isInitialized || !::btnActionPrimary.isInitialized) return
         val supported = vm.canPerform("create-user")
+        val canRead = vm.canOpenPeople()
+        val nav = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.adminNavigation)
+        nav.menu.findItem(R.id.nav_people).isEnabled = canRead
+        nav.menu.findItem(R.id.nav_people).setIcon(if (canRead) R.drawable.ic_person else R.drawable.ic_lock)
+        nav.findViewById<View>(R.id.nav_people)?.alpha = if (canRead) 1f else 0.38f
+        findViewById<View>(R.id.btn_tab_users).isEnabled = canRead
+        findViewById<View>(R.id.adminUsersMetric).isEnabled = canRead
+        findViewById<View>(R.id.adminUsersMetric).alpha = if (canRead) 1f else 0.38f
+        val node = vm.currentServerNode()
+        val live = vm.liveAccess.value[node?.id ?: "legacy"]
+        val explanation = when (live?.state) {
+            AdminLiveAccess.State.CHECKING -> "Проверяем соединение. Сохранённые данные доступны для просмотра."
+            AdminLiveAccess.State.READY -> if (vm.mutationBlockReason() != null)
+                "Административные права сохранены. ${vm.mutationBlockReason()}"
+                else if (supported) "Управление пользователями доступно"
+                else if (canRead) "Доступен только просмотр пользователей"
+                else "Роль не разрешает просмотр пользователей"
+            AdminLiveAccess.State.DENIED -> "Сервер не подтвердил административные права. Получите управление по SSH или примите приглашение администратора."
+            AdminLiveAccess.State.UNAVAILABLE -> "Нет соединения с сервером. Сохранённый допуск не изменён; доступны последние данные. Для изменений восстановите соединение и нажмите «Обновить»."
+            null -> "Доступ к управлению ещё не подтверждён"
+        }
+        findViewById<TextView>(R.id.adminAccessExplanation).text = explanation
+        val needsAdmission = live?.state == AdminLiveAccess.State.DENIED ||
+            vm.currentServerAccess().state != AdminAccessState.ACTIVE
+        findViewById<View>(R.id.adminAcquireSsh).visibility = if (needsAdmission && node != null) View.VISIBLE else View.GONE
+        if (!canRead && live?.state != AdminLiveAccess.State.CHECKING) {
+            if (adminTab == R.id.nav_people) nav.selectedItemId = R.id.nav_overview
+            dialogs.dismiss("person")
+            dialogs.dismiss("showCreateUserDialog")
+        }
         btnAddProfile.isEnabled = supported
         btnQuickInvite.isEnabled = supported
         btnAddUser.isEnabled = supported
         findViewById<View>(R.id.overviewInvite).isEnabled = supported
+        listOf(btnAddProfile, btnQuickInvite, btnAddUser, findViewById<MaterialButton>(R.id.overviewInvite)).forEach {
+            it.alpha = if (supported) 1f else 0.38f
+        }
+        findViewById<MaterialButton>(R.id.overviewInvite).apply {
+            text = if (supported) "Добавить пользователя" else when (live?.state) {
+                AdminLiveAccess.State.CHECKING -> "Проверяем доступ…"
+                AdminLiveAccess.State.DENIED -> "Нет прав на добавление пользователя"
+                AdminLiveAccess.State.READY -> "Добавление пользователя недоступно"
+                AdminLiveAccess.State.UNAVAILABLE -> "Нет связи для добавления пользователя"
+                else -> "Доступ к пользователям не подтверждён"
+            }
+            icon = if (supported) null else ContextCompat.getDrawable(this@AdminActivity, R.drawable.ic_lock)
+            contentDescription = if (supported) "Добавить пользователя" else "$text. $explanation"
+        }
+        renderOverviewCounts()
         if (vm.role.value == AdminRole.OWNER || vm.role.value == AdminRole.OPERATOR) {
             btnActionPrimary.isEnabled = supported
             btnActionPrimary.text = if (supported) "Добавить пользователя"
@@ -1181,6 +1267,7 @@ class AdminActivity : AppCompatActivity() {
     }
 
     private fun showCreateUserDialog() {
+        if (!vm.canPerform("create-user")) return
         val padding = (20 * resources.displayMetrics.density).toInt()
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1566,6 +1653,34 @@ class AdminActivity : AppCompatActivity() {
             confirmDeleteServer(node.id)
         }
         dialogs.show(screen, "server", Bundle().apply { putString("id", node.id) })
+    }
+
+    private fun confirmDeleteUserFromServer(id: String, targetId: String? = null, authorityId: String? = null) {
+        val user = vm.users.value.firstOrNull { it.id == id } ?: return
+        val authority = authorityId ?: vm.currentServerNode()?.id ?: return
+        val snapshot = vm.clusterSnapshot.value ?: return
+        val servers = (snapshot.distinctServerIds + vm.assignments.value.filter { it.userId == id }.map { it.serverId })
+            .filter { it !in user.removedServerIds }.sorted()
+        if (targetId == null && servers.size > 1) {
+            val labels = servers.map { sid -> "${vm.serverNodes.value.firstOrNull { it.id == sid }?.name ?: sid} ($sid)" }
+            val dialog = MaterialAlertDialogBuilder(this).setTitle("Удалить доступ: выберите сервер")
+                .setItems(labels.toTypedArray()) { _, index -> confirmDeleteUserFromServer(id, servers[index], authority) }
+                .setNegativeButton("Отмена", null).create()
+            dialogs.show(dialog, "delete_user_server", Bundle().apply { putString("id", id); putString("authority", authority) })
+            return
+        }
+        val server = targetId ?: servers.singleOrNull() ?: return
+        if (server !in servers) return
+        val name = vm.serverNodes.value.firstOrNull { it.id == server }?.name ?: server
+        val dialog = MaterialAlertDialogBuilder(this).setTitle("Удалить пользователя с сервера?")
+            .setMessage("Удалить доступ «${user.name}» только к серверу «$name» ($server)?\n\nМаршруты и приглашения этого сервера будут отозваны. Приглашение сразу на несколько серверов потребуется выдать заново. Уже полученные доступы к другим серверам сохранятся.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Удалить с сервера") { _, _ ->
+                vm.deleteUserFromServer(id, server, authority); dialogs.dismiss("person")
+            }.create()
+        dialogs.show(dialog, "delete_user_server", Bundle().apply {
+            putString("id", id); putString("server", server); putString("authority", authority)
+        })
     }
 
     private fun confirmSuspendUser(id: String) {

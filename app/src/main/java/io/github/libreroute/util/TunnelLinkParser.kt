@@ -21,7 +21,7 @@ object TunnelLinkParser {
     /** Stable, localised-enough fallback used when an imported link has no name. */
     private const val DEFAULT_MQTT_NAME = "MQTT · умный дом"
     private const val SCHEME_LIBREROUTE = "libreroute"
-    private const val SCHEME_PAPERFLUX = "paperflux"
+    private const val SCHEME_LEGACY_PROXY = "paperflux"
     private const val HOST_IMPORT = "import"
     private const val PARAM_DATA = "data"
 
@@ -169,7 +169,7 @@ object TunnelLinkParser {
         val direct = runCatching { json.decodeFromString<Tunnel>(jsonStr) }.getOrNull()
         if (direct != null) return direct
 
-        // Flexible JSON decoder for PaperFlux and generic LibreRoute JSON configs
+        // Flexible JSON decoder for legacy proxy links and LibreRoute JSON configs
         return runCatching {
             val el = json.parseToJsonElement(jsonStr).jsonObject
             val name = el["name"]?.jsonPrimitive?.contentOrNull
@@ -264,7 +264,7 @@ object TunnelLinkParser {
         var tunnel: Tunnel? = null
 
         if (trimmed.startsWith("$SCHEME_LIBREROUTE:", ignoreCase = true) ||
-            trimmed.startsWith("$SCHEME_PAPERFLUX:", ignoreCase = true) ||
+            trimmed.startsWith("$SCHEME_LEGACY_PROXY:", ignoreCase = true) ||
             trimmed.contains("://$HOST_IMPORT", ignoreCase = true)
         ) {
             val uri = runCatching { Uri.parse(trimmed) }.getOrNull()
@@ -384,7 +384,7 @@ object TunnelLinkParser {
     fun fromUri(uri: Uri, context: Context? = null): Tunnel? = runCatching {
         val scheme = uri.scheme?.lowercase()
         if (scheme != SCHEME_LIBREROUTE &&
-            scheme != SCHEME_PAPERFLUX
+            scheme != SCHEME_LEGACY_PROXY
         ) {
             return null
         }

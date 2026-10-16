@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>LibreRoute</title>
+  <rect width="256" height="256" rx="60" fill="#126C58"/>
+  <path fill="#FFFFFF" d="M71,52 H95 Q103,52 103,60 V158 H192 Q200,158 200,166 V192 Q200,200 192,200 H71 Q63,200 63,192 V60 Q63,52 71,52 Z"/>
+</svg>

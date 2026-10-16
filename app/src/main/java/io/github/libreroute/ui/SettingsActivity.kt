@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.WindowCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -162,6 +163,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onResume()
         vm.refreshState()
         setupAdminControl()
+        renderProxyRouting()
     }
 
     private fun observeViewModel() {
@@ -212,6 +214,9 @@ class SettingsActivity : AppCompatActivity() {
                             if (swProxyOnly != null && swProxyOnly.isChecked != state.proxyOnlyMode) {
                                 swProxyOnly.isChecked = state.proxyOnlyMode
                             }
+                            findViewById<MaterialSwitch>(R.id.switch_proxy_routing).isChecked =
+                                state.proxyRoutingMode == io.github.libreroute.util.ProxyRoutingMode.RULES
+                            renderProxyRouting()
                             if (switchFailover.isChecked != state.autoFailover) {
                                 switchFailover.isChecked = state.autoFailover
                             }
@@ -430,6 +435,7 @@ class SettingsActivity : AppCompatActivity() {
             sw.setOnCheckedChangeListener { _, isChecked ->
                 if (isBindingState) return@setOnCheckedChangeListener
                 vm.toggleProxyOnlyMode(isChecked)
+                renderProxyRouting()
             }
             sw.setOnClickListener { sw.performAppHaptics() }
         }
@@ -437,6 +443,21 @@ class SettingsActivity : AppCompatActivity() {
             it.performAppHaptics()
             switchProxyOnly?.toggle()
         }
+
+        // 5. Failover
+        findViewById<MaterialSwitch>(R.id.switch_proxy_routing).apply {
+            isChecked = appSettings.proxyRoutingMode == io.github.libreroute.util.ProxyRoutingMode.RULES
+            setOnCheckedChangeListener { _, enabled ->
+                if (!isBindingState && isEnabled) { vm.toggleProxyRouting(enabled); renderProxyRouting() }
+            }
+        }
+        findViewById<View>(R.id.btn_proxy_routes).setOnClickListener {
+            startActivity(Intent(this, TrafficRulesActivity::class.java).putExtra("section", "sites"))
+        }
+        findViewById<View>(R.id.btn_proxy_reconnect).setOnClickListener {
+            (androidx.lifecycle.ViewModelProvider(this)[TunnelsViewModel::class.java]).restartCurrent()
+        }
+        renderProxyRouting()
 
         // 5. Failover
         switchFailover.isChecked = appSettings.autoFailover
@@ -783,6 +804,36 @@ class SettingsActivity : AppCompatActivity() {
         dialogs.show(dialog, "showIpTypeBottomSheet", Bundle())
     }
 
+    private fun proxyModeLabel(mode: io.github.libreroute.util.ProxyRoutingMode): String = getString(
+        if (mode == io.github.libreroute.util.ProxyRoutingMode.RULES) R.string.proxy_routing_rules else R.string.proxy_routing_all)
+
+    private fun renderProxyRouting() {
+        val autonomous = appSettings.proxyOnlyMode && io.github.libreroute.data.TunnelRepository(this).getSelected()
+            ?.let { io.github.libreroute.data.DirectDpiProfile.isDirect(it) } == true
+        val mode = io.github.libreroute.util.effectiveProxyRoutingMode(appSettings.proxyRoutingMode, autonomous)
+        val rules = mode == io.github.libreroute.util.ProxyRoutingMode.RULES
+        findViewById<MaterialSwitch>(R.id.switch_proxy_routing).apply {
+            isEnabled = !autonomous
+            val wasBinding = isBindingState
+            isBindingState = true
+            isChecked = rules
+            isBindingState = wasBinding
+        }
+        val sites = io.github.libreroute.util.SiteRoutingPreferences(this).load()
+        val active = io.github.libreroute.util.ProxyRoutingStatus.active
+        val pending = io.github.libreroute.util.ProxyRoutingStatus.pending(this)
+        findViewById<TextView>(R.id.text_proxy_routing).text = buildString {
+            append(proxyModeLabel(mode)).append("\n")
+            append(getString(if (autonomous) R.string.proxy_routing_autonomous
+                else if (rules) R.string.proxy_routing_rules_desc else R.string.proxy_routing_all_desc))
+            if (rules) append("\n").append(getString(if (sites.defaultTunnel) R.string.proxy_routing_default_tunnel else R.string.proxy_routing_default_direct))
+            if (active != null) append("\nДействующий режим: ").append(proxyModeLabel(active.mode))
+            if (pending) append("\n").append(getString(R.string.proxy_routing_pending))
+        }
+        findViewById<View>(R.id.btn_proxy_routes).visibility = if (rules) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_proxy_reconnect).visibility = if (pending) View.VISIBLE else View.GONE
+    }
+
     private fun showHotspotBottomSheet() {
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.bottom_sheet_hotspot, null)
@@ -802,19 +853,37 @@ class SettingsActivity : AppCompatActivity() {
         fun renderStatus() {
             ip = LocalSocksSession.getLocalIpAddress()
             val ready = LocalSocksSession.getReady()
+            val runtime = io.github.libreroute.util.ProxyRoutingStatus.active
+            val profileStates = io.github.libreroute.util.ProxyRoutingStatus.profileReadiness?.invoke().orEmpty()
+            val counts = io.github.libreroute.util.ProxyRoutingStatus.routeCounts
             val state = listOf(ip, ready, appSettings.shareLanProxy, appSettings.socks5AuthEnabled,
-                io.github.libreroute.service.HotspotProxyBridge.running)
+                io.github.libreroute.service.HotspotProxyBridge.running, runtime,
+                io.github.libreroute.util.ProxyRoutingStatus.tunnelReady, io.github.libreroute.util.ProxyRoutingStatus.pending(this), profileStates, counts)
             if (shownState == state) return
             shownState = state
             view.findViewById<TextView>(R.id.text_hotspot_status).text = when {
                 !appSettings.shareLanProxy -> "Раздача выключена"
-                ready == null -> "Сначала подключитесь к серверу. В режиме zapret раздача прокси недоступна."
+                ready == null -> "Запустите серверное подключение или автономный zapret в режиме только прокси."
                 !io.github.libreroute.service.ProxySharing.canShare(ready, appSettings.socks5AuthEnabled,
                     appSettings.socks5CustomUser, appSettings.socks5CustomPass) -> "Параметры изменены. Переподключитесь, чтобы включить раздачу."
                 ip.isBlank() -> "Подключите Wi-Fi или включите точку доступа для раздачи другим устройствам."
                 io.github.libreroute.service.HotspotProxyBridge.running -> "Раздача работает · SOCKS5 и HTTP"
                 else -> "Раздача не запущена. Проверьте журнал подключения."
             }
+            view.findViewById<TextView>(R.id.text_hotspot_status).append("\n" + getString(R.string.proxy_routing_lan_note))
+            if (runtime != null) view.findViewById<TextView>(R.id.text_hotspot_status).append(
+                "\n" + proxyModeLabel(runtime.mode) +
+                if (runtime.autonomous) "\n" + getString(R.string.proxy_routing_autonomous)
+                else "\nТуннель: " + (if (io.github.libreroute.util.ProxyRoutingStatus.tunnelReady) "готов" else "недоступен"))
+            if (runtime?.mode == io.github.libreroute.util.ProxyRoutingMode.RULES) {
+                val profiles = io.github.libreroute.util.ZapretProfilePreferences(this).load().profiles.associateBy { it.id }
+                view.findViewById<TextView>(R.id.text_hotspot_status).append("\nНапрямую: готов к запросам\n" +
+                    profileStates.entries.joinToString("\n") { (id, alive) -> "zapret · ${profiles[id]?.name ?: id}: " + if (alive) "готов" else "недоступен" } +
+                    "\nДля доменных правил используйте socks5h. UDP/QUIC и IPv6 не поддерживаются.")
+            }
+            val stats = Regex("[A-Za-z]+:(\\d+)").findAll(counts).map { it.groupValues[1] }.toList()
+            if (stats.size == 6) view.findViewById<TextView>(R.id.text_hotspot_status).append(
+                "\nЗапросы напрямую / zapret / ${if (runtime?.autonomous == true) "общий zapret" else "туннель"}: ${stats.take(3).joinToString(" / ")}\nОшибки: ${stats.drop(3).joinToString(" / ")}")
             view.findViewById<TextView>(R.id.text_hotspot_local).text = ready?.let {
                 "На этом телефоне: SOCKS5 127.0.0.1:${it.port}" + if (it.isAuthEnabled) " · с паролем" else " · без пароля"
             } ?: "Адрес локального SOCKS5 появится после подключения."
@@ -861,8 +930,12 @@ class SettingsActivity : AppCompatActivity() {
         val activeUser = appSettings.socks5CustomUser.ifEmpty { active.username }
         val activePass = appSettings.socks5CustomPass.ifEmpty { active.password }
 
-        inputUser.setText(activeUser)
-        inputPass.setText(activePass)
+        inputUser.isSaveEnabled = false
+        inputPass.isSaveEnabled = false
+        inputUser.setText(backupDraft.proxyUsername ?: activeUser)
+        inputPass.setText(backupDraft.proxyPassword ?: activePass)
+        inputUser.doAfterTextChanged { backupDraft.proxyUsername = it?.toString() }
+        inputPass.doAfterTextChanged { backupDraft.proxyPassword = it?.toString() }
 
         btnCancel.setOnClickListener { dialog.dismiss() }
 
@@ -879,6 +952,8 @@ class SettingsActivity : AppCompatActivity() {
             appSettings.socks5CustomUser = username
             appSettings.socks5CustomPass = password
             vm.proxyCredentialsChanged()
+            backupDraft.proxyUsername = null
+            backupDraft.proxyPassword = null
             dialog.dismiss()
         }
 

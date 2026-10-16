@@ -4,7 +4,8 @@ import io.github.libreroute.util.LocalSocksSession
 
 /** One session supplies the listener address and credentials for every launch entry point. */
 internal fun localProxyOptions(original: List<String>, session: LocalSocksSession.SessionInfo,
-                               proxyOnly: Boolean = false): List<String> {
+                               proxyOnly: Boolean = false,
+                               routingMode: io.github.libreroute.util.ProxyRoutingMode = io.github.libreroute.util.ProxyRoutingMode.ALL_TUNNEL): List<String> {
     require(session.port in 1..65535) { "Некорректный порт SOCKS5" }
     if (session.isAuthEnabled) {
         require(session.username.toByteArray(Charsets.UTF_8).size in 1..255 &&
@@ -16,7 +17,8 @@ internal fun localProxyOptions(original: List<String>, session: LocalSocksSessio
     val booleanFlags = mutableSetOf<String>()
     if (proxyOnly) {
         valueFlags += listOf("inbound", "tun-socket", "tun-mtu", "domain-rules-file", "ip-rules-file",
-            "site-routes-file", "split-mode", "domain-mode")
+            "split-mode", "domain-mode")
+        if (routingMode == io.github.libreroute.util.ProxyRoutingMode.ALL_TUNNEL) valueFlags += "site-routes-file"
         booleanFlags += listOf("tun", "socks5-mode")
     }
     val result = mutableListOf<String>()

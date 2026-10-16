@@ -34,6 +34,7 @@ data class SettingsUiState(
     val shareHotspot: Boolean = false,
     val socks5AuthEnabled: Boolean = false,
     val proxyOnlyMode: Boolean = false,
+    val proxyRoutingMode: io.github.libreroute.util.ProxyRoutingMode = io.github.libreroute.util.ProxyRoutingMode.ALL_TUNNEL,
     val autoFailover: Boolean = false,
     val autoBoot: Boolean = false,
     val autoClearLogs: Boolean = false,
@@ -68,6 +69,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             shareHotspot = appSettings.shareLanProxy,
             socks5AuthEnabled = appSettings.socks5AuthEnabled,
             proxyOnlyMode = appSettings.proxyOnlyMode,
+            proxyRoutingMode = appSettings.proxyRoutingMode,
             autoFailover = appSettings.autoFailover,
             autoBoot = appSettings.autoConnectOnBoot,
             autoClearLogs = appSettings.autoClearLogs,
@@ -91,15 +93,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshState() {
         viewModelScope.launch(Dispatchers.IO) {
-            val installed = runCatching {
-                getApplication<Application>().packageManager
-                    .getInstalledApplications(0).map { it.packageName }.toSet()
-            }.getOrDefault(emptySet())
-
             val appCount = if (splitPrefs.mode == SplitTunnelPreferences.MODE_BYPASS) {
-                splitPrefs.bypassApps.count { it in installed }
+                splitPrefs.bypassApps.size
             } else {
-                splitPrefs.proxyApps.count { it in installed }
+                splitPrefs.proxyApps.size
             }
             val domainCount = domainPrefs.domains.size
 
@@ -124,6 +121,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                     shareHotspot = appSettings.shareLanProxy,
                     socks5AuthEnabled = appSettings.socks5AuthEnabled,
                     proxyOnlyMode = appSettings.proxyOnlyMode,
+                    proxyRoutingMode = appSettings.proxyRoutingMode,
                     autoFailover = appSettings.autoFailover,
                     autoBoot = appSettings.autoConnectOnBoot,
                     autoClearLogs = appSettings.autoClearLogs,
@@ -212,6 +210,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _events.emit(SettingsEvent.ShowToast("Режим сохранён. Переподключитесь, чтобы применить его."))
         }
+    }
+
+    fun toggleProxyRouting(enable: Boolean) {
+        appSettings.proxyRoutingMode = if (enable) io.github.libreroute.util.ProxyRoutingMode.RULES
+            else io.github.libreroute.util.ProxyRoutingMode.ALL_TUNNEL
+        _uiState.update { it.copy(proxyRoutingMode = appSettings.proxyRoutingMode) }
     }
 
     fun toggleAutoFailover(enable: Boolean) {

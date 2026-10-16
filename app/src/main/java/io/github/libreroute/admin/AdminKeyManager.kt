@@ -45,6 +45,12 @@ class AdminKeyManager(private val context: Context? = null) {
     }
 
     private val lock = Any()
+    // The device identity is stable for this process. Reading its certificate for
+    // every permission rendered on screen repeatedly crosses into Android Keystore.
+    private val devicePublicKey: PublicKey by lazy { getOrCreateKeyPair().public }
+    private val deviceFingerprint: String by lazy {
+        requireNotNull(computeFingerprint(getPublicKeyBase64()))
+    }
 
     /**
      * Retrieves or generates the device's ECDSA P-256 key pair.
@@ -94,7 +100,7 @@ class AdminKeyManager(private val context: Context? = null) {
      * Returns device public key as PublicKey.
      */
     fun getPublicKey(): PublicKey {
-        return getOrCreateKeyPair().public
+        return if (context != null) devicePublicKey else getOrCreateKeyPair().public
     }
 
     /**
@@ -109,6 +115,7 @@ class AdminKeyManager(private val context: Context? = null) {
      * Computes SHA-256 fingerprint of device public key in "SHA256:<hex>" format.
      */
     fun getFingerprint(): String {
+        if (context != null) return deviceFingerprint
         val pub = getPublicKey()
         val md = MessageDigest.getInstance("SHA-256")
         val digest = md.digest(pub.encoded)

@@ -1033,6 +1033,24 @@
 
                 </LinearLayout>
 
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="16dp">
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_proxy_routing" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/proxy_routing_title" />
+                    <TextView android:id="@+id/text_proxy_routing" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:textColor="@color/text_secondary" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:text="@string/proxy_routing_apps_note"
+                        android:textColor="@color/text_secondary" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btn_proxy_routes"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/proxy_routing_sites" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btn_proxy_reconnect"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/proxy_routing_reconnect" />
+                </LinearLayout>
+
             </LinearLayout>
 
             <!-- Section Header -->

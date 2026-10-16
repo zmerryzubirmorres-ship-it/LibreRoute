@@ -27,6 +27,14 @@ class LocalProxyOptionsTest {
         assertEquals(listOf("--socks5", "127.0.0.1:32123"), options)
     }
 
+    @Test fun flexibleProxyKeepsSitesButRemovesLegacySplitAndTunOptions() {
+        val result = localProxyOptions(listOf("--site-routes-file=/private/sites", "--tun-socket=@old",
+            "--domain-rules-file=/private/legacy", "--ip-rules-file=/private/ips"), protected, true,
+            io.github.libreroute.util.ProxyRoutingMode.RULES)
+        assertTrue(result.contains("--site-routes-file=/private/sites"))
+        assertFalse(result.any { "tun-socket" in it || "domain-rules" in it || "ip-rules" in it })
+    }
+
     @Test fun credentialsAreLimitedByUtf8BytesRatherThanCharacterCount() {
         assertTrue(localProxyOptions(emptyList(), protected.copy(password = "я".repeat(127))).isNotEmpty())
         assertThrows(IllegalArgumentException::class.java) { localProxyOptions(emptyList(), protected.copy(password = "я".repeat(128))) }

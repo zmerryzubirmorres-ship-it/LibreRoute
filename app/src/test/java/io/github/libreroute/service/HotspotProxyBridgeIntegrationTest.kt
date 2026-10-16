@@ -63,6 +63,26 @@ class HotspotProxyBridgeIntegrationTest {
         return result
     }
 
+    @Test fun refreshingSameListenerKeepsEstablishedConnectionsOpen() {
+        start()
+        val done = upstream { socket ->
+            val data = ByteArray(4)
+            socket.getInputStream().readFully(data)
+            assertEquals("ping", data.toString(Charsets.UTF_8))
+            socket.getOutputStream().write("pong".toByteArray())
+        }
+        client().use { socket ->
+            socket.getOutputStream().write("CONNECT example.org:443 HTTP/1.1\r\nHost: example.org:443\r\n\r\n".toByteArray())
+            assertTrue(headers(socket.getInputStream()).startsWith("HTTP/1.1 200 "))
+            start()
+            socket.getOutputStream().write("ping".toByteArray())
+            val data = ByteArray(4)
+            socket.getInputStream().readFully(data)
+            assertEquals("pong", data.toString(Charsets.UTF_8))
+            done.get(4, TimeUnit.SECONDS)
+        }
+    }
+
     @Test fun plainHttpUsesOriginFormAndNeverForwardsProxyCredentials() {
         start()
         val done = upstream { socket ->
@@ -106,6 +126,18 @@ class HotspotProxyBridgeIntegrationTest {
             socket.getOutputStream().write("CONNECT example.org:443 HTTP/1.1\r\n\r\n".toByteArray())
             assertTrue(headers(socket.getInputStream()).startsWith("HTTP/1.1 407 "))
         }
+    }
+
+    @Test fun conflictingOrDuplicateHostNeverReachesBackend() {
+        start()
+        for (headerBlock in listOf("Host: attacker.example\r\n", "Host: example.org\r\nHost: example.org\r\n")) {
+            client().use { socket ->
+                socket.getOutputStream().write("GET http://example.org/ HTTP/1.1\r\n${headerBlock}\r\n".toByteArray())
+                assertTrue(headers(socket.getInputStream()).startsWith("HTTP/1.1 400 "))
+            }
+        }
+        backend.soTimeout = 100
+        assertThrows(java.net.SocketTimeoutException::class.java) { backend.accept().close() }
     }
 
     @Test fun socksRejectsMethodsTheClientDidNotOffer() {

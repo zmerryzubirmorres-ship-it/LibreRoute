@@ -80,6 +80,7 @@ class ProtocolSetupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AdminCommandFeedback.bind(this, window.decorView, AdminRepository.getInstance(this).commandControl)
         savedInstanceState?.getString("group_draft")?.let { groupSetup.draft = it }
         pendingAuthProtocol = savedInstanceState?.getString("pending_auth_protocol")
         pendingAuthEndpoint = savedInstanceState?.getString("pending_auth_endpoint").orEmpty()

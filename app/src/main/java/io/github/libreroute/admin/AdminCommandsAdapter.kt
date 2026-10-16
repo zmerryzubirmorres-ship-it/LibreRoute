@@ -56,10 +56,11 @@ class AdminCommandsAdapter : ListAdapter<AdminCommandRecord, AdminCommandsAdapte
 
         val statusColor = when (cmd.status) {
             AdminCommandRecord.STATUS_VERIFIED, AdminCommandRecord.STATUS_APPLIED -> ContextCompat.getColor(context, R.color.colorSuccess)
-            AdminCommandRecord.STATUS_FAILED -> ContextCompat.getColor(context, R.color.colorError)
+            AdminCommandRecord.STATUS_FAILED, AdminCommandRecord.STATUS_CANCELLED_LOCAL -> ContextCompat.getColor(context, R.color.colorError)
             else -> ContextCompat.getColor(context, R.color.state_connecting)
         }
-        holder.tvStatus.text = "${cmd.status} (r${cmd.revision})"
+        holder.tvStatus.text = if (cmd.status == AdminCommandRecord.STATUS_CANCELLED_LOCAL) "Отменено локально"
+            else "${cmd.status} (r${cmd.revision})"
         holder.tvStatus.setTextColor(statusColor)
 
         holder.tvOpId.text = "op: ${cmd.opId.take(13)}..."

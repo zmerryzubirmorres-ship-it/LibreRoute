@@ -128,6 +128,27 @@ class AppSettings(private val context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    init {
+        // Persist before any service starts. Android installation metadata is
+        // independent of whether the user's site list happens to be empty.
+        synchronized(AppSettings::class.java) {
+            if (!prefs.contains("proxy_routing_mode")) {
+                val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+                val initialMode = initialProxyRoutingMode(prefs.all.isNotEmpty(), info?.firstInstallTime, info?.lastUpdateTime)
+                val fresh = initialMode == ProxyRoutingMode.RULES
+                check(prefs.edit().putString("proxy_routing_mode",
+                    if (fresh) ProxyRoutingMode.RULES.cliValue else ProxyRoutingMode.ALL_TUNNEL.cliValue)
+                    .putInt("proxy_routing_settings_version", 1)
+                    .also { if (fresh) it.putBoolean(KEY_SHARE_LAN_PROXY, false) }.commit())
+            }
+        }
+    }
+
+    var proxyRoutingMode: ProxyRoutingMode
+        get() = ProxyRoutingMode.entries.firstOrNull { it.cliValue == prefs.getString("proxy_routing_mode", "all_tunnel") }
+            ?: ProxyRoutingMode.ALL_TUNNEL
+        set(value) = prefs.edit().putString("proxy_routing_mode", value.cliValue).apply()
+
     /** Keystore-backed prefs for sensitive string values (credentials, keys). */
     private val securePrefs: SecurePreferences by lazy {
         SecurePreferences(context.applicationContext, "${PREFS_NAME}_secure").also { sp ->

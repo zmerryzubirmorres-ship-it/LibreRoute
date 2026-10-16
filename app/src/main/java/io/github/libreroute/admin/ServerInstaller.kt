@@ -29,9 +29,15 @@ class ServerInstaller(private val context: Context) {
                      expectedPlan: JsonObject): JsonObject =
         submit(node, inventory, operationId, documentUrl, join, pairingCode, expectedPlan, true, true)
 
+    fun authorizeAdministrator(node: ServerNode, inventory: ServerInventory, operationId: String,
+                               documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                               expectedPlan: JsonObject): JsonObject =
+        submit(node, inventory, operationId, documentUrl, join, pairingCode, expectedPlan, true, true, true)
+
     private fun submit(node: ServerNode, inventory: ServerInventory, operationId: String,
                        documentUrl: String, join: AdminEnvelope, pairingCode: String,
-                       expectedPlan: JsonObject, ownerRecovery: Boolean, takeover: Boolean): JsonObject {
+                       expectedPlan: JsonObject, ownerRecovery: Boolean, takeover: Boolean,
+                       preserveOwners: Boolean = false): JsonObject {
         if (takeover) {
             require(expectedPlan["mode"]?.jsonPrimitive?.content == "update" &&
                 !expectedPlan["server_public_key"]?.jsonPrimitive?.content.isNullOrBlank() &&
@@ -43,12 +49,13 @@ class ServerInstaller(private val context: Context) {
             put("document_url", documentUrl); put("control_profile_id", join.profileId)
             put("join", Json.parseToJsonElement(join.toJson())); put("pairing_code", pairingCode)
             put("owner_recovery", ownerRecovery)
+            put("preserve_owners", preserveOwners)
             if (takeover) {
                 put("recovery_server_public_key", expectedPlan.getValue("server_public_key"))
                 put("recovery_owner_device_ids", expectedPlan.getValue("owner_device_ids"))
             }
             val cookies = File(context.filesDir, "yandex_webview_cookies.json")
-            if (documentUrl.isNotBlank() && cookies.isFile && cookies.length() <= 96 * 1024) put("browser_cookies", cookies.readText())
+            if (!preserveOwners && documentUrl.isNotBlank() && cookies.isFile && cookies.length() <= 96 * 1024) put("browser_cookies", cookies.readText())
         }
         require(expectedPlan["operation_id"]?.jsonPrimitive?.content == operationId &&
             expectedPlan["namespace"]?.jsonPrimitive?.content == namespace(node)) { "План относится к другой операции или серверу" }

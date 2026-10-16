@@ -74,6 +74,7 @@ class LogsFragment : BaseFragment() {
     private val pending = ConcurrentLinkedQueue<Pair<LogItem, Long>>()
     private var renderedLines = 0
     private var flushScheduled = false
+    private var initialHistoryPending = false
 
     override fun onNewEvent(ev: AppEvent) = Unit
 
@@ -185,14 +186,9 @@ class LogsFragment : BaseFragment() {
         renderedLines = 0
         textView.text = ""
 
-        val toAppend = SpannableStringBuilder()
-        for (item in allLogItems) {
-            renderLogLine(toAppend, item.message, item.timestamp)
-        }
-        if (toAppend.isNotEmpty()) {
-            textView.text = toAppend
-            if (autoScroll) scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
-        }
+        allLogItems.forEach { pending.offer(it to it.timestamp) }
+        initialHistoryPending = true
+        scheduleFlush()
         updateLineCountBadge()
     }
 
@@ -219,10 +215,15 @@ class LogsFragment : BaseFragment() {
             }
         }
 
-        if (!flushScheduled && !pending.isEmpty()) {
-            flushScheduled = true
-            textView.postDelayed({ flushPending(); flushScheduled = false }, FLUSH_INTERVAL_MS)
-        }
+        scheduleFlush()
+    }
+
+    private fun scheduleFlush() {
+        if (flushScheduled || pending.isEmpty()) return
+        flushScheduled = true
+        val flush = Runnable { flushScheduled = false; flushPending() }
+        if (initialHistoryPending) textView.postOnAnimation(flush)
+        else textView.postDelayed(flush, FLUSH_INTERVAL_MS)
     }
 
     private fun renderLogLine(toAppend: SpannableStringBuilder, line: String, timestamp: Long) {
@@ -284,10 +285,8 @@ class LogsFragment : BaseFragment() {
             if (autoScroll) scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
         }
 
-        if (!pending.isEmpty() && !flushScheduled) {
-            flushScheduled = true
-            textView.postDelayed({ flushPending(); flushScheduled = false }, FLUSH_INTERVAL_MS)
-        }
+        if (pending.isEmpty()) initialHistoryPending = false
+        scheduleFlush()
     }
 
     override fun onDestroyView() {
@@ -298,6 +297,8 @@ class LogsFragment : BaseFragment() {
         activeMoreMenuDialog = null
         textView.handler?.removeCallbacksAndMessages(null)
         pending.clear()
+        flushScheduled = false
+        initialHistoryPending = false
         super.onDestroyView()
     }
 

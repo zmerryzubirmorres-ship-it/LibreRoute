@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
 import java.util.UUID
 
 /**
- * Canonical Administrative Envelope for Flux control plane.
+ * Canonical Administrative Envelope for the LibreRoute control plane.
  *
  * Signing string format:
  * "ver:type:subtype:profile_id:op_id:rev:exp:sender:nonce:payload"

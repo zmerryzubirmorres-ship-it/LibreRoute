@@ -44,6 +44,7 @@ class JazzRoomPolicyActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AdminCommandFeedback.bind(this, window.decorView, AdminRepository.getInstance(this).commandControl)
         if (!repository.canPerform(nodeId, "get-jazz-room-pool")) { finish(); return }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16.dp(),16.dp(),16.dp(),24.dp()) }
         setContentView(ScrollView(this).apply { id = io.github.libreroute.ui.DialogScreens.stateId("jazz-policy-scroll") }.apply { addView(content) })

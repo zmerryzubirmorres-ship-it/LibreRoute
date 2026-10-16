@@ -1,51 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Calm Mobile Tunnel tokens shared by native screens and Stitch exports. -->
-    <color name="calm_background">#0B141C</color>
-    <color name="calm_surface">#141C24</color>
-    <color name="calm_surface_elevated">#1C2731</color>
-    <color name="calm_surface_pressed">#253442</color>
-    <color name="calm_text_primary">#E6EDF5</color>
-    <color name="calm_text_secondary">#AAB7C5</color>
-    <color name="calm_text_muted">#718092</color>
-    <color name="calm_outline">#394958</color>
-    <color name="calm_primary">#4A91FF</color>
-    <color name="calm_primary_pressed">#3378DF</color>
-    <color name="calm_success">#58D66A</color>
+    <!-- LibreRoute brand: Windows forest green, adapted for light and dark Android surfaces. -->
+    <color name="calm_background">#000000</color>
+    <color name="calm_surface">#101010</color>
+    <color name="calm_surface_elevated">#202020</color>
+    <color name="calm_surface_pressed">#303030</color>
+    <color name="calm_text_primary">#EEEEEE</color>
+    <color name="calm_text_secondary">#BBBBBB</color>
+    <color name="calm_text_muted">#969696</color>
+    <color name="calm_outline">#8C8C8C</color>
+    <color name="calm_primary">#26916D</color>
+    <color name="calm_primary_pressed">#238D6B</color>
+    <color name="calm_success">#26916D</color>
     <color name="calm_warning">#E5AA35</color>
     <color name="calm_error">#F06A68</color>
-    <color name="calm_info">#83B7FF</color>
-    <color name="calm_on_primary">#071321</color>
+    <color name="calm_info">#3CA383</color>
+    <color name="calm_on_primary">#00160E</color>
     <color name="toolbar_color">#00000000</color>
 
-    <color name="bg_deep">#0B141C</color>
+    <color name="bg_deep">#000000</color>
     <color name="bg_card">@color/m3_surface_container_low</color>
     <color name="bg_card_stroke">@color/m3_outline_variant</color>
 
     <color name="text_primary">@color/m3_on_surface</color>
     <color name="text_secondary">@color/m3_on_surface_variant</color>
-    <color name="text_tertiary">#5A6272</color>
+    <color name="text_tertiary">#969696</color>
 
-    <color name="state_idle">#6B7280</color>
+    <color name="state_idle">#969696</color>
     <color name="state_connecting">#FBBF24</color>
-    <color name="state_running">#22C55E</color>
+    <color name="state_running">#26916D</color>
     <color name="state_error">#EF4444</color>
 
-    <color name="accent_blue">#4F7CFF</color>
+    <color name="accent_blue">@color/m3_primary</color>
 
-    <color name="log_green">#4CAF50</color>
-    <color name="log_gray">#888888</color>
+    <color name="log_green">#26916D</color>
+    <color name="log_gray">#969696</color>
     <color name="log_red">#F44336</color>
     <color name="log_yellow">#FFC107</color>
 
-    <color name="status_dot_active">#4CAF50</color>
-    <color name="status_dot_idle">#666666</color>
+    <color name="status_dot_active">#26916D</color>
+    <color name="status_dot_idle">#969696</color>
     <color name="status_dot_error">#F44336</color>
 
     <color name="color_background">@color/m3_surface</color>
     <color name="colorEditTextBg">@color/m3_surface_container_low</color>
     <color name="colorBorder">@color/m3_outline_variant</color>
-    <color name="colorSuccess">#22C55E</color>
+    <color name="colorSuccess">#26916D</color>
     <color name="colorError">#EF4444</color>
     <color name="colorPrimary">@color/m3_primary</color>
     <color name="colorPrimaryDark">#000000</color>
@@ -55,42 +55,42 @@
     <color name="colorOnSurface">@color/m3_on_surface</color>
     <color name="colorTextPrimary">@color/m3_on_surface</color>
     <color name="colorTextSecondary">@color/m3_on_surface_variant</color>
-    <color name="ic_launcher_background">#080B12</color>
-    <color name="btn_power_bg_start">#1C2333</color>
-    <color name="btn_power_bg_end">#0F1420</color>
-    <color name="btn_power_stroke">#2E3A50</color>
+    <color name="ic_launcher_background">#126C58</color>
+    <color name="btn_power_bg_start">#202020</color>
+    <color name="btn_power_bg_end">#101010</color>
+    <color name="btn_power_stroke">#383838</color>
 
     <!-- M3 Semantic Tokens: Surface (Dark) -->
-    <color name="m3_surface">#0B141C</color>
-    <color name="m3_surface_dim">#0B141C</color>
-    <color name="m3_surface_bright">#1C2731</color>
-    <color name="m3_surface_container_lowest">#060F17</color>
-    <color name="m3_surface_container_low">#141C24</color>
-    <color name="m3_surface_container">#182029</color>
-    <color name="m3_surface_container_high">#1C2731</color>
-    <color name="m3_surface_container_highest">#2D363F</color>
-    <color name="m3_on_surface">#E6EDF5</color>
-    <color name="m3_on_surface_variant">#AAB7C5</color>
-    <color name="m3_outline">#394958</color>
-    <color name="m3_outline_variant">#414753</color>
+    <color name="m3_surface">#000000</color>
+    <color name="m3_surface_dim">#000000</color>
+    <color name="m3_surface_bright">#252525</color>
+    <color name="m3_surface_container_lowest">#0C0C0C</color>
+    <color name="m3_surface_container_low">#101010</color>
+    <color name="m3_surface_container">#1A1A1A</color>
+    <color name="m3_surface_container_high">#202020</color>
+    <color name="m3_surface_container_highest">#303030</color>
+    <color name="m3_on_surface">#EEEEEE</color>
+    <color name="m3_on_surface_variant">#BBBBBB</color>
+    <color name="m3_outline">#8C8C8C</color>
+    <color name="m3_outline_variant">#303030</color>
 
     <!-- M3 Semantic Tokens: Primary (Dark) -->
-    <color name="m3_primary">#4A91FF</color>
-    <color name="m3_on_primary">#071321</color>
-    <color name="m3_primary_container">#4A91FF</color>
-    <color name="m3_on_primary_container">#002A5D</color>
+    <color name="m3_primary">#26916D</color>
+    <color name="m3_on_primary">#00160E</color>
+    <color name="m3_primary_container">#12372A</color>
+    <color name="m3_on_primary_container">#74C7A3</color>
 
     <!-- M3 Semantic Tokens: Secondary (Dark) -->
-    <color name="m3_secondary">#94A3B8</color>
-    <color name="m3_on_secondary">#0F172A</color>
-    <color name="m3_secondary_container">#1E293B</color>
-    <color name="m3_on_secondary_container">#CBD5E1</color>
+    <color name="m3_secondary">#C2C2C2</color>
+    <color name="m3_on_secondary">#222222</color>
+    <color name="m3_secondary_container">#282828</color>
+    <color name="m3_on_secondary_container">#E0E0E0</color>
 
     <!-- M3 Semantic Tokens: Tertiary (Dark) -->
-    <color name="m3_tertiary">#A78BFA</color>
-    <color name="m3_on_tertiary">#2E1065</color>
-    <color name="m3_tertiary_container">#3B0764</color>
-    <color name="m3_on_tertiary_container">#EDE9FE</color>
+    <color name="m3_tertiary">#4BA78B</color>
+    <color name="m3_on_tertiary">#00160E</color>
+    <color name="m3_tertiary_container">#282828</color>
+    <color name="m3_on_tertiary_container">#E0E0E0</color>
 
     <!-- M3 Semantic Tokens: Error (Dark) -->
     <color name="m3_error">#F87171</color>
@@ -99,11 +99,11 @@
     <color name="m3_on_error_container">#FEE2E2</color>
 
     <!-- M3: Icon tint variety per section (Dark) -->
-    <color name="icon_tint_appearance">#60A5FA</color>
-    <color name="icon_tint_network">#22D3EE</color>
+    <color name="icon_tint_appearance">#26916D</color>
+    <color name="icon_tint_network">#26916D</color>
     <color name="icon_tint_automation">#FBBF24</color>
-    <color name="icon_tint_backup">#A78BFA</color>
-    <color name="icon_tint_updates">#34D399</color>
-    <color name="icon_tint_about">#94A3B8</color>
-    <color name="icon_tint_logs">#A78BFA</color>
+    <color name="icon_tint_backup">#C2C2C2</color>
+    <color name="icon_tint_updates">#26916D</color>
+    <color name="icon_tint_about">#969696</color>
+    <color name="icon_tint_logs">#C2C2C2</color>
 </resources>

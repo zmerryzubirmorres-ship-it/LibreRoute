@@ -19,7 +19,7 @@ class ThemePreferences(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     var themeMode: Int
-        get() = prefs.getInt(KEY_THEME_MODE, THEME_DARK)
+        get() = prefs.getInt(KEY_THEME_MODE, THEME_LIGHT)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()
 
     fun applyTheme() {

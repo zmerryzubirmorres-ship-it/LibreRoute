@@ -27,6 +27,9 @@ object HotspotProxyBridge {
     private var executor: ExecutorService? = null
     private var acceptThread: Thread? = null
     private val activeSockets = java.util.concurrent.ConcurrentHashMap.newKeySet<Socket>()
+    private data class ListenerConfig(val port: Int, val upstream: Int, val auth: Boolean,
+                                      val username: String, val password: String)
+    private var listenerConfig: ListenerConfig? = null
 
     @Synchronized
     fun start(
@@ -36,6 +39,8 @@ object HotspotProxyBridge {
         username: String = "",
         password: String = ""
     ): Boolean {
+        val requested = ListenerConfig(lanPort, targetLocalPort, authEnabled, username, password)
+        if (isRunning.get() && listenerConfig == requested) return true
         if (isRunning.get()) {
             Logx.d(TAG, "Bridge already running, stopping existing instance first")
             stop()
@@ -64,6 +69,7 @@ object HotspotProxyBridge {
                 ThreadPoolExecutor.AbortPolicy()
             )
             executor = pool
+            listenerConfig = requested
 
             Logx.i(TAG, "Hotspot proxy bridge started on 0.0.0.0:$lanPort -> 127.0.0.1:$targetLocalPort (auth=$authEnabled)")
 
@@ -117,6 +123,7 @@ object HotspotProxyBridge {
         Logx.i(TAG, "Stopping hotspot proxy bridge")
         runCatching { serverSocket?.close() }
         serverSocket = null
+        listenerConfig = null
         runCatching { acceptThread?.interrupt() }
         acceptThread = null
         runCatching { executor?.shutdownNow() }
@@ -344,7 +351,8 @@ object HotspotProxyBridge {
         val restOfLine = readHeaderLine(cin)
         val firstLine = "${firstByte.toChar()}$restOfLine"
         val parts = firstLine.split(" ")
-        if (parts.size < 2) {
+        if (parts.size != 3 || parts[2] !in setOf("HTTP/1.0", "HTTP/1.1")) {
+            cout.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
             clientSocket.close()
             return
         }
@@ -354,16 +362,24 @@ object HotspotProxyBridge {
 
         val headers = mutableListOf<String>()
         var proxyAuthHeader: String? = null
-        var hostHeader: String? = null
+        val hostHeaders = mutableListOf<String>()
+        var headerBytes = 0
         while (true) {
             val line = readHeaderLine(cin)
             if (line.isEmpty()) break
+            headerBytes += line.length
+            if (headerBytes > 65536 || line.first().isWhitespace() || ':' !in line) {
+                cout.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray()); return
+            }
             headers.add(line)
             if (line.startsWith("Proxy-Authorization:", ignoreCase = true)) {
+                if (proxyAuthHeader != null) {
+                    cout.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray()); return
+                }
                 proxyAuthHeader = line.substringAfter(":").trim()
             }
             if (line.startsWith("Host:", ignoreCase = true)) {
-                hostHeader = line.substringAfter(":").trim()
+                hostHeaders.add(line.substringAfter(":").trim())
             }
         }
 
@@ -391,21 +407,14 @@ object HotspotProxyBridge {
             }
         }
 
-          val uri = runCatching {
-              when {
-                  method == "CONNECT" -> java.net.URI("http://$target")
-                  target.startsWith("http://", true) || target.startsWith("https://", true) -> java.net.URI(target)
-                  target.startsWith("/") && hostHeader != null -> java.net.URI("http://$hostHeader$target")
-                  else -> null
-              }
-          }.getOrNull()
-          val destHost = uri?.host
-          val destPort = uri?.port?.takeIf { it >= 0 } ?: if (method == "CONNECT" || uri?.scheme == "https") 443 else 80
-          if (destHost.isNullOrBlank() || destHost.contains(':') || destPort !in 1..65535) {
+          val destination = parseHttpProxyTarget(method, target, hostHeaders)
+          if (destination == null) {
               cout.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray())
               cout.flush()
               return
           }
+          val destHost = destination.host
+          val destPort = destination.port
 
         val targetSocket = try {
             Socket().apply {
@@ -414,10 +423,8 @@ object HotspotProxyBridge {
             }
         } catch (e: Exception) {
             Logx.w(TAG, "Cannot connect to upstream HTTP target: ${e.message}")
-            if (method == "CONNECT") {
-                cout.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".toByteArray(Charsets.UTF_8))
-                cout.flush()
-            }
+            cout.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".toByteArray(Charsets.UTF_8))
+            cout.flush()
             clientSocket.close()
             return
         }
@@ -429,10 +436,8 @@ object HotspotProxyBridge {
         if (!ok) {
             activeSockets.remove(targetSocket)
             runCatching { targetSocket.close() }
-            if (method == "CONNECT") {
-                cout.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".toByteArray(Charsets.UTF_8))
-                cout.flush()
-            }
+            cout.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".toByteArray(Charsets.UTF_8))
+            cout.flush()
             clientSocket.close()
             return
         }
@@ -442,7 +447,7 @@ object HotspotProxyBridge {
             cout.flush()
         } else {
             val reqSb = StringBuilder()
-              val path = uri.rawPath.orEmpty().ifEmpty { "/" } + (uri.rawQuery?.let { "?$it" } ?: "")
+              val path = destination.path
               reqSb.append(method).append(' ').append(path).append(' ').append(parts.getOrElse(2) { "HTTP/1.1" }).append("\r\n")
               for (h in headers) {
                   if (!h.startsWith("Proxy-Connection:", ignoreCase = true) &&
@@ -452,6 +457,7 @@ object HotspotProxyBridge {
                 }
             }
               // This bridge handles one origin request per HTTP connection.
+              if (hostHeaders.isEmpty()) reqSb.append("Host: ${destination.authority}\r\n")
               reqSb.append("Connection: close\r\n\r\n")
             tout.write(reqSb.toString().toByteArray(Charsets.UTF_8))
             tout.flush()

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="24dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Параметры раздачи SOCKS5" android:textSize="20sp"
+            android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:layout_marginBottom="16dp" android:textSize="13sp"
+            android:text="Порт общий для SOCKS5 и HTTP. Смена авторизации применяется после переподключения. Пустой пароль создаётся автоматически."
+            android:textColor="@color/text_secondary" />
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Порт LAN-прокси">
+            <com.google.android.material.textfield.TextInputEditText android:id="@+id/home_proxy_port"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="number" />
+        </com.google.android.material.textfield.TextInputLayout>
+        <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/home_proxy_auth"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+            android:text="Логин и пароль" android:textColor="@color/text_primary" />
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Логин">
+            <com.google.android.material.textfield.TextInputEditText android:id="@+id/home_proxy_user"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textNoSuggestions"
+                android:saveEnabled="false" />
+        </com.google.android.material.textfield.TextInputLayout>
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+            android:hint="Пароль" app:endIconMode="password_toggle">
+            <com.google.android.material.textfield.TextInputEditText android:id="@+id/home_proxy_pass"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword"
+                android:saveEnabled="false" />
+        </com.google.android.material.textfield.TextInputLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="end" android:layout_marginTop="16dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/home_proxy_cancel"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/cancel" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/home_proxy_save"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/save" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

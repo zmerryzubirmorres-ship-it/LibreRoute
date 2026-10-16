@@ -45,7 +45,8 @@ data class SiteProxy(val id: String, val address: String, @SerialName("block_qui
 data class NativeSiteRoutes(val version: Int = 1, val rules: List<SiteRule>, val profiles: List<SiteProxy>,
     @SerialName("app_socket") val appSocket: String = "",
     @SerialName("site_rules_enabled") val siteRulesEnabled: Boolean = true,
-    @SerialName("default_action") val defaultAction: String = "tunnel")
+    @SerialName("default_action") val defaultAction: String = "tunnel",
+    @SerialName("snapshot_id") val snapshotId: String = "")
 
 /** Runtime ports are never added to persisted rules or invitations. */
 fun nativeSiteRoutes(state: SiteRoutingState, profiles: ZapretProfileState, ports: Map<String, Int>): NativeSiteRoutes {

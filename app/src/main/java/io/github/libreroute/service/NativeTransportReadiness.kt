@@ -4,14 +4,20 @@ import kotlinx.coroutines.delay
 
 /** Match the last readiness layer configured in the native process. */
 internal class NativeTransportReadiness(arguments: List<String>) {
+    /** Explicit provider refusals require user action; socket/flow failures do not. */
+    fun isJazzRoomRejected(line: String): Boolean =
+        line.contains("[JAZZ] session ended: Jazz: room access rejected", ignoreCase = true)
+
+    private val flexible = arguments.any { it == "--proxy-routing-mode=rules" }
 	private val channelGroup = arguments.any { it == "--channel-group-config" || it.startsWith("--channel-group-config=") }
 	private val pairChannel = arguments.any { it == "--pair-channel-config" || it.startsWith("--pair-channel-config=") }
     val requiresPeerHealth = flagEnabled(arguments, "peer-health")
+    private val requiresCoreHealth = flagEnabled(arguments, "core-health") || channelGroup || pairChannel
     private val sessionNegotiated = flagEnabled(arguments, "session-negotiate")
 
     /** Reconnects need the same provider handshake window as initial startup. */
     suspend fun awaitReady(transportType: String, canWait: () -> Boolean, connected: () -> Boolean): Boolean {
-        val steps = if (channelGroup || pairChannel || requiresPeerHealth || sessionNegotiated ||
+        val steps = if (requiresCoreHealth || requiresPeerHealth || sessionNegotiated ||
             transportType.lowercase() in setOf("mqtt", "jitsi", "jazz")) 240 else 80
         repeat(steps) {
             delay(250)
@@ -22,8 +28,9 @@ internal class NativeTransportReadiness(arguments: List<String>) {
     }
 
     fun isReady(line: String): Boolean {
-        if (channelGroup) return line.contains("[GROUP] peer ready")
-        if (pairChannel) return line.contains("[CHANNEL] peer ready")
+        if (line.contains("[CORE_CONNECTION] ready")) return true
+        if (flexible) return false
+        if (requiresCoreHealth) return line.contains("[CORE_HEALTH] peer ready")
         if (requiresPeerHealth) return line.contains("[HEALTH] peer ready")
         if (sessionNegotiated) return line.contains("[SESSION] ready")
         return line.contains("WebSocket connected", ignoreCase = true) ||
@@ -34,9 +41,27 @@ internal class NativeTransportReadiness(arguments: List<String>) {
             line.contains("Signaling connected", ignoreCase = true) ||
             (line.contains("[VOLGA]", ignoreCase = true) && line.contains("transport started", ignoreCase = true)) ||
             (line.contains("[CUPS]", ignoreCase = true) && line.contains("transport started", ignoreCase = true)) ||
-            line.contains("Running as CLIENT", ignoreCase = true) ||
-            line.contains("Tunnel active", ignoreCase = true) ||
+            (!flexible && line.contains("Running as CLIENT", ignoreCase = true)) ||
+            (!flexible && line.contains("Tunnel active", ignoreCase = true)) ||
             line.contains("Direct TUN FD", ignoreCase = true)
+    }
+
+    /** Flow errors do not describe the provider connection. Health is authoritative when enabled. */
+    fun isDisconnected(line: String): Boolean {
+        if (line.contains("[CORE_CONNECTION] unavailable")) return true
+        if (line.contains("[CORE_HEALTH] peer round trip timed out")) return true
+        if (requiresCoreHealth) return false
+        if (line.contains("[HEALTH] peer round trip timed out", ignoreCase = true)) return true
+        if (requiresPeerHealth) return false
+        if (listOf("[PKT]", "[SOCKS5]", "[ROUTER]", "[TUNNEL]", "[PROXY_ROUTE]").any { it in line }) return false
+        return line.contains("jitsi: session ended:", ignoreCase = true) ||
+            line.contains("mqtt: connection lost:", ignoreCase = true) ||
+            line.contains("transport disconnected", ignoreCase = true) ||
+            line.contains("websocket: close", ignoreCase = true) ||
+            line.contains("close 1005", ignoreCase = true) ||
+            line.contains("connection reset by peer", ignoreCase = true) ||
+            line.contains("broken pipe", ignoreCase = true) ||
+            line.contains("Read error:", ignoreCase = true)
     }
 
     private fun flagEnabled(arguments: List<String>, name: String): Boolean {

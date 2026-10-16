@@ -140,9 +140,8 @@ class BootReceiver : BroadcastReceiver() {
             dohUrl = if (effectiveDoh) appSettings.dohUrl else null,
         )
 
-        // direct-dpi needs Android's TUN; the SOCKS-only service cannot carry
-        // the local packet filter. Keep it on SocksVpnService even at boot.
-        if (appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)) {
+        // Autonomous proxy-only also starts without a TUN.
+        if (appSettings.proxyOnlyMode) {
             val proxyIntent = Intent(context, LibreRouteProxyService::class.java).apply {
                 putExtra(io.github.libreroute.util.Constants.INTENT_NAME, prepared.name)
                 putExtra(io.github.libreroute.util.Constants.INTENT_TRANSPORT_TYPE, prepared.transportType)

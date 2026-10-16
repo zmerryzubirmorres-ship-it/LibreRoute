@@ -16,6 +16,7 @@ data class ServerInstallOperation(
     val deviceId: String,
     val documentUrl: String = "",
     val ownerRecovery: Boolean = false,
+    val preserveOwners: Boolean = false,
     val kind: String = KIND_INSTALL,
     val join: String? = null,
     val stage: String = PLANNED,
@@ -54,6 +55,10 @@ data class ServerInstallOperation(
 
 /** Explicit seam for failure/restart integration tests; production delegates to the SSH installer. */
 interface ServerInstallationBackend {
+    fun authorizeAdministrator(node: ServerNode, inventory: ServerInventory, operationId: String,
+                               documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                               expectedPlan: JsonObject): JsonObject =
+        error("SSH administrator authorization adapter is not available")
     fun plan(node: ServerNode, inventory: ServerInventory, operationId: String): JsonObject
     fun install(node: ServerNode, inventory: ServerInventory, operationId: String,
                 documentUrl: String, join: AdminEnvelope, pairingCode: String, expectedPlan: JsonObject,
@@ -73,7 +78,8 @@ data class AdminServerAccess(val serverId: String?, val state: AdminAccessState,
                            val role: AdminRole = AdminRole.NONE, val expiresAt: Long? = null)
 
 /** A verified negative ACK differs from a timeout after a possibly accepted mutation. */
-class ConfirmedAdminRejection(message: String) : IllegalStateException(message)
+open class ConfirmedAdminRejection(message: String) : IllegalStateException(message)
+class ConfirmedAdminAccessRejection(message: String) : ConfirmedAdminRejection(message)
 class UnknownAdminOperation(message: String) : IllegalStateException(message)
 
 /** A redeemed invitation is not sent again after Activity/process recreation. */

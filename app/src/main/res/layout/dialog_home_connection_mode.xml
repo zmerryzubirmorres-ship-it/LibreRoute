@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingHorizontal="24dp" android:paddingBottom="16dp">
+        <RadioGroup android:id="@+id/home_phone_mode" android:layout_width="match_parent" android:layout_height="wrap_content">
+            <RadioButton android:id="@+id/home_phone_vpn" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/home_phone_vpn" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="32dp" android:paddingEnd="0dp" android:text="@string/home_phone_vpn_detail" android:textColor="@color/text_secondary" />
+            <RadioButton android:id="@+id/home_phone_proxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/home_phone_proxy" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="32dp" android:paddingEnd="0dp" android:text="@string/home_phone_proxy_detail" android:textColor="@color/text_secondary" />
+        </RadioGroup>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="@string/home_proxy_routes_title" android:textColor="@color/text_primary" android:textSize="16sp" android:fontFamily="sans-serif-medium" />
+        <RadioGroup android:id="@+id/home_proxy_routes" android:layout_width="match_parent" android:layout_height="wrap_content">
+            <RadioButton android:id="@+id/home_proxy_server" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/home_proxy_routes_server" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="32dp" android:paddingEnd="0dp" android:text="@string/home_proxy_routes_server_hint" android:textColor="@color/text_secondary" />
+            <RadioButton android:id="@+id/home_proxy_rules" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/home_proxy_routes_rules" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="32dp" android:paddingEnd="0dp" android:text="@string/home_proxy_routes_rules_hint" android:textColor="@color/text_secondary" />
+        </RadioGroup>
+        <TextView android:id="@+id/home_proxy_autonomous_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="@string/home_proxy_routes_autonomous" android:textColor="@color/text_secondary" android:visibility="gone" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="@string/home_connection_apply_hint" android:textColor="@color/text_secondary" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

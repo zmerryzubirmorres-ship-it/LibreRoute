@@ -70,6 +70,10 @@ class ServerInstallationStateTest {
         repo.planServerInstallation(node, "operation-one")
         assertTrue(repo.installServer(node, "operation-one") is AdminOpResult.Success)
         assertEquals(AdminRole.OWNER, repo.getRole(node.id))
+        assertEquals(AdminLiveAccess.State.READY, repo.liveAccessFlow.value[node.id]?.state)
+        assertTrue(repo.canUseManagementUi(node.id, "create-user"))
+        assertEquals(AdminChannel.DIRECT_SSH, repo.sessionAdminChannel)
+        assertNull(repo(backend).liveAccessFlow.value[node.id])
         val profile = repo.managedProfilesFlow.value.single()
         assertEquals(ManagedProfile.PROFILE_TYPE_CONTROL, profile.profileType)
         assertEquals("ssh", profile.transportType)
@@ -166,11 +170,20 @@ class ServerInstallationStateTest {
                 put("signature", "fixture-signature")
             }
             val actions = mutableListOf<String>()
-            val client = AdminSshClient(AdminRepository.createDummyContext(), commandExecutor = { cmd, input ->
+            val client = AdminSshClient(AdminRepository.createDummyContext(), commandExecutor = executor@ { cmd, input ->
                 assertEquals(listOf("admin", "ssh-exec"), cmd.takeLast(2))
                 val request = Json.parseToJsonElement(input).jsonObject
                 val sent = AdminEnvelope.fromJson(request.getValue("envelope").toString())!!
                 val command = Json.parseToJsonElement(String(Base64.getUrlDecoder().decode(sent.payload))).jsonObject
+                if (command.string("op") == "get-cluster-snapshot") {
+                    val snapshot = AdminClusterSnapshot(authorityId = keys.getPublicKeyBase64(), roleScope = "owner")
+                    val data = json.encodeToJsonElement(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot)))
+                    val body = buildJsonObject { put("op_id", sent.opId); put("status", "applied"); put("data", data) }
+                    val response = keys.signEnvelope(sent.copy(subtype = AdminEnvelope.SUBTYPE_RESPONSE,
+                        sender = "server", rev = sent.rev + 1,
+                        payload = Base64.getUrlEncoder().withoutPadding().encodeToString(body.toString().toByteArray())))
+                    return@executor Pair(0, response.toJson())
+                }
                 val update = command.getValue("core_update").jsonObject
                 val action = update.string("action"); actions += action
                 assertEquals("bridge-update", update.string("operation_id"))
@@ -308,5 +321,46 @@ class ServerInstallationStateTest {
         assertEquals(1, backend.installs)
         assertEquals(pending.join, restarted.loadServerInstallation(pending.operationId)?.join)
         assertEquals(ServerInstallOperation.KIND_OWNER_RECOVERY, restarted.loadServerInstallation(pending.operationId)?.kind)
+    }
+
+    @Test fun sshAdministratorAdmissionNeverFallsBackToOwnerTakeoverAfterRestart() {
+        val backend = Backend()
+        val first = repo(backend)
+        first.addServerNode(node)
+        first.planServerInstallation(node, "first-owner")
+        assertTrue(first.installServer(node, "first-owner") is AdminOpResult.Success)
+        val profile = first.getActiveGrant(node.id)!!.profileId
+        val join = first.createJoinRequest(profile, AdminRole.OWNER).first
+        val plan = buildJsonObject {
+            put("mode", "update"); put("server_id", node.id)
+            put("server_public_key", keys.getPublicKeyBase64()); put("namespace", "node-isolated")
+            put("plan_hash", "ssh-access-hash")
+            put("document_url", "https://disk.yandex.ru/i/existing-server-document")
+        }
+        val pending = ServerInstallOperation("ssh-access", node.id, "node-isolated", node,
+            plan.toString(), "ssh-access-hash", profile, keys.getFingerprint(),
+            documentUrl = "https://invalid.example/obsolete-local-document",
+            ownerRecovery = true, preserveOwners = true, kind = ServerInstallOperation.KIND_OWNER_RECOVERY,
+            join = join.toJson(), stage = ServerInstallOperation.UNKNOWN, serverStage = "receiving")
+        state.putString("admin_install_operations", json.encodeToString(listOf(pending)))
+        var admitted = false
+        val adapter = object : ServerInstallationBackend by backend {
+            override fun authorizeAdministrator(node: ServerNode, inventory: ServerInventory, operationId: String,
+                                                documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                                                expectedPlan: JsonObject): JsonObject {
+                admitted = true
+                assertEquals("https://disk.yandex.ru/i/existing-server-document", documentUrl)
+                assertEquals(pending.join, join.toJson())
+                error("Connection lost during admission")
+            }
+            override fun recoverOwner(node: ServerNode, inventory: ServerInventory, operationId: String,
+                                      documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                                      expectedPlan: JsonObject): JsonObject = error("Takeover must never be called")
+        }
+        val restarted = AdminRepository(keyManager = keys, storage = state,
+            installationBackend = adapter, serverInventoryProbe = { inventory })
+        assertTrue(restarted.continueCoreUpdate(node, pending.operationId) is AdminOpResult.Failure)
+        assertTrue(admitted)
+        assertTrue(restarted.loadServerInstallation(pending.operationId)!!.preserveOwners)
     }
 }

@@ -25,7 +25,7 @@ import javax.crypto.spec.GCMParameterSpec
  *
  * Storage format on disk (Base64):  [12-byte IV] || [ciphertext + 16-byte GCM tag]
  */
-class SecurePreferences(context: Context, prefsName: String) {
+class SecurePreferences(context: Context, prefsName: String, private val cacheReads: Boolean = true) {
 
     companion object {
         private const val TAG = "SecurePreferences"
@@ -37,10 +37,15 @@ class SecurePreferences(context: Context, prefsName: String) {
         // Prefix to distinguish encrypted values from plain ones
         private const val ENC_PREFIX = "ENC:"
         private val lock = Any()
+        private val readCaches = java.util.WeakHashMap<SharedPreferences,
+            java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>>()
     }
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    private val stringReadCache = if (cacheReads) synchronized(lock) {
+        readCaches.getOrPut(prefs) { java.util.concurrent.ConcurrentHashMap() }
+    } else java.util.concurrent.ConcurrentHashMap()
 
     // ── Keystore helpers ──────────────────────────────────────────────────────
 
@@ -108,12 +113,24 @@ class SecurePreferences(context: Context, prefsName: String) {
 
     /** Read encrypted string; returns [default] if not set or decryption fails. */
     fun getString(key: String, default: String?): String? {
-        val raw = prefs.getString(key, null) ?: return default
-        return decrypt(raw) ?: default
+        val raw = prefs.getString(key, null) ?: run {
+            stringReadCache.remove(key)
+            return default
+        }
+        if (cacheReads) stringReadCache[key]?.takeIf { it.first == raw }?.let { return it.second }
+        val value = decrypt(raw) ?: return default
+        if (cacheReads) {
+            // Compare the stored ciphertext on every read, including changes by
+            // other wrappers. Keep only a bounded process-local working set.
+            if (stringReadCache.size >= 128) stringReadCache.clear()
+            stringReadCache[key] = raw to value
+        }
+        return value
     }
 
     /** Write string encrypted with AES-256-GCM. */
     fun putString(key: String, value: String?) {
+        stringReadCache.remove(key)
         if (value == null) {
             prefs.edit().remove(key).apply()
             return
@@ -124,6 +141,7 @@ class SecurePreferences(context: Context, prefsName: String) {
 
     /** Flush a secret checkpoint before starting an external operation. Call off the UI thread. */
     fun putStringCommitted(key: String, value: String?) {
+        stringReadCache.remove(key)
         val editor = prefs.edit()
         if (value == null) editor.remove(key) else editor.putString(key, encrypt(value))
         check(editor.commit()) { "Не удалось сохранить состояние настройки" }
@@ -149,6 +167,7 @@ class SecurePreferences(context: Context, prefsName: String) {
 
     /** Remove a key. */
     fun remove(key: String) {
+        stringReadCache.remove(key)
         prefs.edit().remove(key).apply()
     }
 

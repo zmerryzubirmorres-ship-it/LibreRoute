@@ -3,9 +3,9 @@
     <string name="app_name">LibreRoute</string>
     <string name="version" translatable="false">0.0.1</string>
 
-    <string name="channel_name">VPN-сервис</string>
-    <string name="notify_title">LibreRoute работает</string>
-    <string name="notify_msg">Туннель активен</string>
+    <string name="channel_name">LibreRoute VPN</string>
+    <string name="notify_title">LibreRoute</string>
+    <string name="notify_msg">Состояние подключения LibreRoute и скорость трафика</string>
 
     <string name="prof_default">По умолчанию</string>
 
@@ -425,9 +425,11 @@
     <string name="settings_auto_clear_logs_desc">Очищать устаревшие записи логов каждые 24 часа</string>
     <string name="settings_version_title">Версия приложения</string>
     <string name="action_check_ping">Проверить пинг</string>
-    <string name="notify_ping_format">Пинг: %1$d мс</string>
-    <string name="notify_ping_testing">Проверка пинга…</string>
-    <string name="notify_ping_timeout">Пинг: тайм-аут</string>
+    <string name="channel_latency_label">Задержка до сервера</string>
+    <string name="jazz_room_rejected">Jazz: доступ в комнату отклонён. Проверьте доступ и подключитесь снова.</string>
+    <string name="notify_ping_format">Задержка до сервера: %1$d мс</string>
+    <string name="notify_ping_testing">Проверка задержки до сервера…</string>
+    <string name="notify_ping_timeout">Задержка до сервера: тайм-аут</string>
     <string name="share_logs_title">Поделиться журналом</string>
     <string name="share_logs_as_file">Поделиться (.txt файлом)</string>
     <string name="share_logs_copy_text">Скопировать текст</string>
@@ -482,8 +484,8 @@
     <string name="settings_icon_choose">Выберите стиль иконки на рабочем столе</string>
     <string name="settings_icon_dark">Тёмная</string>
     <string name="settings_icon_light">Светлая</string>
-    <string name="settings_icon_dark_desc">Тёмный стиль с лазурным акцентом</string>
-    <string name="settings_icon_light_desc">Синий стиль со светлым акцентом</string>
+    <string name="settings_icon_dark_desc">Тёмно-зелёный фон и белый знак L</string>
+    <string name="settings_icon_light_desc">Фирменный зелёный фон и белый знак L</string>
     <string name="settings_section_display">Отображение</string>
     <string name="settings_section_personalization">Персонализация</string>
     <string name="battery_opt_prompt_title">Работа в фоновом режиме</string>

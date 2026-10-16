@@ -70,6 +70,12 @@ class VpnNotificationManager(private val service: Service) {
 
     var tunnelName: String? = null
     var lastPingResultMs: Long? = null
+    private var currentStatus = service.getString(R.string.connecting)
+
+    fun setConnection(status: String, rttMs: Long?) {
+        lastPingResultMs = rttMs
+        updateStatus(status)
+    }
 
     private val speedUpdater = object : Runnable {
 
@@ -112,7 +118,7 @@ class VpnNotificationManager(private val service: Service) {
 
             }
 
-            updateContent(service.getString(R.string.running), speedText)
+            updateContent(currentStatus, speedText)
 
             handler.postDelayed(this, UPDATE_INTERVAL_MS)
 
@@ -129,7 +135,7 @@ class VpnNotificationManager(private val service: Service) {
         }
 
         createChannel()
-        val notification = buildNotification(service.getString(R.string.running))
+        val notification = buildNotification(currentStatus)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
@@ -163,10 +169,11 @@ class VpnNotificationManager(private val service: Service) {
         } else {
             null
         }
-        updateContent(service.getString(R.string.running), speedText)
+        updateContent(currentStatus, speedText)
     }
 
     fun updateStatus(status: String) {
+        currentStatus = status
         val speedText = if (appSettings.showNotificationSpeed) {
             "↓ ${formatSpeed(currentRxRate)}   ↑ ${formatSpeed(currentTxRate)}"
         } else {
@@ -220,15 +227,10 @@ class VpnNotificationManager(private val service: Service) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val title = if (!tunnelName.isNullOrBlank()) {
-            tunnelName
-        } else {
-            service.getString(R.string.notify_title)
-        }
-
         val pingStr = when (val p = lastPingResultMs) {
             null -> null
             -1L -> service.getString(R.string.notify_ping_testing)
+            -2L -> service.getString(R.string.notify_ping_timeout)
             else -> service.getString(R.string.notify_ping_format, p)
         }
         val statusAndSpeed = if (!speedText.isNullOrBlank() && appSettings.showNotificationSpeed) {
@@ -237,7 +239,7 @@ class VpnNotificationManager(private val service: Service) {
             status
         }
         val primaryText = if (!pingStr.isNullOrBlank()) {
-            "$statusAndSpeed\n$pingStr"
+            "$statusAndSpeed · $pingStr"
         } else {
             statusAndSpeed
         }
@@ -259,11 +261,15 @@ class VpnNotificationManager(private val service: Service) {
         }
 
         val builder = NotificationCompat.Builder(service, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(statusAndSpeed)
+            .setContentTitle(service.getString(R.string.notify_title))
+            .setSubText(tunnelName?.takeIf { it.isNotBlank() })
+            .setContentText(primaryText)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(accentColor)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(contentIntent)
             .addAction(R.drawable.ic_speed, service.getString(R.string.action_check_ping), checkPingPending)
             .addAction(R.drawable.ic_power, service.getString(R.string.action_disconnect), disconnectPending)
@@ -278,7 +284,7 @@ class VpnNotificationManager(private val service: Service) {
     }
 
     fun refresh() {
-        val notif = buildNotification(service.getString(R.string.running))
+        val notif = buildNotification(currentStatus)
         val mgr = service.getSystemService(NotificationManager::class.java)
         mgr?.notify(NOTIFICATION_ID, notif)
     }
@@ -298,8 +304,6 @@ class VpnNotificationManager(private val service: Service) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
         val mgr = service.getSystemService(NotificationManager::class.java) ?: return
-
-        if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
 
         val ch = NotificationChannel(
 

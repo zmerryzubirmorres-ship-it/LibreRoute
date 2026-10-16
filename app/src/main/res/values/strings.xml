@@ -1,11 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="proxy_routing_title">Использовать правила маршрутизации</string>
+    <string name="proxy_routing_rules">По правилам маршрутизации</string>
+    <string name="proxy_routing_all">Всё через туннель</string>
+    <string name="proxy_routing_rules_desc">Сайты идут напрямую, через zapret или через туннель согласно вашим правилам.</string>
+    <string name="proxy_routing_all_desc">Все запросы прокси идут через выбранное серверное подключение. Правила сайтов не применяются.</string>
+    <string name="proxy_routing_apps_note">Прокси использует правила сайтов. Правила приложений телефона действуют в VPN-режиме.</string>
+    <string name="proxy_routing_lan_note">На других устройствах маршрут определяется по адресу сайта. Приложение, отправившее запрос, телефону неизвестно.</string>
+    <string name="proxy_routing_sites">Настроить маршруты сайтов</string>
+    <string name="proxy_routing_pending">Изменения применятся после переподключения</string>
+    <string name="proxy_routing_reconnect">Переподключить</string>
+    <string name="proxy_routing_default_tunnel">Вне списков — через туннель</string>
+    <string name="proxy_routing_default_direct">Вне списков — напрямую</string>
     <string name="app_name">LibreRoute</string>
     <string name="version" translatable="false">0.0.1</string>
 
-    <string name="channel_name">VPN Service</string>
-    <string name="notify_title">LibreRoute is running</string>
-    <string name="notify_msg">Tunnel is active</string>
+    <string name="channel_name">LibreRoute VPN</string>
+    <string name="notify_title">LibreRoute</string>
+    <string name="notify_msg">LibreRoute connection status and traffic speed</string>
 
     <string name="prof_default">Default</string>
 
@@ -425,9 +437,11 @@
     <string name="settings_auto_clear_logs_desc">Purge event log records older than 24 hours</string>
     <string name="settings_version_title">Application Version</string>
     <string name="action_check_ping">Check Ping</string>
-    <string name="notify_ping_format">Ping: %1$d ms</string>
-    <string name="notify_ping_testing">Checking ping…</string>
-    <string name="notify_ping_timeout">Ping: timeout</string>
+    <string name="channel_latency_label">Server channel latency</string>
+    <string name="jazz_room_rejected">Jazz: room access rejected. Check access and reconnect.</string>
+    <string name="notify_ping_format">Server channel latency: %1$d ms</string>
+    <string name="notify_ping_testing">Checking Server channel latency…</string>
+    <string name="notify_ping_timeout">Server channel latency: timeout</string>
     <string name="share_logs_title">Share Event Log</string>
     <string name="share_logs_as_file">Share (.txt file)</string>
     <string name="share_logs_copy_text">Copy text</string>
@@ -482,8 +496,8 @@
     <string name="settings_icon_choose">Select desktop icon style</string>
     <string name="settings_icon_dark">Dark</string>
     <string name="settings_icon_light">Light</string>
-    <string name="settings_icon_dark_desc">Dark theme style with azure accents</string>
-    <string name="settings_icon_light_desc">Blue theme style with light accents</string>
+    <string name="settings_icon_dark_desc">Deep green background with a white L</string>
+    <string name="settings_icon_light_desc">LibreRoute green background with a white L</string>
     <string name="settings_section_display">Display</string>
     <string name="settings_section_personalization">Personalization</string>
     <string name="battery_opt_prompt_title">Background Operation</string>
@@ -576,4 +590,5 @@
     <string name="mqtt_client_id_helper">Leave empty for an automatic iot-client/gateway ID</string>
     <string name="jitsi_url_hint">https://meet.jit.si/имя-комнаты</string>
     <string name="service_key_required">Нужен общий ключ минимум из 16 символов на клиенте и сервере</string>
+    <string name="proxy_routing_autonomous">Удалённого сервера нет. Маршруты «Через туннель» и «Вне списков — через туннель» используют общий профиль автономного zapret. Режим «Всё через туннель» недоступен.</string>
 </resources>

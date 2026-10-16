@@ -26,7 +26,13 @@ class AdminRepositoryV2Test {
         CoreCompatibility.REQUIRED_CAPABILITIES.toList())
     private var lastUpdateBootstrap: kotlinx.serialization.json.JsonElement? = null
     private var loseEnrollmentResponse = false
+    private var rejectAccessProbe = false
+    private var accessProbeError = "administrator status is revoked"
+    private var accessProbeOffline = false
+    private var liveRoleScope = ""
+    private val executedOperations = mutableListOf<String>()
     private val enrollmentRequests = mutableListOf<AdminEnvelope>()
+    private var apiResponse: ((AdminEnvelope) -> String)? = null
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -398,6 +404,8 @@ class AdminRepositoryV2Test {
                     val command = AdminEnvelope.fromJson(json.parseToJsonElement(request).jsonObject["envelope"].toString())!!
                     lastExecutedEnvelope = command
                     val requestOp = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(command.payload), Charsets.UTF_8)).jsonObject["op"]?.jsonPrimitive?.content
+                    executedOperations += requestOp.orEmpty()
+                    if (requestOp == "get-cluster-snapshot" && accessProbeOffline) throw java.io.IOException("Network unavailable")
                     if (requestOp == "issue-enrollment") {
                         enrollmentRequests.add(command)
                         if (loseEnrollmentResponse) { loseEnrollmentResponse = false; throw java.io.IOException("Lost response after issuance") }
@@ -407,13 +415,16 @@ class AdminRepositoryV2Test {
                         objectData is kotlinx.serialization.json.JsonObject && objectData.containsKey("snapshot_revision")
                     }
                     val snapshot = AdminClusterSnapshot(authorityId = keys.getPublicKeyBase64(), snapshotRevision = 5L,
-                        coreInfo = coreInfo)
+                        coreInfo = coreInfo, roleScope = liveRoleScope)
                     val data = if (requestOp == "core-update" && updateResponse != null) {
                         updateResponse(json.parseToJsonElement(String(Base64.getUrlDecoder().decode(command.payload))).jsonObject, lastUpdateBootstrap)
-                    } else if (autoSnapshot) json.encodeToString(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot))) else nextResponseData
+                    } else if (autoSnapshot) json.encodeToString(snapshot.copy(snapshotHash = computeClusterSnapshotHash(snapshot)))
+                    else apiResponse?.invoke(command) ?: nextResponseData
                     val body = buildJsonObject {
                         put("op_id", command.opId)
-                        put("status", if (requestOp == "assign-profile") jazzReplyStatus else "applied")
+                        put("status", if (requestOp == "get-cluster-snapshot" && rejectAccessProbe) "rejected"
+                            else if (requestOp == "assign-profile") jazzReplyStatus else "applied")
+                        if (requestOp == "get-cluster-snapshot" && rejectAccessProbe) put("error", accessProbeError)
                         put("timestamp", System.currentTimeMillis() / 1000L)
                         put("data", json.parseToJsonElement(data))
                     }
@@ -530,6 +541,9 @@ class AdminRepositoryV2Test {
         jazzReplyStatus = "unknown"
         val first = repository.assignProfile("user", "device", "srv-1", "jazz", channel=AdminChannel.DIRECT_SSH, serverNode=node)
         assertTrue(first.isFailure)
+        assertNull(repository.serverMutationBlockReason(node.id, AdminChannel.DIRECT_SSH))
+        assertTrue(repository.canUseManagementUi(node.id, "create-user"))
+        assertEquals(AdminRole.OWNER, repository.getRole(node.id))
         val original = lastExecutedEnvelope!!
         jazzReplyStatus = "applied"
         val restored = createRepo()
@@ -538,6 +552,48 @@ class AdminRepositoryV2Test {
         assertEquals(original.opId, lastExecutedEnvelope!!.opId)
         assertEquals(original.payload, lastExecutedEnvelope!!.payload)
         assertEquals("pair-a", retry.getOrThrow().id)
+    }
+
+    @Test fun portableJazzWorkflowRetainsReservationAndIdentityAfterUnknownResult() {
+        grantRole("srv-1", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(version = "1.2.48", capabilities = coreInfo!!.capabilities + "compact-route-v2")
+        val node = repository.getServerNode("srv-1")!!
+        val requests = mutableListOf<AdminEnvelope>()
+        val stages = mutableListOf<String?>()
+        var device: kotlinx.serialization.json.JsonObject? = null
+        var repo = repository
+        apiResponse = { envelope ->
+            val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(envelope.payload))).jsonObject
+            stages += repo.commandControl.actions.value.single().detail
+            assertEquals("issue-portable-jazz", repo.commandControl.actions.value.single().operation)
+            when (command.getValue("op").jsonPrimitive.content) {
+                "list-devices" -> device?.let { "[$it]" } ?: "[]"
+                "register-device" -> buildJsonObject {
+                    put("id", "device"); put("user_id", "user"); put("status", "active")
+                    put("public_key", command.getValue("device_pub")); put("fingerprint", "fingerprint")
+                }.also { device = it }.toString()
+                "list-assignments" -> "[]"
+                "assign-profile" -> {
+                    requests += envelope
+                    """{"id":"pair-a","user_id":"user","device_id":"device","profile_instance_id":"profile","server_id":"srv-1","transport":"jazz","status":"ready","revision":1}"""
+                }
+                else -> error("Unexpected command")
+            }
+        }
+        jazzReplyStatus = "unknown"
+        val first = repo.issuePortableJazzRoute("user", node.id, AdminChannel.DIRECT_SSH, node)
+        assertTrue(first.toString(), first.exceptionOrNull() is UnknownAdminOperation)
+        assertTrue(repo.commandControl.actions.value.isEmpty())
+        assertTrue(repo.commandHistoryFlow.value.none { it.status == AdminCommandRecord.STATUS_CANCELLED_LOCAL })
+        repo = createRepo()
+        assertTrue(repo.issuePortableJazzRoute("user", node.id, AdminChannel.DIRECT_SSH, node).exceptionOrNull() is UnknownAdminOperation)
+        assertEquals(2, requests.size)
+        assertEquals(requests.first().toJson(), requests.last().toJson())
+        assertEquals(1, executedOperations.count { it == "register-device" })
+        assertFalse(executedOperations.contains("issue-invitation"))
+        assertTrue(stages.contains("Подготавливаем устройство…"))
+        assertTrue(stages.contains("Подключаем Jazz на сервере…"))
+        assertTrue(repo.commandControl.actions.value.isEmpty())
     }
 
     @Test fun removingOneScopedGrantPreservesOtherServerAndSshContexts() {
@@ -632,6 +688,185 @@ class AdminRepositoryV2Test {
         val res = repository.createUser("Alice", AdminChannel.DIRECT_SSH)
         assertTrue(res.isFailure)
         assertTrue(res.exceptionOrNull()?.message?.contains("target_server_id") == true)
+    }
+
+    @Test fun revokedAdministratorNeverSubmitsMutationAndRecordsLocalCancellation() {
+        grantRole("revoked-owner", AdminRole.OWNER)
+        executedOperations.clear()
+        rejectAccessProbe = true
+        val result = repository.createUser("Blocked", AdminChannel.DIRECT_SSH, repository.getServerNode("revoked-owner"))
+        assertTrue(result.isFailure)
+        assertEquals(listOf("get-cluster-snapshot"), executedOperations)
+        assertTrue(repository.commandHistoryFlow.value.any {
+            it.commandType == "create-user" && it.status == AdminCommandRecord.STATUS_CANCELLED_LOCAL
+        })
+        assertTrue(repository.commandControl.actions.value.isEmpty())
+    }
+
+    @Test fun downgradedLiveRoleNeverSubmitsMutation() {
+        grantRole("downgraded-owner", AdminRole.OWNER)
+        executedOperations.clear()
+        liveRoleScope = "viewer"
+        val result = repository.createUser("Blocked", AdminChannel.DIRECT_SSH, repository.getServerNode("downgraded-owner"))
+        assertTrue(result.isFailure)
+        assertEquals(listOf("get-cluster-snapshot"), executedOperations)
+        assertEquals(AdminCommandRecord.STATUS_CANCELLED_LOCAL, repository.commandHistoryFlow.value.first().status)
+        assertFalse(repository.canUseManagementUi("downgraded-owner", "create-user"))
+        assertTrue(repository.canUseManagementUi("downgraded-owner", "list-users"))
+    }
+
+    @Test fun managementUiRequiresLiveAccessAndStaysBlockedAfterRejection() {
+        grantRole("live-gate", AdminRole.OWNER)
+        val node = repository.getServerNode("live-gate")!!
+        assertFalse(repository.canUseManagementUi(node.id, "create-user"))
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertTrue(repository.canUseManagementUi(node.id, "create-user"))
+        rejectAccessProbe = true
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertFalse(repository.canUseManagementUi(node.id, "create-user"))
+        assertFalse(repository.canUseManagementUi(node.id, "list-users"))
+        assertEquals(AdminLiveAccess.State.DENIED, repository.liveAccessFlow.value[node.id]?.state)
+        rejectAccessProbe = false
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertTrue(repository.canUseManagementUi(node.id, "create-user"))
+    }
+
+    @Test fun networkFailureBlocksManagementWithoutRevokingTheGrant() {
+        grantRole("offline-owner", AdminRole.OWNER)
+        val node = repository.getServerNode("offline-owner")!!
+        val original = repository.getActiveGrant(node.id)
+        accessProbeOffline = true
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertEquals(AdminLiveAccess.State.UNAVAILABLE, repository.liveAccessFlow.value[node.id]?.state)
+        assertEquals(original, repository.getActiveGrant(node.id))
+        assertFalse(repository.canUseManagementUi(node.id, "create-user"))
+        assertTrue(repository.canUseManagementUi(node.id, "list-users"))
+    }
+
+    @Test fun administrationSessionReusesSnapshotUntilExplicitRefresh() {
+        grantRole("session-owner", AdminRole.OWNER)
+        val node = repository.getServerNode("session-owner")!!
+        executedOperations.clear()
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertEquals(listOf("get-cluster-snapshot"), executedOperations)
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertEquals(2, executedOperations.size)
+        nextResponseData = """{"id":"session-user","name":"Alice","status":"active"}"""
+        assertTrue(repository.createUser("Alice", AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertEquals(listOf("get-cluster-snapshot", "get-cluster-snapshot",
+            "get-cluster-snapshot", "create-user"), executedOperations)
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertEquals("get-cluster-snapshot", executedOperations.last())
+        assertEquals(5, executedOperations.size)
+    }
+
+    @Test fun cachedGrantValidationRejectsChangedPinSignatureAndRevocation() {
+        grantRole("cached-validation", AdminRole.OWNER)
+        val id = "cached-validation"
+        assertTrue(repository.canPerform(id, "create-user"))
+        val pin = repository.getPinnedServerPublicKey(id)!!
+        repository.setPinnedServerPublicKey("invalid-key", id)
+        assertFalse(repository.canPerform(id, "create-user"))
+        repository.setPinnedServerPublicKey(pin, id)
+        assertTrue(repository.canPerform(id, "create-user"))
+        val envelope = repository.getActiveGrantEnvelope(id)!!
+        storage.putString("admin_active_grant_envelope_$id", envelope.copy(signature = "invalid").toJson())
+        assertFalse(repository.canPerform(id, "create-user"))
+        storage.putString("admin_active_grant_envelope_$id", envelope.toJson())
+        assertTrue(repository.canPerform(id, "create-user"))
+        val grant = repository.getActiveGrant(id)!!
+        storage.putString("admin_active_grant_$id", json.encodeToString(grant.copy(scope = listOf("other"))))
+        assertFalse(repository.canPerform(id, "create-user"))
+        storage.putString("admin_active_grant_$id", json.encodeToString(grant))
+        assertTrue(repository.canPerform(id, "create-user"))
+        storage.putString("admin_locally_revoked_servers", """["cached-validation"]""")
+        assertFalse(repository.canPerform(id, "create-user"))
+    }
+
+    @Test fun cachedGrantValidationStillExpiresWithoutRestart() {
+        grantRole("cached-expiry", AdminRole.OWNER)
+        var now = System.currentTimeMillis() / 1000L
+        val repo = AdminRepository(keyManager = keys, storage = storage, currentTimeSeconds = { now })
+        assertTrue(repo.canPerform("cached-expiry", "create-user"))
+        now = repository.getActiveGrant("cached-expiry")!!.expiresAt
+        assertFalse(repo.canPerform("cached-expiry", "create-user"))
+    }
+
+    @Test fun signedOperationalSnapshotFailureDoesNotRevokeAdministrator() {
+        grantRole("operation-failed", AdminRole.OWNER)
+        val node = repository.getServerNode("operation-failed")!!
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isSuccess)
+        rejectAccessProbe = true
+        accessProbeError = "EXECUTION_FAILED: worker state unavailable"
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertEquals(AdminLiveAccess.State.UNAVAILABLE, repository.liveAccessFlow.value[node.id]?.state)
+        assertEquals(AdminRole.OWNER, repository.getRole(node.id))
+        assertTrue(repository.canUseManagementUi(node.id, "list-users"))
+        assertNull(repository.serverMutationBlockReason(node.id, AdminChannel.DIRECT_SSH))
+    }
+
+    @Test fun deleteUserPinsAuthorityAndExplicitTargetServer() {
+        grantRole("authority", AdminRole.OWNER)
+        grantRole("other", AdminRole.OWNER)
+        coreInfo = coreInfo!!.copy(capabilities = coreInfo!!.capabilities + "user-server-delete-v1")
+        val node = repository.getServerNode("authority")!!
+        executedOperations.clear()
+        assertTrue(repository.deleteUserFromServer("same-user-id", "worker-b", node, AdminChannel.DIRECT_SSH).isSuccess)
+        assertEquals(listOf("get-cluster-snapshot", "delete-user"), executedOperations)
+        val command = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(lastExecutedEnvelope!!.payload))).jsonObject
+        assertEquals("worker-b", command["server_id"]?.jsonPrimitive?.content)
+        assertEquals("same-user-id", command["user_id"]?.jsonPrimitive?.content)
+        assertEquals("control-authority", lastExecutedEnvelope!!.profileId)
+        assertEquals(AdminRole.OWNER, repository.getRole("other"))
+    }
+
+    @Test fun oldServerCannotReceiveUserDeletionAndOtherServerUserStaysVisible() {
+        grantRole("old", AdminRole.OWNER)
+        executedOperations.clear()
+        assertTrue(repository.deleteUserFromServer("u", "old", repository.getServerNode("old")!!, AdminChannel.DIRECT_SSH).isFailure)
+        assertEquals(listOf("get-cluster-snapshot"), executedOperations)
+        val user = AdminUser("u", "TePoLe", removedServerIds = listOf("first"))
+        assertFalse(user.visibleOn(setOf("first")))
+        assertTrue(user.visibleOn(setOf("second")))
+        assertTrue(user.visibleOn(setOf("first", "second")))
+    }
+
+    @Test fun offlineSessionDoesNotRetryOnEveryEntryButExplicitRefreshRecovers() {
+        grantRole("session-offline", AdminRole.OWNER)
+        val node = repository.getServerNode("session-offline")!!
+        executedOperations.clear()
+        accessProbeOffline = true
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isFailure)
+        accessProbeOffline = false
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertEquals(1, executedOperations.size)
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertTrue(repository.loadAdminSession(AdminChannel.DIRECT_SSH, node).isSuccess)
+        assertEquals(2, executedOperations.size)
+        assertTrue(repository.canUseManagementUi(node.id, "create-user"))
+    }
+
+    @Test fun offlineRetryDoesNotReopenPreviouslyDeniedUsers() {
+        grantRole("session-denied", AdminRole.OWNER)
+        val node = repository.getServerNode("session-denied")!!
+        rejectAccessProbe = true
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        rejectAccessProbe = false
+        accessProbeOffline = true
+        assertTrue(repository.getClusterSnapshot(AdminChannel.DIRECT_SSH, node).isFailure)
+        assertFalse(repository.canUseManagementUi(node.id, "list-users"))
+    }
+
+    @Test fun confirmedAccessPrecedesFormationAndSubmission() {
+        grantRole("active-owner", AdminRole.OWNER)
+        executedOperations.clear()
+        nextResponseData = """{"id":"user-live","name":"Alice","status":"active"}"""
+        val result = repository.createUser("Alice", AdminChannel.DIRECT_SSH, repository.getServerNode("active-owner"))
+        assertTrue(result.toString(), result.isSuccess)
+        assertEquals(listOf("get-cluster-snapshot", "create-user"), executedOperations)
+        assertTrue(repository.commandControl.actions.value.isEmpty())
     }
 
     @Test fun testCreateUserSuccess() {

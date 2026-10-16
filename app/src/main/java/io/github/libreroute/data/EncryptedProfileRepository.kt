@@ -26,6 +26,7 @@ class EncryptedProfileRepository(private val context: Context) {
         private const val GCM_TAG_LENGTH = 128
         private const val FILE_NAME = "profiles_secure.bin"
         private val lock = Any()
+        private val readCache = ContentReadCache<List<Tunnel>>()
     }
 
     private val file = AtomicFile(File(context.noBackupFilesDir, FILE_NAME))
@@ -53,6 +54,7 @@ class EncryptedProfileRepository(private val context: Context) {
     fun load(): List<Tunnel> = synchronized(lock) {
         val backupFile = File(file.baseFile.path + ".bak")
         if (!file.baseFile.exists() && !backupFile.exists()) {
+            readCache.invalidate(file.baseFile.path)
             val migrated = migrateFromSharedPreferences()
             if (migrated != null) {
                 return migrated
@@ -63,11 +65,13 @@ class EncryptedProfileRepository(private val context: Context) {
         return try {
             val bytes = file.readFully()
             if (bytes.size < GCM_IV_LENGTH + 16) return emptyList()
+            readCache.read(file.baseFile.path, bytes) {
             val iv = bytes.copyOfRange(0, GCM_IV_LENGTH)
             val cipher = Cipher.getInstance(CIPHER_ALGO)
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
             val decrypted = cipher.doFinal(bytes, GCM_IV_LENGTH, bytes.size - GCM_IV_LENGTH)
             json.decodeFromString<List<Tunnel>>(String(decrypted, Charsets.UTF_8))
+            }.toList()
         } catch (e: Exception) {
             Logx.e(TAG, "Failed to decrypt profiles: ${e.message}", e)
             emptyList()
@@ -95,6 +99,7 @@ class EncryptedProfileRepository(private val context: Context) {
             try {
                 out.write(combined)
                 file.finishWrite(out)
+                readCache.invalidate(file.baseFile.path)
             } catch (e: Exception) {
                 file.failWrite(out)
                 throw e

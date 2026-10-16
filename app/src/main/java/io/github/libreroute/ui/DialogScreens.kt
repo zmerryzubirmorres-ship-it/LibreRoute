@@ -15,7 +15,7 @@ import androidx.savedstate.SavedStateRegistryOwner
  * Call restore() after binding the screen, before restored DialogFragments start.
  */
 class DialogScreens(
-    owner: SavedStateRegistryOwner,
+    private val owner: SavedStateRegistryOwner,
     private val reopen: (String, Bundle) -> Unit,
 ) : DefaultLifecycleObserver {
     private data class Screen(val key: String, val args: Bundle, val dialog: Dialog)
@@ -40,14 +40,24 @@ class DialogScreens(
         }
     }
 
-    fun show(dialog: Dialog, key: String, args: Bundle = Bundle(), onDismiss: () -> Unit = {}) {
+    fun show(dialog: Dialog, key: String, args: Bundle = Bundle(),
+             progressViewIds: Set<Int>? = null, pendingLabel: () -> String? = { null },
+             onDismiss: () -> Unit = {}) {
         if (destroyed) return
         dialog.create()
         dialog.window?.decorView?.let(::assignStateIds)
         val screen = Screen(key, Bundle(args), dialog)
         screens.add(screen)
-        dialog.setOnDismissListener { screens.remove(screen); onDismiss() }
+        var clearFeedback: (() -> Unit)? = null
+        dialog.setOnDismissListener { clearFeedback?.invoke(); screens.remove(screen); onDismiss() }
         dialog.show()
+        if (owner.javaClass.name.startsWith("io.github.libreroute.admin.")) {
+            dialog.window?.decorView?.let { root ->
+                clearFeedback = io.github.libreroute.admin.AdminCommandFeedback.bind(owner, root,
+                    io.github.libreroute.admin.AdminRepository.getInstance(dialog.context).commandControl,
+                    progressViewIds = progressViewIds, pendingLabel = pendingLabel)
+            }
+        }
         restoring?.takeIf { it.getString("key") == key }?.getBundle("view")?.let {
             dialog.onRestoreInstanceState(it)
         }

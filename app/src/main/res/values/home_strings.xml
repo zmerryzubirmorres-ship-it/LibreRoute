@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_connection_socks">Подключение и SOCKS5</string>
+    <string name="home_connection_mode_title">Как использовать подключение</string>
+    <string name="home_phone_vpn">Телефон через VPN</string>
+    <string name="home_phone_proxy">Телефон без VPN</string>
+    <string name="home_phone_vpn_detail">Приложения телефона подключаются автоматически, с учётом раздельного туннелирования.</string>
+    <string name="home_phone_proxy_detail">Работает только SOCKS5. Укажите его адрес в нужном приложении или на другом устройстве.</string>
+    <string name="home_proxy_routes_title">Куда SOCKS5 отправляет трафик</string>
+    <string name="home_proxy_routes_server">Всё через выбранный сервер</string>
+    <string name="home_proxy_routes_server_hint">Все запросы к прокси идут через сервер. Правила раздельного туннелирования для SOCKS5 не используются.</string>
+    <string name="home_proxy_routes_rules">По правилам раздельного туннелирования</string>
+    <string name="home_proxy_routes_rules_hint">Трафик SOCKS5 направляется напрямую, через zapret или через сервер согласно настройкам в разделе «Раздельное туннелирование».</string>
+    <string name="home_proxy_routes_autonomous">Для автономного zapret SOCKS5 всегда использует правила раздельного туннелирования. Сервер не требуется.</string>
+    <string name="home_connection_apply_hint">Этот выбор не включает раздачу другим устройствам — у неё свой переключатель на главной. Изменения режима и маршрутов вступят в силу при следующем подключении.</string>
+    <string name="home_import_detail">Ссылка приглашения или конфигурация</string>
+    <string name="home_own_server_detail">Подключение и настройка сервера по SSH</string>
+    <string name="home_share_socks">Раздача SOCKS5</string>
+    <string name="home_share_settings">Порт и пароль раздачи SOCKS5</string>
+    <string name="home_diagnostics">Диагностика</string>
+    <string name="home_logs">Журнал</string>
+    <string name="home_local_socks">Локальный SOCKS5</string>
+    <string name="home_server_transport">Сервер</string>
+    <string name="home_zapret_profiles">Профили zapret</string>
+    <string name="home_connection">ПОДКЛЮЧЕНИЕ</string>
+    <string name="home_selected_profile">Выбранный профиль</string>
+    <string name="home_import">Импорт приглашения</string>
+    <string name="home_own_server">Свой сервер</string>
+    <string name="home_vpn_mode">VPN и локальный прокси</string>
+    <string name="home_proxy_mode">Только прокси</string>
+    <string name="home_vpn_detail">Трафик приложений · правила маршрутизации</string>
+    <string name="home_proxy_rules">Только приложения с настроенным SOCKS5. Маршруты — по правилам раздельного туннелирования.</string>
+    <string name="home_proxy_tunnel">Только приложения с настроенным SOCKS5. Все запросы прокси — через сервер.</string>
+    <string name="home_autonomous_proxy">Только приложения с настроенным SOCKS5. Автономный zapret, без сервера.</string>
+    <string name="home_profile_server">Серверное подключение</string>
+    <string name="home_profile_autonomous">Автономный обход DPI</string>
+    <string name="home_profile_empty">Добавьте профиль для подключения</string>
+</resources>

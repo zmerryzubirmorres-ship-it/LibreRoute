@@ -325,6 +325,7 @@ data class AdminCommandRecord(
         const val STATUS_VERIFIED = "verified"
         const val STATUS_FAILED = "failed"
         const val STATUS_UNKNOWN = "unknown"
+        const val STATUS_CANCELLED_LOCAL = "cancelled_local"
     }
 }
 
@@ -410,7 +411,8 @@ data class AdminUser(
     val name: String,
     val status: String = STATUS_ACTIVE,
     @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("removed_server_ids") val removedServerIds: List<String> = emptyList()
 ) {
     companion object {
         const val STATUS_ACTIVE = "active"
@@ -420,6 +422,7 @@ data class AdminUser(
     val isActive: Boolean get() = status.equals(STATUS_ACTIVE, ignoreCase = true)
     val isSuspended: Boolean get() = status.equals(STATUS_SUSPENDED, ignoreCase = true)
     val isRevoked: Boolean get() = status.equals(STATUS_REVOKED, ignoreCase = true)
+    fun visibleOn(servers: Set<String>): Boolean = removedServerIds.isEmpty() || servers.any { it !in removedServerIds }
 }
 
 /**
@@ -543,6 +546,13 @@ data class UpdateUserPayload(
 data class SuspendUserPayload(
     val op: String = "suspend-user",
     @SerialName("user_id") val userId: String
+)
+
+@Serializable
+data class DeleteUserPayload(
+    val op: String = "delete-user",
+    @SerialName("user_id") val userId: String,
+    @SerialName("server_id") val serverId: String
 )
 
 @Serializable
@@ -811,5 +821,3 @@ data class GetClusterSnapshotPayload(
 data class ReconcileAssignmentsPayload(
     val op: String = "reconcile-assignments"
 )
-
-

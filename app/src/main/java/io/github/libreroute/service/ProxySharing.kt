@@ -12,7 +12,8 @@ internal object ProxySharing {
             HotspotProxyBridge.stop()
             return false
         }
-        return HotspotProxyBridge.start(settings.lanProxyPort, session!!.port, session.isAuthEnabled,
+        val upstreamPort = io.github.libreroute.util.ProxyRoutingStatus.lanIngressPort.takeIf { it in 1..65535 } ?: session!!.port
+        return HotspotProxyBridge.start(settings.lanProxyPort, upstreamPort, session!!.isAuthEnabled,
             session.username, session.password)
     }
 

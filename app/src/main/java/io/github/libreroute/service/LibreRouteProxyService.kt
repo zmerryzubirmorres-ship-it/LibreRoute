@@ -83,7 +83,8 @@ class LibreRouteProxyService : Service() {
                     )
                     nm?.notify(NOTIFICATION_ID, notif)
                 }
-                if (ev is AppEvent.TransportDisconnected && isProxyRunning) stopProxy()
+                if (ev is AppEvent.TransportDisconnected && (isProxyRunning || isProxyStarting) &&
+                    !(io.github.libreroute.util.ProxyRoutingStatus.active?.mode == io.github.libreroute.util.ProxyRoutingMode.RULES && supervisor.isRunning)) stopProxy()
             }
         }
     }
@@ -121,7 +122,8 @@ class LibreRouteProxyService : Service() {
             shareLan = appSettings.shareLanProxy
         )
         proxyPort = session.port
-        val proxyPayload = runCatching { buildProxyPayload(transportPayload, session) }.getOrElse {
+        val autonomous = transportType in setOf("direct-dpi", "directDpi")
+        val proxyPayload = runCatching { buildProxyPayload(transportPayload, session, autonomous) }.getOrElse {
             EventBus.dispatch(AppEvent.LogMessage("[E] [PROXY] Проверьте длину логина и пароля SOCKS5 (1–255 байт UTF-8)"))
             stopProxy()
             return START_NOT_STICKY
@@ -138,7 +140,12 @@ class LibreRouteProxyService : Service() {
                     stopProxy()
                     return@launch
                 }
-                val ready = NativeTransportReadiness(proxyPayload).awaitReady(transportType,
+                val ready = if (supervisor.isFlexibleProxy) {
+                    val deadline = android.os.SystemClock.elapsedRealtime() + 15_000L
+                    while (!supervisor.isLocalProxyReady && supervisor.isRunning && !alreadyStopping.get() &&
+                        android.os.SystemClock.elapsedRealtime() < deadline) kotlinx.coroutines.delay(50)
+                    supervisor.isLocalProxyReady
+                } else NativeTransportReadiness(proxyPayload).awaitReady(transportType,
                     canWait = { !alreadyStopping.get() && supervisor.isRunning },
                     connected = { supervisor.isConnected })
                 if (alreadyStopping.get()) return@launch
@@ -197,17 +204,15 @@ class LibreRouteProxyService : Service() {
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                val ch = NotificationChannel(
-                    CHANNEL_ID,
-                    getString(R.string.app_name) + " Proxy",
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "LibreRoute SOCKS5 proxy-only mode"
-                    setShowBadge(false)
-                }
-                nm.createNotificationChannel(ch)
+            val ch = NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.app_name) + " SOCKS5",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "LibreRoute SOCKS5 proxy-only mode"
+                setShowBadge(false)
             }
+            nm.createNotificationChannel(ch)
         }
     }
 
@@ -243,6 +248,8 @@ class LibreRouteProxyService : Service() {
             .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setShowWhen(false)
             .setContentIntent(mainPi)
             .addAction(0, getString(R.string.action_disconnect), disconnectPi)
@@ -284,6 +291,7 @@ class LibreRouteProxyService : Service() {
      * Removed: --inbound=tun, --tun-socket, --tun-mtu
      * Injected: --inbound=socks5  --socks5 127.0.0.1:<port>
      */
-    private fun buildProxyPayload(original: Array<String>, session: LocalSocksSession.SessionInfo): List<String> =
-        localProxyOptions(original.toList(), session, proxyOnly = true)
+    private fun buildProxyPayload(original: Array<String>, session: LocalSocksSession.SessionInfo, autonomous: Boolean): List<String> =
+        localProxyOptions(original.toList(), session, proxyOnly = true,
+            routingMode = io.github.libreroute.util.effectiveProxyRoutingMode(AppSettings(applicationContext).proxyRoutingMode, autonomous))
 }

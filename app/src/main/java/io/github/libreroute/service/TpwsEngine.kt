@@ -14,9 +14,12 @@ class TpwsEngine(private val context: Context) {
     private var drainThread: Thread? = null
     var port: Int = 0
         private set
+    var profileId: String = ""
+        private set
 
     fun start(profile: io.github.libreroute.data.ZapretProfile = io.github.libreroute.data.ZapretProfile.DEFAULT): Int {
         stop()
+        profileId = profile.id
         val binary = File(context.applicationInfo.nativeLibraryDir, "libtpws.so")
         require(binary.isFile && binary.canExecute()) { "tpws binary is unavailable" }
         port = ServerSocket(0, 16, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }

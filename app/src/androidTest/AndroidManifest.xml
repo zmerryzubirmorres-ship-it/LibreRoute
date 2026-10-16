@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="io.github.libreroute.phone.PhoneAcceptanceInstrumentation"
+        android:targetPackage="io.github.libreroute.dev"
+        android:label="LibreRoute phone proxy acceptance" />
+</manifest>

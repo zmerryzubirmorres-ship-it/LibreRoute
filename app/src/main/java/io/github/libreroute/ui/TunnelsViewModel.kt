@@ -44,6 +44,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -70,14 +75,9 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             service = null
             bound = false
             Logx.d(TAG, "service disconnected")
-            if (_active.value !is TunnelState.Idle) {
-                _active.value = TunnelState.Idle
-                _speedSampleAvailable.value = false
-                _rxSpeed.value = 0L
-                _txSpeed.value = 0L
-                stopUptimeCounter()
-                refresh()
-            }
+            // Losing the Activity binder is not a tunnel teardown. Recover
+            // the latest service state instead of displaying a false disconnect.
+            syncRunningServiceState()
         }
     }
 
@@ -154,17 +154,14 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
 
     private var uptimeJob: Job? = null
     private var healthCheckJob: Job? = null
+    private val healthProbeMutex = Mutex()
+    private var problemReportJob: Job? = null
+    private val reportedOutages = mutableMapOf<Long, Long>()
     private var periodicHealthJob: Job? = null
     private var connectionJob: Job? = null
+    private var refreshJob: Job? = null
 
     init {
-        repo.load().forEach { t ->
-            val saved = loadSavedHealth(t.id)
-            if (saved != TunnelHealth.UNKNOWN) {
-                healthCache[t.id] = saved
-            }
-        }
-        _healthMap.value = healthCache.toMap()
         refresh()
         syncRunningServiceState()
         viewModelScope.launch {
@@ -177,9 +174,9 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     is AppEvent.VpnConnected -> {
                         val tName = event.tunnelName ?: io.github.libreroute.service.SocksVpnService.activeTunnelName
-                        val tunnel = (if (!tName.isNullOrEmpty()) {
-                            repo.load().firstOrNull { it.name == tName }
-                        } else null) ?: _selected.value ?: repo.getSelected()
+                        val tunnel = repo.load().firstOrNull { it.id == io.github.libreroute.service.NativeProcessSupervisor.activeTunnelId }
+                            ?: (if (!tName.isNullOrEmpty()) repo.load().firstOrNull { it.name == tName } else null)
+                            ?: _selected.value ?: repo.getSelected()
                         if (tunnel != null) {
                             _active.value = TunnelState.Running(tunnel)
                             // A native transport connection is not proof that packets
@@ -193,7 +190,18 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
                             refresh()
                         }
                     }
+                    is AppEvent.TransportConnected -> {
+                        // The local listener can start before Jazz has a peer. Check
+                        // the recovered tunnel now, without the periodic 30s delay.
+                        val tunnel = _active.value.tunnel
+                        if (tunnel != null) startHealthCheckLoop(tunnel)
+                        else syncRunningServiceState()
+                    }
                     is AppEvent.TransportDisconnected -> {
+                        if (io.github.libreroute.service.NativeProcessSupervisor.rejectedSession ===
+                            io.github.libreroute.util.LocalSocksSession.getActive()) {
+                            (_active.value as? TunnelState.Running)?.tunnel?.let { startHealthCheckLoop(it) }
+                        }
                         // Handled exclusively by SocksVpnService to prevent split-brain failover collision
                         Logx.d(TAG, "Transport disconnected event received (handled by SocksVpnService)")
                     }
@@ -325,7 +333,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             emptySet()
         }
         val appSettings = io.github.libreroute.util.AppSettings(ctx)
-        val proxyOnly = appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)
+        val proxyOnly = appSettings.proxyOnlyMode
         if (!proxyOnly && isSplitEnabled && !appBypass && selectedApps.isEmpty()) {
             _active.value = TunnelState.Idle
             EventBus.dispatch(AppEvent.LogMessage("[E] Выберите хотя бы одно приложение для режима «только через туннель»"))
@@ -434,11 +442,8 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             putExtra(Constants.INTENT_TUNNEL_ID, prepared.id)
         }
 
-        // direct-dpi is a local TUN filter; the SOCKS-only service has no TUN
-        // descriptor and the Core intentionally exits when used with it.
-        // Always keep zapret on the VPN service even if proxy-only mode is
-        // enabled for ordinary relay profiles.
-        if (appSettings.proxyOnlyMode && !io.github.libreroute.data.DirectDpiProfile.isDirect(prepared)) {
+        // Proxy-only uses the SOCKS service for both remote and autonomous profiles.
+        if (appSettings.proxyOnlyMode) {
             // ── Proxy-only mode: start LibreRouteProxyService (no VPN key icon) ──
             Logx.i(TAG, "Proxy-only mode: starting LibreRouteProxyService")
             EventBus.dispatch(AppEvent.LogMessage("[I] Режим прокси (без VPN-иконки): запуск LibreRouteProxyService"))
@@ -533,20 +538,29 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() {
-        val list = repo.load()
-        val running = (_active.value as? TunnelState.Running)?.tunnel
-        _tunnels.value = list.map { TunnelViewType(it, enabled = it == running) }
-        val sel = repo.getSelected()
-        _selected.value = sel
-        if (running != null) {
-            checkTunnelHealth(running)
-        } else {
-            _tunnelHealth.value = getTunnelHealth(sel?.id ?: -1)
-            pingCache.clear()
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { repo.load() }
+            list.forEach { t ->
+                val saved = loadSavedHealth(t.id)
+                if (saved != TunnelHealth.UNKNOWN) healthCache.putIfAbsent(t.id, saved)
+            }
             _healthMap.value = healthCache.toMap()
-            _pingMap.value = emptyMap()
+            val running = (_active.value as? TunnelState.Running)?.tunnel
+            _tunnels.value = list.map { TunnelViewType(it, enabled = it == running) }
+            val selectedId = repo.getSelectedId()
+            val sel = list.firstOrNull { it.id == selectedId } ?: list.firstOrNull()
+            _selected.value = sel
+            if (running != null) {
+                checkTunnelHealth(running)
+            } else {
+                _tunnelHealth.value = getTunnelHealth(sel?.id ?: -1)
+                pingCache.clear()
+                _healthMap.value = healthCache.toMap()
+                _pingMap.value = emptyMap()
+            }
+            if (periodicHealthJob?.isActive != true) probeAllTunnels()
         }
-        if (periodicHealthJob?.isActive != true) probeAllTunnels()
     }
 
     fun probeAllTunnels() {
@@ -579,8 +593,12 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun checkSelectedHealth(force: Boolean = false) {
         val running = (_active.value as? TunnelState.Running)?.tunnel
-        val target = running ?: _selected.value ?: repo.getSelected()
-        checkTunnelHealth(target, force = force)
+        val target = running ?: _selected.value
+        if (target != null) checkTunnelHealth(target, force = force)
+        else viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { repo.getSelected() }
+            checkTunnelHealth(_active.value.tunnel ?: _selected.value ?: saved, force = force)
+        }
     }
 
     fun checkTunnelHealth(tunnel: Tunnel?, force: Boolean = false) {
@@ -591,15 +609,9 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         }
         val running = (_active.value as? TunnelState.Running)?.tunnel
         if (running != null && running.id == tunnel.id) {
-            _tunnelHealth.value = healthCache[tunnel.id] ?: TunnelHealth.CHECKING
-            if (force || !healthCache.containsKey(tunnel.id)) {
+            if (force || periodicHealthJob?.isActive != true) {
                 _tunnelHealth.value = TunnelHealth.CHECKING
-                healthCheckJob = viewModelScope.launch(Dispatchers.IO) {
-                    val ok = checkRunningHealthInternal(tunnel)
-                    val status = if (ok) TunnelHealth.AVAILABLE else TunnelHealth.UNAVAILABLE
-                    saveHealth(tunnel.id, status)
-                    _tunnelHealth.value = status
-                }
+                startHealthCheckLoop(tunnel)
             }
         } else {
             _tunnelHealth.value = getTunnelHealth(tunnel.id)
@@ -608,87 +620,23 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun probeRunningTunnel(tunnel: Tunnel): Boolean = withContext(Dispatchers.IO) {
-        val svcRunning = io.github.libreroute.service.LibreRouteProxyService.isProxyRunning ||
-            runCatching {
-                service?.isFServiceRunning() == true && service?.isVpnRunning() == true
-            }.getOrDefault(false)
-        if (!svcRunning) {
-            return@withContext false
-        }
-        if (io.github.libreroute.data.DirectDpiProfile.isDirect(tunnel)) {
-            saveHealth(tunnel.id, TunnelHealth.AVAILABLE)
-            _tunnelHealth.value = TunnelHealth.AVAILABLE
-            return@withContext true
-        }
-        for (attempt in 1..2) {
-            val ok = checkRunningHealthInternal(tunnel)
-            if (ok) return@withContext true
-            if (attempt < 2) kotlinx.coroutines.delay(1000L)
-        }
-        false
-    }
-
-    private fun checkRunningHealthInternal(tunnel: Tunnel): Boolean {
-        val isProxy = io.github.libreroute.service.LibreRouteProxyService.isProxyRunning
-        val svcRunning = isProxy || runCatching {
-            service?.isFServiceRunning() == true && service?.isVpnRunning() == true
-        }.getOrDefault(false)
-
-        if (!svcRunning) {
-            saveHealth(tunnel.id, TunnelHealth.UNAVAILABLE)
-            _tunnelHealth.value = TunnelHealth.UNAVAILABLE
+    private suspend fun checkRunningHealthInternal(tunnel: Tunnel): Boolean = healthProbeMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        val channel = io.github.libreroute.service.ClientChannel.state.value
+        if (channel.tunnelId != tunnel.id || !channel.running || !channel.ready) {
             pingCache.remove(tunnel.id)
             _pingMap.value = pingCache.toMap()
-            return false
+            return@withLock false
         }
-
-        val sessionPort = if (isProxy && io.github.libreroute.service.LibreRouteProxyService.proxyPort in 1..65535) {
-            io.github.libreroute.service.LibreRouteProxyService.proxyPort
-        } else {
-            io.github.libreroute.util.LocalSocksSession.getActive().port
-        }
-        if (sessionPort !in 1..65535) {
-            saveHealth(tunnel.id, TunnelHealth.UNAVAILABLE)
-            _tunnelHealth.value = TunnelHealth.UNAVAILABLE
-            pingCache.remove(tunnel.id)
-            _pingMap.value = pingCache.toMap()
-            return false
-        }
-
-        // 1. Verify that the local SOCKS proxy is listening and responsive
-        val socksPortOpen = try {
-            java.net.Socket().use { s ->
-                s.connect(java.net.InetSocketAddress("127.0.0.1", sessionPort), 1500)
-                s.isConnected
-            }
-        } catch (_: Exception) {
-            false
-        }
-        if (!socksPortOpen) {
-            saveHealth(tunnel.id, TunnelHealth.UNAVAILABLE)
-            _tunnelHealth.value = TunnelHealth.UNAVAILABLE
-            pingCache.remove(tunnel.id)
-            _pingMap.value = pingCache.toMap()
-            return false
-        }
-
-        // 2. Verify true end-to-end connectivity through SOCKS5 proxy via bridge to remote VPS
-        val latency = io.github.libreroute.service.ProxyConnectivityProbe.measure(
-            io.github.libreroute.util.LocalSocksSession.getActive().copy(port = sessionPort), 2500)
-        if (latency < 0) {
-            saveHealth(tunnel.id, TunnelHealth.UNAVAILABLE)
-            _tunnelHealth.value = TunnelHealth.UNAVAILABLE
-            pingCache.remove(tunnel.id)
-            _pingMap.value = pingCache.toMap()
-            return false
-        }
-
-        pingCache[tunnel.id] = latency
+        val rtt = channel.freshRtt(android.os.SystemClock.elapsedRealtime())
+        if (rtt == null) pingCache.remove(tunnel.id) else pingCache[tunnel.id] = rtt
         _pingMap.value = pingCache.toMap()
-        saveHealth(tunnel.id, TunnelHealth.AVAILABLE)
+        if (_active.value.tunnel?.id == tunnel.id) {
+            _active.value = TunnelState.Running(tunnel)
+        }
+        if (healthCache[tunnel.id] != TunnelHealth.AVAILABLE) saveHealth(tunnel.id, TunnelHealth.AVAILABLE)
         _tunnelHealth.value = TunnelHealth.AVAILABLE
-        return true
+        true
     }
 
     private fun triggerFailoverIfNeeded(failedTunnel: Tunnel) {
@@ -803,18 +751,29 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 io.github.libreroute.service.SocksVpnService.activeTunnelName
             }
-            val tunnel = (if (!tName.isNullOrEmpty()) {
-                repo.load().firstOrNull { it.name == tName }
-            } else null) ?: _selected.value ?: repo.getSelected()
-            if (tunnel != null && _active.value !is TunnelState.Running) {
-                _active.value = TunnelState.Running(tunnel)
-                saveHealth(tunnel.id, TunnelHealth.CHECKING)
-                _tunnelHealth.value = TunnelHealth.CHECKING
-                pingCache.remove(tunnel.id)
-                _pingMap.value = pingCache.toMap()
-                startUptimeCounter()
-                startHealthCheckLoop(tunnel)
-                refresh()
+            viewModelScope.launch {
+                val tunnel = withContext(Dispatchers.IO) {
+                    repo.load().firstOrNull { it.id == io.github.libreroute.service.NativeProcessSupervisor.activeTunnelId }
+                        ?: (if (!tName.isNullOrEmpty()) repo.load().firstOrNull { it.name == tName } else null)
+                        ?: repo.getSelected()
+                }
+                val currentName = if (isProxy) io.github.libreroute.service.LibreRouteProxyService.activeTunnelName
+                    else io.github.libreroute.service.SocksVpnService.activeTunnelName
+                if (currentName != tName ||
+                    (io.github.libreroute.service.LibreRouteProxyService.connectedAtRealtime == 0L &&
+                        io.github.libreroute.service.SocksVpnService.connectedAtRealtime == 0L &&
+                        !io.github.libreroute.service.LibreRouteProxyService.isProxyRunning &&
+                        runCatching { service?.isVpnRunning != true }.getOrDefault(true))) return@launch
+                if (tunnel != null && _active.value !is TunnelState.Running) {
+                    _active.value = TunnelState.Running(tunnel)
+                    saveHealth(tunnel.id, TunnelHealth.CHECKING)
+                    _tunnelHealth.value = TunnelHealth.CHECKING
+                    pingCache.remove(tunnel.id)
+                    _pingMap.value = pingCache.toMap()
+                    startUptimeCounter()
+                    startHealthCheckLoop(tunnel)
+                    refresh()
+                }
             }
         } else {
             val noRealtime = (io.github.libreroute.service.SocksVpnService.connectedAtRealtime == 0L) &&
@@ -858,63 +817,64 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun startHealthCheckLoop(tunnel: Tunnel) {
         periodicHealthJob?.cancel()
-        periodicHealthJob = viewModelScope.launch(Dispatchers.IO) {
-            delay(1000L)
+        periodicHealthJob = viewModelScope.launch {
+            fun ownsSession() = _active.value.isActive && _active.value.tunnel?.id == tunnel.id
             var consecutiveFailures = 0
-            while (isActive) {
-                val currentTunnel = (_active.value as? TunnelState.Running)?.tunnel ?: break
-                if (currentTunnel.id != tunnel.id) break
-                val isAlive = probeRunningTunnel(currentTunnel)
-                if (!isActive || (_active.value as? TunnelState.Running)?.tunnel?.id != currentTunnel.id) break
-                if (isAlive) {
+            var wasReady = io.github.libreroute.service.ClientChannel.state.value.ready
+            while (isActive && ownsSession()) {
+                val channel = io.github.libreroute.service.ClientChannel.state.value
+                val direct = io.github.libreroute.data.DirectDpiProfile.isDirect(tunnel)
+                if (channel.waitingForNetwork && channel.tunnelId == tunnel.id) {
+                    _active.value = TunnelState.WaitingForNetwork(tunnel)
                     consecutiveFailures = 0
-                    if (_tunnelHealth.value != TunnelHealth.AVAILABLE) {
-                        _tunnelHealth.value = TunnelHealth.AVAILABLE
-                        saveHealth(currentTunnel.id, TunnelHealth.AVAILABLE)
-                    }
-                    val currentPing = pingCache[currentTunnel.id] ?: 0L
-                    if (currentPing > 500L) {
-                        val adminRepo = AdminRepository.getInstance(getApplication())
-                        adminRepo.submitProblemReport(
-                            profileId = currentTunnel.name,
-                            code = ProblemReport.CODE_HIGH_RTT,
-                            details = mapOf(
-                                "tunnel_id" to currentTunnel.id.toString(),
-                                "tunnel_name" to currentTunnel.name,
-                                "rtt_ms" to currentPing.toString(),
-                                "reason" to "Высокая задержка RTT на активном туннеле"
-                            )
-                        )
-                    }
+                    pingCache.remove(tunnel.id)
+                    _pingMap.value = pingCache.toMap()
+                    _tunnelHealth.value = TunnelHealth.UNAVAILABLE
+                } else if (direct || checkRunningHealthInternal(tunnel)) {
+                    wasReady = true
+                    if (direct) _active.value = TunnelState.Running(tunnel)
+                    consecutiveFailures = 0
+                    if (healthCache[tunnel.id] != TunnelHealth.AVAILABLE) saveHealth(tunnel.id, TunnelHealth.AVAILABLE)
+                    _tunnelHealth.value = TunnelHealth.AVAILABLE
                 } else {
                     consecutiveFailures++
-                    val isDead = if (io.github.libreroute.service.LibreRouteProxyService.isProxyRunning) {
-                        consecutiveFailures >= 2
-                    } else {
-                        service?.isFServiceRunning() != true || service?.isVpnRunning() != true || consecutiveFailures >= 2
-                    }
-                    if (isDead) {
-                        _tunnelHealth.value = TunnelHealth.UNAVAILABLE
-                        saveHealth(currentTunnel.id, TunnelHealth.UNAVAILABLE)
-                        pingCache.remove(currentTunnel.id)
-                        _pingMap.value = pingCache.toMap()
-
-                        val adminRepo = AdminRepository.getInstance(getApplication())
-                        adminRepo.submitProblemReport(
-                            profileId = currentTunnel.name,
-                            code = ProblemReport.CODE_ENDPOINT_UNREACHABLE,
-                            details = mapOf(
-                                "tunnel_id" to currentTunnel.id.toString(),
-                                "tunnel_name" to currentTunnel.name,
-                                "consecutive_failures" to consecutiveFailures.toString(),
-                                "reason" to "Сбой проверки работоспособности активного туннеля"
-                            )
-                        )
-
-                        triggerFailoverIfNeeded(currentTunnel)
+                    val health = if (channel.rejected || consecutiveFailures >= 15) TunnelHealth.UNAVAILABLE else TunnelHealth.CHECKING
+                    if (healthCache[tunnel.id] != health) saveHealth(tunnel.id, health)
+                    _tunnelHealth.value = health
+                    val failoverAfter = if (wasReady) 15 else 60
+                    if (consecutiveFailures >= failoverAfter && !channel.rejected) {
+                        reportOutage(tunnel, consecutiveFailures)
+                        if (consecutiveFailures == failoverAfter) triggerFailoverIfNeeded(tunnel)
                     }
                 }
-                delay(30_000L)
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun reportOutage(tunnel: Tunnel, failures: Int) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val previous = reportedOutages[tunnel.id]
+        if (problemReportJob?.isActive == true || (previous != null && now - previous < 300_000L)) return
+        reportedOutages[tunnel.id] = now
+        // SSH delivery can be slow. It must never block connectivity checks or recovery.
+        problemReportJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runInterruptible {
+                    AdminRepository.getInstance(getApplication()).submitProblemReport(
+                        profileId = tunnel.name,
+                        code = ProblemReport.CODE_ENDPOINT_UNREACHABLE,
+                        details = mapOf(
+                            "tunnel_id" to tunnel.id.toString(),
+                            "consecutive_failures" to failures.toString(),
+                            "reason" to "Server channel unavailable"
+                        )
+                    )
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Logx.w(TAG, "Connectivity incident delivery failed")
             }
         }
     }
@@ -932,6 +892,7 @@ class TunnelsViewModel(app: Application) : AndroidViewModel(app) {
         healthCheckJob = null
         periodicHealthJob?.cancel()
         periodicHealthJob = null
+        problemReportJob?.cancel()
         try { getApplication<Application>().unbindService(connection) } catch (_: Exception) {}
     }
 }

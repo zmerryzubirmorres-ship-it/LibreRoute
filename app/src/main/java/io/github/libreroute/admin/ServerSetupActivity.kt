@@ -48,6 +48,7 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
     var document: String = ""; private set
     private var operationId: String = ""
     private var takeoverRecovery = false
+    private var preserveOwners = false
     private var autoProvision = false
     private var needsProbe = true
     private var planJson: String = ""
@@ -125,6 +126,7 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         // by viewModels retains this instance and its job on rotation. A Bundle
         // belongs to process restoration, never to the running retained model.
         if (initialized || saved == null) return
+        preserveOwners = saved.getBoolean("setup_preserve_owners", false)
         restoreCheckpoint(SetupCheckpoint(saved.getString("setup_operation_id").orEmpty(),
             runCatching { AdminChannel.valueOf(saved.getString("update_channel").orEmpty()) }.getOrDefault(AdminChannel.AUTO),
             saved.getString("setup_document").orEmpty(), saved.getString("setup_profile_name").orEmpty(),
@@ -157,11 +159,13 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         out.putString("setup_stage", s.stage)
         out.putBoolean("setup_busy", s.busy)
         out.putBoolean("setup_auto_provision", autoProvision)
+        out.putBoolean("setup_preserve_owners", preserveOwners)
         out.putString("setup_summary", s.summary)
         out.putString("setup_error", s.error)
     }
 
-    fun initialize(id: String, recovery: Boolean = false, automatic: Boolean = false, profileName: String = "") {
+    fun initialize(id: String, recovery: Boolean = false, automatic: Boolean = false, profileName: String = "",
+                   sshAdministration: Boolean = false) {
         if (initialized) return
         initialized = true
         // The first Activity may have migrated a temporary SSH node to the
@@ -189,7 +193,9 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
             }
         }
         if (node == null) return
-        takeoverRecovery = recovery || takeoverRecovery
+        takeoverRecovery = recovery || takeoverRecovery || sshAdministration
+        preserveOwners = preserveOwners || sshAdministration
+        if (sshAdministration) updateChannel = AdminChannel.DIRECT_SSH
         autoProvision = automatic || autoProvision
         if (profileName.isNotBlank() || adminProfileName.isBlank()) adminProfileName = profileName
         if (document.isBlank()) document = repo.defaultDocumentUrl(node?.id.orEmpty()).orEmpty()
@@ -283,7 +289,8 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         }
         operationId = UUID.randomUUID().toString()
         mutableState.value = SetupState(stage = if (takeoverRecovery) "recovery" else "install", busy = true,
-            summary = if (takeoverRecovery) "Готовим восстановление прав владельца…" else "Готовим установку…")
+            summary = if (preserveOwners) "Проверяем SSH-доступ к администрированию…"
+                else if (takeoverRecovery) "Готовим восстановление прав владельца…" else "Готовим установку…")
         InstallationLog.append(getApplication(), "install_prepare", "host=${target.host} operation_id=$operationId")
         viewModelScope.launch {
             try {
@@ -294,7 +301,7 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
                     return@launch
                 }
                 val plan = withContext(Dispatchers.IO) {
-                    if (takeoverRecovery) repo.prepareOwnerRecovery(target, operationId).getOrThrow()
+                    if (takeoverRecovery) repo.prepareOwnerRecovery(target, operationId, preserveOwners).getOrThrow()
                     else repo.planServerInstallation(target, operationId)
                 }
                 planJson = plan.toString()
@@ -315,6 +322,8 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
     fun requestOwnerRecovery() {
         if (mutableState.value.busy) return
         takeoverRecovery = true
+        preserveOwners = true
+        updateChannel = AdminChannel.DIRECT_SSH
         check()
     }
 
@@ -392,7 +401,8 @@ class ServerSetupViewModel @JvmOverloads constructor(app: android.app.Applicatio
         val target = node ?: return
         val current = mutableState.value
         mutableState.value = current.copy(stage = if (takeoverRecovery) "recovery" else "install", busy = true,
-            error = null, summary = if (takeoverRecovery) "Восстанавливаем доступ к установленному ядру…" else "Устанавливаем LibreRoute…")
+            error = null, summary = if (preserveOwners) "Получаем административный доступ по SSH…"
+                else if (takeoverRecovery) "Восстанавливаем доступ к установленному ядру…" else "Устанавливаем LibreRoute…")
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 if (takeoverRecovery) repo.recoverOwnerServer(target, operationId, document)
@@ -448,9 +458,10 @@ class ServerSetupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AdminCommandFeedback.bind(this, window.decorView, AdminRepository.getInstance(this).commandControl)
         protocolsOpened = savedInstanceState?.getBoolean("protocols_opened") ?: false
         vm.restore(savedInstanceState)
-        vm.initialize(intent.getStringExtra("server_id").orEmpty(), intent.getBooleanExtra("owner_recovery", false), intent.getBooleanExtra("auto_provision", false), intent.getStringExtra("admin_profile_name").orEmpty())
+        vm.initialize(intent.getStringExtra("server_id").orEmpty(), intent.getBooleanExtra("owner_recovery", false), intent.getBooleanExtra("auto_provision", false), intent.getStringExtra("admin_profile_name").orEmpty(), intent.getBooleanExtra("ssh_administration", false))
         if (vm.node == null) { finish(); return }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -535,8 +546,8 @@ class ServerSetupActivity : AppCompatActivity() {
         when {
             namespaces.isNotEmpty() -> {
                 content.addView(CalmViews.row(this, "Ядро уже установлено",
-                    "Повторная установка не требуется. Чтобы начать управление из этого приложения, восстановите права владельца или примите приглашение администратора."))
-                action("Восстановить права владельца") {
+                    "Привилегированный SSH-доступ позволяет получить управление сервером и пользователями из этого приложения. Права остальных администраторов сохранятся."))
+                action("Получить управление по SSH") {
                     confirmOwnerRecovery()
                 }
             }
@@ -646,10 +657,10 @@ class ServerSetupActivity : AppCompatActivity() {
 
     private fun confirmOwnerRecovery() {
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Восстановить доступ к серверу?")
-            .setMessage("Будут восстановлены права владельца для этого приложения через SSH. Установленное ядро и настройки сохранятся. Для восстановления передаётся служебная сборка; обновление ядра выполняется отдельно.")
+            .setTitle("Получить управление по SSH?")
+            .setMessage("Приложение проверит привилегированный SSH-доступ и получит права управления сервером и пользователями. Права других администраторов и настройки сохранятся. Служба кратковременно перезапустится.")
             .setNegativeButton("Отмена", null)
-            .setPositiveButton("Восстановить") { _, _ -> vm.requestOwnerRecovery() }.create()
+            .setPositiveButton("Получить доступ") { _, _ -> vm.requestOwnerRecovery() }.create()
         dialogs.show(dialog, "owner_recovery")
     }
 

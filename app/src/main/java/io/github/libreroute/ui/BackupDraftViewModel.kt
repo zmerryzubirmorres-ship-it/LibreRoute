@@ -8,5 +8,7 @@ class BackupDraftViewModel : ViewModel() {
     var request = ""
     var password = ""
     var prepared: ConfigBackupManager.LibreRouteBackup? = null
-    override fun onCleared() { password = ""; prepared = null }
+    var proxyUsername: String? = null
+    var proxyPassword: String? = null
+    override fun onCleared() { password = ""; prepared = null; proxyUsername = null; proxyPassword = null }
 }

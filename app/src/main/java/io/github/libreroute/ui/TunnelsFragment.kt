@@ -30,6 +30,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
+import androidx.core.widget.doAfterTextChanged
 import androidx.transition.ChangeBounds
 import androidx.transition.Fade
 import androidx.transition.TransitionManager
@@ -84,9 +86,12 @@ class TunnelsFragment : BaseFragment() {
             "delete_tunnel" -> vm.tunnels.value.firstOrNull { it.tunnel.id == args.getLong("id") }?.let { confirmDelete(it.tunnel) }
             "connection_error" -> showErrorDialog(args.getString("title").orEmpty(), args.getString("detail"))
             "battery_prompt" -> showBatteryOptimizationPrompt { requestVpnAndStart() }
+            "home_proxy_settings" -> showHomeProxySettings()
+            "home_connection_mode" -> showHomeConnectionMode()
         }
     } }
     private val vm: TunnelsViewModel by activityViewModels()
+    private val homeProxyDraft: HomeProxyDraftViewModel by viewModels()
 
     private lateinit var connectButton: View
     private lateinit var configSelector: View
@@ -117,6 +122,7 @@ class TunnelsFragment : BaseFragment() {
     private var popup: PopupWindow? = null
     private var configSheetDialog: BottomSheetDialog? = null
     private var selectedCalmTab = R.id.nav_home
+    private var renderingHomeSharing = false
 
     private val jitsiAuthLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
@@ -398,6 +404,12 @@ class TunnelsFragment : BaseFragment() {
             dialog.dismiss()
             showImportLinkDialog()
         }
+        sheetView.findViewById<View>(R.id.option_connect_server).setOnClickListener {
+            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
+            dialog.dismiss()
+            startActivity(Intent(requireContext(), io.github.libreroute.admin.AdminSetupActivity::class.java)
+                .putExtra("connect_server", true))
+        }
 
         sheetView.findViewById<View>(R.id.option_manual)?.setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -500,6 +512,36 @@ class TunnelsFragment : BaseFragment() {
         metricUpload = view.findViewById(R.id.metricUpload)
         metricHint = view.findViewById(R.id.metricHint)
         appSettings = AppSettings(requireContext())
+        val sharingSwitch = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.homeSharingSwitch)
+        // Preferences own this state; view restoration must not restart the LAN listener.
+        sharingSwitch.isSaveEnabled = false
+        sharingSwitch.isChecked = appSettings.shareLanProxy
+        sharingSwitch.setOnCheckedChangeListener { _, enabled ->
+            if (renderingHomeSharing) return@setOnCheckedChangeListener
+            appSettings.shareLanProxy = enabled
+            viewLifecycleOwner.lifecycleScope.launch {
+                sharingSwitch.isEnabled = false
+                try {
+                    withContext(Dispatchers.IO) {
+                        io.github.libreroute.service.ProxySharing.refresh(appSettings)
+                    }
+                } finally {
+                    sharingSwitch.isEnabled = true
+                    renderHomeDiagnostics()
+                }
+            }
+        }
+        view.findViewById<View>(R.id.homeSharingSettings).setOnClickListener {
+            showHomeProxySettings()
+        }
+        view.findViewById<View>(R.id.homeSharingAddress).setOnClickListener {
+            if (!io.github.libreroute.service.HotspotProxyBridge.running) return@setOnClickListener
+            val ip = io.github.libreroute.util.LocalSocksSession.getLocalIpAddress()
+            if (ip.isBlank()) return@setOnClickListener
+            val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("SOCKS5", "$ip:${appSettings.lanProxyPort}"))
+            Toast.makeText(requireContext(), "Адрес прокси скопирован", Toast.LENGTH_SHORT).show()
+        }
 
         connectButton.setOnClickListener {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -529,9 +571,14 @@ class TunnelsFragment : BaseFragment() {
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             startActivity(Intent(requireContext(), LogsActivity::class.java))
         }
+        view.findViewById<View>(R.id.homeModeCard).setOnClickListener {
+            showHomeConnectionMode()
+        }
         cardAdminConsole = view.findViewById(R.id.cardAdminConsole)
         adminConsoleRoleBadge = view.findViewById(R.id.adminConsoleRoleBadge)
         cardAdminConsole.setOnClickListener {
+            updateAdminConsoleCard()
+            if (!cardAdminConsole.isVisible) return@setOnClickListener
             it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
             startActivity(Intent(requireContext(), io.github.libreroute.admin.AdminActivity::class.java))
         }
@@ -554,15 +601,6 @@ class TunnelsFragment : BaseFragment() {
 
         lastSplitSnapshot = getSplitSnapshot()
         updateSplitTunnelCard()
-
-        view.findViewById<View>(R.id.addButton).setOnClickListener {
-            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            showAddQrBottomSheet()
-        }
-        view.findViewById<View>(R.id.connectServerButton).setOnClickListener {
-            it.performAppHaptics(HapticFeedbackConstants.VIRTUAL_KEY)
-            startActivity(Intent(requireContext(), io.github.libreroute.admin.AdminSetupActivity::class.java).putExtra("connect_server", true))
-        }
 
         setupCalmNavigation(view, savedInstanceState)
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, object : androidx.activity.OnBackPressedCallback(true) {
@@ -588,6 +626,154 @@ class TunnelsFragment : BaseFragment() {
         updateConfigPing()
         checkSplitSettingsAndAutoRestart()
         updateAdminConsoleCard()
+        renderHomeDetails()
+    }
+
+    private fun showHomeProxySettings() {
+        val content = layoutInflater.inflate(R.layout.bottom_sheet_home_proxy, null)
+        val dialog = BottomSheetDialog(requireContext())
+        dialog.setContentView(content)
+        dialog.setOnCancelListener { homeProxyDraft.clear() }
+        val port = content.findViewById<TextInputEditText>(R.id.home_proxy_port)
+        val auth = content.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.home_proxy_auth)
+        val user = content.findViewById<TextInputEditText>(R.id.home_proxy_user)
+        val pass = content.findViewById<TextInputEditText>(R.id.home_proxy_pass)
+        port.setText(appSettings.lanProxyPort.toString())
+        auth.isChecked = appSettings.socks5AuthEnabled
+        user.setText(homeProxyDraft.username ?: appSettings.socks5CustomUser)
+        pass.setText(homeProxyDraft.password ?: appSettings.socks5CustomPass)
+        user.doAfterTextChanged { homeProxyDraft.username = it?.toString() }
+        pass.doAfterTextChanged { homeProxyDraft.password = it?.toString() }
+        content.findViewById<View>(R.id.home_proxy_cancel).setOnClickListener {
+            homeProxyDraft.clear(); dialog.dismiss()
+        }
+        content.findViewById<View>(R.id.home_proxy_save).setOnClickListener {
+            val number = port.text?.toString()?.toIntOrNull()
+            if (number == null || number !in 1024..65535) {
+                port.error = "Порт от 1024 до 65535"; return@setOnClickListener
+            }
+            val username = user.text?.toString().orEmpty().trim()
+            val password = pass.text?.toString().orEmpty().trim()
+            if (username.toByteArray(Charsets.UTF_8).size > 255 || (auth.isChecked && username.isBlank())) {
+                user.error = "Логин: от 1 до 255 байт UTF-8"; return@setOnClickListener
+            }
+            if (password.toByteArray(Charsets.UTF_8).size > 255) {
+                pass.error = "Пароль: не более 255 байт UTF-8"; return@setOnClickListener
+            }
+            appSettings.lanProxyPort = number
+            appSettings.socks5AuthEnabled = auth.isChecked
+            appSettings.socks5CustomUser = username
+            appSettings.socks5CustomPass = password
+            homeProxyDraft.clear()
+            dialog.dismiss()
+            viewLifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) { io.github.libreroute.service.ProxySharing.refresh(appSettings) }
+                renderHomeDiagnostics()
+                val ready = io.github.libreroute.util.LocalSocksSession.getReady()
+                if (ready != null && !io.github.libreroute.service.ProxySharing.canShare(ready,
+                        appSettings.socks5AuthEnabled, appSettings.socks5CustomUser, appSettings.socks5CustomPass)) {
+                    Toast.makeText(requireContext(), "Авторизация сохранена. Переподключитесь, чтобы применить её", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialogs.show(dialog, "home_proxy_settings")
+        dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+    }
+
+    private fun showHomeConnectionMode() {
+        val content = layoutInflater.inflate(R.layout.dialog_home_connection_mode, null)
+        val phoneMode = content.findViewById<android.widget.RadioGroup>(R.id.home_phone_mode)
+        val routes = content.findViewById<android.widget.RadioGroup>(R.id.home_proxy_routes)
+        phoneMode.check(if (appSettings.proxyOnlyMode) R.id.home_phone_proxy else R.id.home_phone_vpn)
+        routes.check(if (appSettings.proxyRoutingMode == io.github.libreroute.util.ProxyRoutingMode.RULES) R.id.home_proxy_rules else R.id.home_proxy_server)
+        fun updateRules() {
+            val autonomous = phoneMode.checkedRadioButtonId == R.id.home_phone_proxy &&
+                vm.selected.value?.let(io.github.libreroute.data.DirectDpiProfile::isDirect) == true
+            routes.visibility = if (autonomous) View.GONE else View.VISIBLE
+            content.findViewById<View>(R.id.home_proxy_autonomous_hint).visibility = if (autonomous) View.VISIBLE else View.GONE
+        }
+        phoneMode.setOnCheckedChangeListener { _, _ -> updateRules() }
+        updateRules()
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.home_connection_mode_title)
+            .setView(content)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                appSettings.proxyOnlyMode = phoneMode.checkedRadioButtonId == R.id.home_phone_proxy
+                appSettings.proxyRoutingMode = if (routes.checkedRadioButtonId == R.id.home_proxy_rules) io.github.libreroute.util.ProxyRoutingMode.RULES else io.github.libreroute.util.ProxyRoutingMode.ALL_TUNNEL
+                renderHomeDetails()
+                if (vm.active.value.isActive) Toast.makeText(requireContext(), "Режим сохранён. Переподключитесь, чтобы применить его", Toast.LENGTH_LONG).show()
+            }.create()
+        dialogs.show(dialog, "home_connection_mode")
+    }
+
+    private fun homeProxyOnly(): Boolean = if (vm.active.value.isActive) {
+        io.github.libreroute.service.LibreRouteProxyService.isProxyRunning ||
+            io.github.libreroute.service.LibreRouteProxyService.isProxyStarting
+    } else appSettings.proxyOnlyMode
+
+    private fun renderHomeDetails() {
+        val root = view ?: return
+        val tunnel = vm.active.value.tunnel ?: vm.selected.value
+        val autonomous = tunnel?.let(io.github.libreroute.data.DirectDpiProfile::isDirect) == true
+        val proxyOnly = homeProxyOnly()
+        val snapshot = io.github.libreroute.util.ProxyRoutingStatus.active
+        root.findViewById<TextView>(R.id.homeProfileDetail).setText(when {
+            tunnel == null -> R.string.home_profile_empty
+            autonomous -> R.string.home_profile_autonomous
+            else -> R.string.home_profile_server
+        })
+        root.findViewById<TextView>(R.id.homeModeTitle).setText(if (proxyOnly) R.string.home_phone_proxy else R.string.home_phone_vpn)
+        root.findViewById<TextView>(R.id.homeModeDetail).setText(when {
+            !proxyOnly -> R.string.home_phone_vpn_detail
+            autonomous -> R.string.home_autonomous_proxy
+            (snapshot?.mode ?: appSettings.proxyRoutingMode) == io.github.libreroute.util.ProxyRoutingMode.RULES -> R.string.home_proxy_rules
+            else -> R.string.home_proxy_tunnel
+        })
+        renderHomeDiagnostics()
+    }
+
+    private fun renderHomeDiagnostics() {
+        val root = view ?: return
+        val state = vm.active.value
+        val session = io.github.libreroute.util.LocalSocksSession.getReady()
+        val status = io.github.libreroute.util.ProxyRoutingStatus
+        val sharing = appSettings.shareLanProxy
+        val bridgeRunning = io.github.libreroute.service.HotspotProxyBridge.running
+        val sharingSwitch = root.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.homeSharingSwitch)
+        renderingHomeSharing = true
+        sharingSwitch.isChecked = sharing
+        renderingHomeSharing = false
+        val ip = if (sharing && bridgeRunning) io.github.libreroute.util.LocalSocksSession.getLocalIpAddress() else ""
+        root.findViewById<TextView>(R.id.homeSharingAddress).text = when {
+            !sharing -> if (session == null) "Раздача выключена" else "Доступ только с этого телефона"
+            session == null -> "Включится после подключения"
+            !io.github.libreroute.service.ProxySharing.canShare(session, appSettings.socks5AuthEnabled,
+                appSettings.socks5CustomUser, appSettings.socks5CustomPass) -> "Авторизация изменена — переподключитесь"
+            !bridgeRunning -> "Не удалось запустить — откройте журнал"
+            ip.isBlank() -> "Подключите Wi-Fi или включите точку доступа"
+            else -> "$ip:${appSettings.lanProxyPort} · нажмите, чтобы скопировать"
+        }
+        root.findViewById<TextView>(R.id.homeSharingHint).text = when {
+            !sharing -> "SOCKS5 и HTTP для устройств в вашей сети"
+            session == null -> "После подключения прокси станет доступен устройствам в вашей сети"
+            session.isAuthEnabled -> "SOCKS5 и HTTP · требуется логин и пароль"
+            else -> "SOCKS5 и HTTP · без пароля"
+        }
+        root.findViewById<TextView>(R.id.homeLocalStatus).text = session?.let { "127.0.0.1:${it.port}" } ?: "Не запущен"
+        root.findViewById<TextView>(R.id.homeTransportStatus).text = when {
+            !state.isActive -> "Не подключён"
+            status.active?.autonomous == true -> "Не требуется"
+            status.active != null -> if (status.tunnelReady) "Готов" else "Ожидание сервера"
+            state is TunnelState.Running -> when (vm.tunnelHealth.value) {
+                TunnelHealth.AVAILABLE -> "Доступен"
+                TunnelHealth.UNAVAILABLE -> "Нет ответа"
+                else -> "Проверяем"
+            }
+            else -> "Подключение…"
+        }
+        val profiles = status.profileReadiness?.invoke().orEmpty()
+        root.findViewById<TextView>(R.id.homeZapretStatus).text = if (profiles.isEmpty()) "Не запущены" else "Готовы ${profiles.values.count { it }} из ${profiles.size}"
     }
 
     private fun getSplitSnapshot(): String {
@@ -678,10 +864,14 @@ class TunnelsFragment : BaseFragment() {
         if (!::cardAdminConsole.isInitialized) return
         val ctx = context ?: return
         val adminRepo = io.github.libreroute.admin.AdminRepository.getInstance(ctx)
-        val hasAccess = adminRepo.hasAdminReadAccess()
-        cardAdminConsole.isVisible = hasAccess
-        if (hasAccess) {
-            adminConsoleRoleBadge.text = adminRepo.getRole().name
+        val role = adminRepo.getServerNodes().asSequence()
+            .filter { it.host.isNotBlank() }
+            .map { adminRepo.getRole(it.id) }
+            .firstOrNull { it in setOf(io.github.libreroute.admin.AdminRole.OWNER,
+                io.github.libreroute.admin.AdminRole.OPERATOR, io.github.libreroute.admin.AdminRole.VIEWER) }
+        cardAdminConsole.isVisible = role != null
+        if (role != null) {
+            adminConsoleRoleBadge.text = role.name
         }
     }
 
@@ -690,8 +880,7 @@ class TunnelsFragment : BaseFragment() {
     private fun requestVpnAndStart() {
         checkBatteryOptimizationAndProceed {
             val target = vm.active.value.tunnel ?: vm.selected.value
-            if (io.github.libreroute.util.AppSettings(requireContext()).proxyOnlyMode &&
-                target != null && !io.github.libreroute.data.DirectDpiProfile.isDirect(target)) {
+            if (io.github.libreroute.util.AppSettings(requireContext()).proxyOnlyMode && target != null) {
                 vm.startCurrent()
                 return@checkBatteryOptimizationAndProceed
             }
@@ -760,13 +949,8 @@ class TunnelsFragment : BaseFragment() {
                 launch { vm.speedSampleAvailable.collect { updateNetworkMetricsState(vm.active.value) } }
                 launch {
                     val adminRepo = io.github.libreroute.admin.AdminRepository.getInstance(requireContext())
-                    adminRepo.roleFlow.collect { role ->
-                        val hasAccess = adminRepo.hasAdminReadAccess()
-                        cardAdminConsole.isVisible = hasAccess
-                        if (hasAccess) {
-                            adminConsoleRoleBadge.text = role.name
-                        }
-                    }
+                    combine(adminRepo.roleFlow, adminRepo.serverNodesFlow) { _, _ -> Unit }
+                        .collect { updateAdminConsoleCard() }
                 }
             }
         }
@@ -809,6 +993,7 @@ class TunnelsFragment : BaseFragment() {
 
     private fun renderSelected(tunnel: Tunnel?) {
         tunnelName.text = tunnel?.name ?: getString(R.string.no_configs)
+        renderHomeDetails()
         renderHealth(vm.tunnelHealth.value)
         updateConfigPing()
     }
@@ -874,6 +1059,18 @@ class TunnelsFragment : BaseFragment() {
 
     private fun renderRunningHealth(health: TunnelHealth) {
         if (vm.active.value !is TunnelState.Running || !isAdded) return
+        if (homeProxyOnly()) {
+            val routing = io.github.libreroute.util.ProxyRoutingStatus
+            statusText.text = "Прокси запущен"
+            view?.findViewById<TextView>(R.id.homeEvent)?.text = when {
+                routing.active?.autonomous == true -> "Приложения с настроенным прокси используют правила сайтов и zapret"
+                routing.tunnelReady -> "Локальный прокси готов. Серверное подключение доступно"
+                else -> "Локальный прокси готов. Ожидаем серверное подключение"
+            }
+            renderHomeDiagnostics()
+            renderAuthAttention()
+            return
+        }
         statusText.text = if (health == TunnelHealth.UNAVAILABLE) "Проверяем соединение" else "Подключено"
         view?.findViewById<TextView>(R.id.homeEvent)?.text = when (health) {
             TunnelHealth.AVAILABLE -> "Интернет доступен через выбранный маршрут"
@@ -1259,7 +1456,9 @@ class TunnelsFragment : BaseFragment() {
         val color = ContextCompat.getColor(requireContext(), colorRes)
         (connectButton as com.google.android.material.card.MaterialCardView).strokeColor =
             if (colorRes == R.color.m3_primary) ContextCompat.getColor(requireContext(), R.color.m3_outline_variant) else color
-        view?.findViewById<ImageView>(R.id.connectPowerIcon)?.setColorFilter(color)
+        // Keep the action legible on its filled background in every connection state.
+        view?.findViewById<ImageView>(R.id.connectPowerIcon)?.setColorFilter(ContextCompat.getColor(requireContext(), R.color.m3_on_primary))
+        view?.findViewById<ImageView>(R.id.homeShieldIcon)?.setColorFilter(color)
         statusText.setTextColor(if (colorRes == R.color.m3_primary) ContextCompat.getColor(requireContext(), R.color.text_secondary) else color)
     }
 
@@ -1276,8 +1475,8 @@ class TunnelsFragment : BaseFragment() {
         }
         statusText.text = title
         homeStateTitle.text = when (state) {
-            is TunnelState.Idle -> "Защита отключена"
-            is TunnelState.Running -> "Защита включена"
+            is TunnelState.Idle -> "Подключение"
+            is TunnelState.Running -> if (homeProxyOnly()) "Прокси работает" else "VPN подключён"
             is TunnelState.WaitingForNetwork -> "Сеть недоступна"
             is TunnelState.Error -> "Не удалось подключиться"
             is TunnelState.Reconnecting -> "Восстанавливаем соединение"
@@ -1294,6 +1493,7 @@ class TunnelsFragment : BaseFragment() {
         })
         uptimeContainer.isVisible = state is TunnelState.Running
         updateNetworkMetricsState(state)
+        renderHomeDetails()
         if (vm.accessRevoked.value) {
             statusText.text = "Доступ отозван"
             view?.findViewById<TextView>(R.id.homeEvent)?.text = "Свяжитесь с администратором, чтобы получить новое приглашение"
@@ -1306,6 +1506,7 @@ class TunnelsFragment : BaseFragment() {
     private fun renderUptime(seconds: Long) {
         uptimeText.text = "Подключено: ${seconds.coerceAtLeast(0).toUptimeHms()}"
         uptimeContainer.isVisible = vm.active.value is TunnelState.Running
+        renderHomeDiagnostics()
     }
 
     override fun onDestroyView() {

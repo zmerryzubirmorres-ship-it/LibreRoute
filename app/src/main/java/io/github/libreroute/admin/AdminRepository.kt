@@ -67,7 +67,7 @@ class AdminRepository(
     private val context: Context? = null,
     private val keyManager: AdminKeyManager = AdminKeyManager(context),
     private val sshClient: AdminSshClient = AdminSshClient(context ?: createDummyContext()),
-    private val storage: AdminStorage = if (context != null) SecurePrefsAdminStorage(SecurePreferences(context, PREFS_NAME)) else InMemoryAdminStorage(),
+    private val storage: AdminStorage = if (context != null) SecurePrefsAdminStorage(SecurePreferences(context, PREFS_NAME, cacheReads = true)) else InMemoryAdminStorage(),
     private val socketProbe: ((host: String, port: Int, timeoutMs: Int) -> Boolean)? = null,
     private val combinationProber: ((server: ServerNode, protocol: String, documentUrl: String?, timeoutMs: Int) -> ProbeResult)? = null,
     private val customTunnelStore: io.github.libreroute.data.TunnelStore? = null,
@@ -139,6 +139,8 @@ class AdminRepository(
         }
     }
 
+    val commandControl = AdminCommandControl()
+
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -184,6 +186,63 @@ class AdminRepository(
 
     private val _clusterSnapshotFlow = MutableStateFlow<AdminClusterSnapshot?>(null)
     val clusterSnapshotFlow: StateFlow<AdminClusterSnapshot?> = _clusterSnapshotFlow.asStateFlow()
+    private val _liveAccessFlow = MutableStateFlow<Map<String, AdminLiveAccess>>(emptyMap())
+    val liveAccessFlow = _liveAccessFlow.asStateFlow()
+    var sessionAdminChannel: AdminChannel = AdminChannel.AUTO
+    private val sessionSnapshots = java.util.concurrent.ConcurrentHashMap<String, Result<AdminClusterSnapshot>>()
+    private val sessionSnapshotLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+    private data class ValidatedGrant(val grant: AdminGrant, val envelope: AdminEnvelope,
+                                      val pin: String, val deviceFingerprint: String)
+    private val validatedGrants = java.util.concurrent.ConcurrentHashMap<String, ValidatedGrant>()
+
+    private fun managementSessionKey(server: ServerNode?): String {
+        val grant = verifiedGrantForServer(server?.id)
+        return listOf(server?.id ?: "legacy", grant?.profileId, grant?.adminFingerprint,
+            grant?.serverPublicKey, grant?.revision, grant?.expiresAt, grant?.nonce).joinToString("|")
+    }
+
+    /** One initial read per process/server/grant, including failures; refresh is explicit. */
+    fun loadAdminSession(channel: AdminChannel = AdminChannel.AUTO, serverNode: ServerNode? = null): Result<AdminClusterSnapshot> {
+        val target = serverNode ?: _serverNodesFlow.value.singleOrNull()
+        val key = managementSessionKey(target)
+        return synchronized(sessionSnapshotLocks.getOrPut(key) { Any() }) {
+            sessionSnapshots[key] ?: getClusterSnapshot(channel, target)
+        }
+    }
+
+    fun canUseManagementUi(serverId: String?, operation: String): Boolean {
+        val id = serverId ?: _serverNodesFlow.value.singleOrNull()?.id ?: "legacy"
+        val live = _liveAccessFlow.value[id] ?: AdminLiveAccess(0, AdminLiveAccess.State.CHECKING)
+        val grant = verifiedGrantForServer(serverId) ?: return false
+        if (live.state == AdminLiveAccess.State.DENIED) return false
+        if (operation !in readCommandOperations && live.state != AdminLiveAccess.State.READY) return false
+        val role = if (live.state == AdminLiveAccess.State.READY) live.role
+            else live.role.takeUnless { it == AdminRole.NONE } ?: grant.role
+        return grantAllows(grant, serverId, operation) && grantAllows(grant.copy(role = role), serverId, operation)
+    }
+
+    @Synchronized private fun startAccessProbe(serverId: String): Long {
+        val previous = _liveAccessFlow.value[serverId]
+        val id = (previous?.probeId ?: 0L) + 1
+        val state = previous?.state?.takeIf {
+            it == AdminLiveAccess.State.READY || it == AdminLiveAccess.State.DENIED
+        } ?: AdminLiveAccess.State.CHECKING
+        _liveAccessFlow.value = _liveAccessFlow.value + (serverId to AdminLiveAccess(id, state,
+            previous?.role ?: AdminRole.NONE))
+        return id
+    }
+
+    @Synchronized private fun confirmSshSession(serverId: String, role: AdminRole) {
+        val id = (_liveAccessFlow.value[serverId]?.probeId ?: 0L) + 1
+        _liveAccessFlow.value = _liveAccessFlow.value +
+            (serverId to AdminLiveAccess(id, AdminLiveAccess.State.READY, role))
+        sessionAdminChannel = AdminChannel.DIRECT_SSH
+    }
+
+    @Synchronized private fun finishAccessProbe(serverId: String, result: AdminLiveAccess) {
+        if (_liveAccessFlow.value[serverId]?.probeId == result.probeId)
+            _liveAccessFlow.value = _liveAccessFlow.value + (serverId to result)
+    }
 
     private val _installationOperations = MutableStateFlow<List<ServerInstallOperation>>(emptyList())
     val installationOperations: StateFlow<List<ServerInstallOperation>> = _installationOperations.asStateFlow()
@@ -193,6 +252,10 @@ class AdminRepository(
 
     private fun installationClient(): ServerInstallationBackend = installationBackend ?: object : ServerInstallationBackend {
         private val installer = ServerInstaller(requireNotNull(context))
+        override fun authorizeAdministrator(node: ServerNode, inventory: ServerInventory, operationId: String,
+                                            documentUrl: String, join: AdminEnvelope, pairingCode: String,
+                                            expectedPlan: kotlinx.serialization.json.JsonObject) =
+            installer.authorizeAdministrator(node, inventory, operationId, documentUrl, join, pairingCode, expectedPlan)
         override fun plan(node: ServerNode, inventory: ServerInventory, operationId: String) = installer.plan(node, inventory, operationId)
         override fun install(node: ServerNode, inventory: ServerInventory, operationId: String, documentUrl: String,
                              join: AdminEnvelope, pairingCode: String, expectedPlan: kotlinx.serialization.json.JsonObject,
@@ -377,7 +440,8 @@ class AdminRepository(
         // receipts that were already validated from the authenticated SSH session.
         _installationOperations.value.filter { it.stage == ServerInstallOperation.SERVER_CONFIRMED && it.receipt != null }
             .forEach { operation -> runCatching {
-                reconcileInstallationReceipt(operation, json.parseToJsonElement(operation.receipt!!).jsonObject)
+                reconcileInstallationReceipt(operation, json.parseToJsonElement(operation.receipt!!).jsonObject,
+                    authenticatedNow = false)
             } }
         storage.getString(KEY_DELEGATION_CHECKPOINT, null)?.let { raw -> runCatching {
             val checkpoint = json.parseToJsonElement(raw).jsonObject
@@ -610,7 +674,7 @@ class AdminRepository(
     fun loadServerInstallation(operationId: String): ServerInstallOperation? =
         _installationOperations.value.firstOrNull { it.operationId == operationId }
 
-    fun prepareOwnerRecovery(node: ServerNode, operationId: String): Result<kotlinx.serialization.json.JsonObject> = runCatching {
+    fun prepareOwnerRecovery(node: ServerNode, operationId: String, preserveOwners: Boolean = false): Result<kotlinx.serialization.json.JsonObject> = runCatching {
         val plan = planServerInstallation(node, operationId)
         require(plan["mode"]?.jsonPrimitive?.content == "update") { "Восстановление владельца допустимо только для существующей установки" }
         require(plan["server_public_key"]?.jsonPrimitive?.content?.isNotBlank() == true &&
@@ -618,7 +682,8 @@ class AdminRepository(
             "SSH-план не содержит проверенной идентичности и владельцев для восстановления"
         }
         val operation = loadServerInstallation(operationId) ?: error("План не сохранён")
-        saveServerInstallation(operation.copy(kind = ServerInstallOperation.KIND_OWNER_RECOVERY, ownerRecovery = true))
+        saveServerInstallation(operation.copy(kind = ServerInstallOperation.KIND_OWNER_RECOVERY, ownerRecovery = true,
+            preserveOwners = preserveOwners))
         plan
     }
 
@@ -1176,7 +1241,8 @@ class AdminRepository(
     }
 
     private fun reconcileInstallationReceipt(operation: ServerInstallOperation,
-                                            response: kotlinx.serialization.json.JsonObject): AdminOpResult {
+                                            response: kotlinx.serialization.json.JsonObject,
+                                            authenticatedNow: Boolean = true): AdminOpResult {
         fun field(name: String) = response[name]?.jsonPrimitive?.content
         val status = field("status") ?: error("В ответе нет статуса операции")
         if (status == "not_found") {
@@ -1206,6 +1272,9 @@ class AdminRepository(
         }
         require(field("agent_ready") == "true" && field("ssh_management_ready") == "true" && field("control_profile_ready") == "true") {
             "Установка записана, но служба, SSH-управление или профиль администратора не готовы"
+        }
+        require(!operation.preserveOwners || field("preserve_owners") == "true") {
+            "Квитанция не подтверждает сохранение прав других администраторов"
         }
         val join = operation.join?.let(AdminEnvelope::fromJson) ?: error("Локальный запрос установки не найден")
         val envelope = AdminEnvelope.fromJson(response.getValue("grant").toString()) ?: error("Нет подписанного допуска")
@@ -1245,6 +1314,9 @@ class AdminRepository(
         }
         ensureOwnerControlProfile(node, grant, document, operation.profileName)
         saveServerInstallation(confirmed.copy(stage = ServerInstallOperation.READY))
+        // A verified response from the current SSH operation already confirms access.
+        // Replaying a stored receipt after process restart does not confirm a new session.
+        if (authenticatedNow) confirmSshSession(node.id, grant.role)
         return AdminOpResult.Success(if (field("document_ready") == "true") "Сервер и оба канала проверены; профиль администратора готов"
             else "Сервер и SSH-управление проверены; профиль администратора готов. Документный канал не проверен", envelope)
     }
@@ -1449,6 +1521,10 @@ class AdminRepository(
     fun canPerform(serverId: String?, operation: String): Boolean {
         if (serverId == null && _serverNodesFlow.value.size > 1) return false
         val grant = verifiedGrantForServer(serverId) ?: return false
+        return grantAllows(grant, serverId, operation)
+    }
+
+    private fun grantAllows(grant: AdminGrant, serverId: String?, operation: String): Boolean {
         val readOperations = setOf("list", "list-users", "list-devices", "list-assignments", "list-invitations",
             "get-cluster-snapshot", "get-protocol-configurations", "list-auth-incidents", "get-auth-session-status", "list-admins", "get-jazz-room-pool", "get-jazz-access-operation")
         val mutation = operation !in readOperations
@@ -1711,9 +1787,14 @@ class AdminRepository(
         val envelope = getActiveGrantEnvelope(serverId) ?: return null
         val pin = getPinnedServerPublicKey(serverId) ?: return null
         if (serverId != null && grant.serverId != null && grant.serverId != serverId) return null
+        // Expiry and revocation remain dynamic even when the signature was checked.
+        if (grant.expiresAt <= currentTimeSeconds() || envelope.exp <= currentTimeSeconds()) return null
+        val candidate = ValidatedGrant(grant, envelope, pin, keyManager.getFingerprint())
+        val cacheKey = serverId ?: "legacy"
+        if (validatedGrants[cacheKey] == candidate) return grant
         return grant.takeIf {
             validGrantFields(envelope, it, pin) && keyManager.verifyServerResponse(envelope, pin, pin)
-        }
+        }?.also { validatedGrants[cacheKey] = candidate }
     }
 
     private fun documentSessionKey(profileId: String, serverId: String?): String =
@@ -2160,6 +2241,7 @@ class AdminRepository(
         jitsiToken: String = "",
         channelGroupPlan: ChannelGroupPlan? = null
     ): AdminOpResult {
+        return controlledLegacy("create", policyServerForLegacy(legacyCommandServerId(hostConfig, allowedServerIds), hostConfig), channel, failure = { AdminOpResult.Failure(it.message ?: "Command cancelled", it) }) legacy@ {
         val endpointTransport = runCatching { io.github.libreroute.data.TransportType.from(transportType) }.getOrNull()
         val validDocumentUrl = if (channelGroupPlan != null && transportType == "channel-group") {
             runCatching { channelGroupPlan.validate() }.isSuccess
@@ -2179,17 +2261,17 @@ class AdminRepository(
             }
         }.getOrDefault(false)
         if (!validDocumentUrl) {
-            return AdminOpResult.Failure("Укажите корректный endpoint выбранного транспорта или выберите серверный preset")
+            return@legacy AdminOpResult.Failure("Укажите корректный endpoint выбранного транспорта или выберите серверный preset")
         }
         if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && hostConfig == null) {
-            return AdminOpResult.Failure("Параметры SSH-сервера не настроены")
+            return@legacy AdminOpResult.Failure("Параметры SSH-сервера не настроены")
         }
         val serverId = legacyCommandServerId(hostConfig, allowedServerIds)
         if (_serverNodesFlow.value.isNotEmpty() && serverId == null) {
-            return AdminOpResult.Failure("Выберите один сервер для создания профиля")
+            return@legacy AdminOpResult.Failure("Выберите один сервер для создания профиля")
         }
         if (!hasManagePermission()) {
-            return AdminOpResult.Failure("Недостаточно прав для создания профиля. Требуется роль OWNER.")
+            return@legacy AdminOpResult.Failure("Недостаточно прав для создания профиля. Требуется роль OWNER.")
         }
 
         val profileId = profileIdOverride?.takeIf { it.isNotBlank() }
@@ -2251,14 +2333,14 @@ class AdminRepository(
             })
         }
         val prepared = runCatching { preparePolicyCommand(command.toString(), channel, policyServerForLegacy(serverId, hostConfig)) }
-            .getOrElse { return AdminOpResult.Failure(it.message ?: "Policy revision unavailable") }
+            .getOrElse { return@legacy AdminOpResult.Failure(it.message ?: "Policy revision unavailable") }
         val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(prepared.toByteArray(Charsets.UTF_8))
         val envelope = AdminEnvelope(
             ver = 1,
             type = AdminEnvelope.TYPE_ADMIN,
             subtype = AdminEnvelope.SUBTYPE_COMMAND,
             profileId = verifiedGrantForServer(serverId)?.profileId
-                ?: return AdminOpResult.Failure("No administrator profile is bound to this server"),
+                ?: return@legacy AdminOpResult.Failure("No administrator profile is bound to this server"),
             opId = operationIdOverride?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
             rev = 1L,
             sender = keyManager.getFingerprint(),
@@ -2285,10 +2367,10 @@ class AdminRepository(
             updateCommandStatus(signed.opId,
                 if (sshResult.throwable is ConfirmedAdminRejection) AdminCommandRecord.STATUS_FAILED
                 else AdminCommandRecord.STATUS_UNKNOWN, error = sshResult.error)
-            return sshResult
+            return@legacy sshResult
         }
         val responseEnvelope = (sshResult as? AdminOpResult.Success)?.envelope
-            ?: return AdminOpResult.Failure("Сервер не вернул подписанный ответ на создание профиля")
+            ?: return@legacy AdminOpResult.Failure("Сервер не вернул подписанный ответ на создание профиля")
 
         // A remote commit is not a usable administrator connection until the
         // signed route has been saved locally. Keep an ambiguous operation
@@ -2297,7 +2379,7 @@ class AdminRepository(
         if (materialized.isFailure) {
             val reason = "Сервер создал маршрут, но приложение не сохранило подключение: ${materialized.exceptionOrNull()?.message.orEmpty()}"
             updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_UNKNOWN, error = reason)
-            return AdminOpResult.Failure(reason, UnknownAdminOperation(reason))
+            return@legacy AdminOpResult.Failure(reason, UnknownAdminOperation(reason))
         }
         // Commit profile locally
         val current = _managedProfilesFlow.value.toMutableList()
@@ -2306,7 +2388,8 @@ class AdminRepository(
         saveProfiles(current)
         updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, newProfile.revision)
 
-        return AdminOpResult.Success("Профиль «${name}» успешно создан", responseEnvelope)
+        return@legacy AdminOpResult.Success("Профиль «${name}» успешно создан", responseEnvelope)
+        }
     }
 
     fun installChannelGroup(node: ServerNode, plan: ChannelGroupPlan, channel: AdminChannel = AdminChannel.AUTO): AdminOpResult {
@@ -2678,25 +2761,26 @@ class AdminRepository(
         serverNode: ServerNode? = null,
         channel: AdminChannel = AdminChannel.AUTO
     ): Pair<AdminOpResult, String> {
+        return controlledLegacy("issue", serverNode ?: _serverNodesFlow.value.singleOrNull(), channel, failure = { Pair(AdminOpResult.Failure(it.message ?: "Command cancelled", it), "") }) legacy@ {
         if (!hasManagePermission()) {
-            return Pair(AdminOpResult.Failure("Недостаточно прав для выдачи профиля. Требуется роль OWNER или OPERATOR."), "")
+            return@legacy Pair(AdminOpResult.Failure("Недостаточно прав для выдачи профиля. Требуется роль OWNER или OPERATOR."), "")
         }
 
         val profile = _managedProfilesFlow.value.firstOrNull { it.id == profileId }
-            ?: return Pair(AdminOpResult.Failure("Профиль $profileId не найден"), "")
+            ?: return@legacy Pair(AdminOpResult.Failure("Профиль $profileId не найден"), "")
 
         if (profile.isRevoked) {
-            return Pair(AdminOpResult.Failure("Отозванный профиль не может быть выдан"), "")
+            return@legacy Pair(AdminOpResult.Failure("Отозванный профиль не может быть выдан"), "")
         }
         if (recipientPublicKeyBase64.isNullOrBlank()) {
-            return Pair(AdminOpResult.Failure("Нужен публичный ключ устройства получателя"), "")
+            return@legacy Pair(AdminOpResult.Failure("Нужен публичный ключ устройства получателя"), "")
         }
 
         // Invariant (GEMINI.md): Do not show issuance successful without end-to-end probing of each combination
         val probeResults = testCombinations(profile)
         if (probeResults.any { !it.success }) {
             val failed = probeResults.first { !it.success }
-            return Pair(AdminOpResult.Failure("Сквозная проверка связки «${failed.serverName}/${failed.protocol}» не пройдена: ${failed.message}"), "")
+            return@legacy Pair(AdminOpResult.Failure("Сквозная проверка связки «${failed.serverName}/${failed.protocol}» не пройдена: ${failed.message}"), "")
         }
 
         val eligibleServers = _serverNodesFlow.value.filter {
@@ -2705,7 +2789,7 @@ class AdminRepository(
         val targetServer = serverNode ?: eligibleServers.singleOrNull()
 
         if (targetServer == null) {
-            return Pair(AdminOpResult.Failure("Выберите один целевой сервер для выдачи приглашения"), "")
+            return@legacy Pair(AdminOpResult.Failure("Выберите один целевой сервер для выдачи приглашения"), "")
         }
 
         val command = buildJsonObject {
@@ -2714,7 +2798,7 @@ class AdminRepository(
             put("device_pub", recipientPublicKeyBase64.trim())
         }
         val prepared = runCatching { preparePolicyCommand(command.toString(), channel, targetServer) }
-            .getOrElse { return Pair(AdminOpResult.Failure(it.message ?: "Policy revision unavailable"), "") }
+            .getOrElse { return@legacy Pair(AdminOpResult.Failure(it.message ?: "Policy revision unavailable"), "") }
         val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(prepared.toByteArray(Charsets.UTF_8))
         val envelope = AdminEnvelope(
             ver = 1,
@@ -2748,15 +2832,16 @@ class AdminRepository(
         )
         if (sshResult is AdminOpResult.Failure) {
             updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_FAILED, error = sshResult.error)
-            return Pair(sshResult, "")
+            return@legacy Pair(sshResult, "")
         }
 
         val respEnvelope = (sshResult as AdminOpResult.Success).envelope
-            ?: return Pair(AdminOpResult.Failure("Сервер не вернул конверт ответа выдачи"), "")
+            ?: return@legacy Pair(AdminOpResult.Failure("Сервер не вернул конверт ответа выдачи"), "")
 
         val inviteLink = ServerIssuedInvitation.toLink(respEnvelope)
         updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, profile.revision)
-        return Pair(AdminOpResult.Success("Приглашение успешно сформировано сервером", respEnvelope), inviteLink)
+        return@legacy Pair(AdminOpResult.Success("Приглашение успешно сформировано сервером", respEnvelope), inviteLink)
+        }
     }
 
     /** Entry point for legacy bundle issuance; rejects open unverified bundles. */
@@ -2965,34 +3050,35 @@ class AdminRepository(
         channel: AdminChannel,
         hostConfig: SshHostConfig?
     ): AdminOpResult {
+        return controlledLegacy(subtype, policyServerForLegacy(legacyCommandServerId(hostConfig, _managedProfilesFlow.value.firstOrNull { it.id == profileId }?.allowedServerIds.orEmpty()), hostConfig), channel, failure = { AdminOpResult.Failure(it.message ?: "Command cancelled", it) }) legacy@ {
         if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && hostConfig == null) {
-            return AdminOpResult.Failure("Параметры SSH-сервера не настроены")
+            return@legacy AdminOpResult.Failure("Параметры SSH-сервера не настроены")
         }
         if (!hasManagePermission()) {
-            return AdminOpResult.Failure("Недостаточно прав для изменения статуса профиля")
+            return@legacy AdminOpResult.Failure("Недостаточно прав для изменения статуса профиля")
         }
 
         val profiles = _managedProfilesFlow.value.toMutableList()
         val index = profiles.indexOfFirst { it.id == profileId }
-        if (index == -1) return AdminOpResult.Failure("Профиль $profileId не найден")
+        if (index == -1) return@legacy AdminOpResult.Failure("Профиль $profileId не найден")
 
         val current = profiles[index]
         val serverId = legacyCommandServerId(hostConfig, current.allowedServerIds)
         if (_serverNodesFlow.value.isNotEmpty() && serverId == null) {
-            return AdminOpResult.Failure("Выберите один сервер для изменения профиля")
+            return@legacy AdminOpResult.Failure("Выберите один сервер для изменения профиля")
         }
         val newRev = current.revision + 1
         val updated = current.copy(status = newStatus, revision = newRev)
 
         val prepared = runCatching {
             preparePolicyCommand(json.encodeToString(mapOf("op" to subtype, "profile_id" to profileId)), channel, policyServerForLegacy(serverId, hostConfig))
-        }.getOrElse { return AdminOpResult.Failure(it.message ?: "Policy revision unavailable") }
+        }.getOrElse { return@legacy AdminOpResult.Failure(it.message ?: "Policy revision unavailable") }
         val envelope = AdminEnvelope(
             ver = 1,
             type = AdminEnvelope.TYPE_ADMIN,
             subtype = AdminEnvelope.SUBTYPE_COMMAND,
             profileId = verifiedGrantForServer(serverId)?.profileId
-                ?: return AdminOpResult.Failure("No administrator profile is bound to this server"),
+                ?: return@legacy AdminOpResult.Failure("No administrator profile is bound to this server"),
             opId = UUID.randomUUID().toString(),
             rev = newRev,
             sender = keyManager.getFingerprint(),
@@ -3019,7 +3105,7 @@ class AdminRepository(
             executeAdministrativeRequest(signed, getServerNode(serverId.orEmpty()) ?: policyServerForLegacy(serverId, hostConfig), channel), signed, serverId)
         if (sshResult is AdminOpResult.Failure) {
             updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_FAILED, error = sshResult.error)
-            return sshResult
+            return@legacy sshResult
         }
 
         profiles[index] = updated
@@ -3032,7 +3118,8 @@ class AdminRepository(
             ManagedProfile.STATUS_REVOKED -> "отозван"
             else -> newStatus
         }
-        return AdminOpResult.Success("Профиль «${current.name}» $statusLabel", signed)
+        return@legacy AdminOpResult.Success("Профиль «${current.name}» $statusLabel", signed)
+        }
     }
 
     /**
@@ -3123,7 +3210,8 @@ class AdminRepository(
     private fun confirmServerResponse(
         result: AdminOpResult,
         request: AdminEnvelope,
-        serverId: String? = null
+        serverId: String? = null,
+        onAuthenticatedResponse: () -> Unit = {}
     ): AdminOpResult {
         if (result is AdminOpResult.Failure) return result
         val envelope = (result as AdminOpResult.Success).envelope
@@ -3144,13 +3232,18 @@ class AdminRepository(
         if (response["op_id"]?.jsonPrimitive?.content != request.opId) {
             return AdminOpResult.Failure("Server response has a different operation ID")
         }
+        onAuthenticatedResponse()
         if (response["status"]?.jsonPrimitive?.content != "applied") {
             val reason = response["error"]?.jsonPrimitive?.content?.take(240)
                 ?: "Сервер отклонил команду"
             if (response["status"]?.jsonPrimitive?.content in setOf("partial", "pending", "unknown")) {
                 return AdminOpResult.Failure(reason, UnknownAdminOperation(reason))
             }
-            return AdminOpResult.Failure(reason, ConfirmedAdminRejection(reason))
+            val accessDenied = listOf("UNAUTHORIZED", "administrator status", "administrator privileges expired",
+                "insufficient privileges", "outside administrator scope", "administrator profile scope",
+                "unauthorized sender", "signature verification failed").any { reason.contains(it, true) }
+            return AdminOpResult.Failure(reason, if (accessDenied) ConfirmedAdminAccessRejection(reason)
+                else ConfirmedAdminRejection(reason))
         }
         return result
     }
@@ -3184,12 +3277,14 @@ class AdminRepository(
         val carrier = NativeProcessSupervisor.activeAdminCarrier ?: error("Сначала подключите маршрут этого сервера на главном экране")
         require(carrier.serverId == null || carrier.serverId == serverId) { "Текущее подключение относится к другому серверу" }
         val response = AdminCarrierClient(appContext, keyManager).execute(request, pinned, documentOnly, reliableStream, carrier)
-        val confirmed = confirmServerResponse(AdminOpResult.Success("Сервер ответил через текущее подключение", response), request, serverId)
+        val rawResult = AdminOpResult.Success("Сервер ответил через текущее подключение", response)
+        val confirmed = confirmServerResponse(rawResult, request, serverId)
         if (confirmed is AdminOpResult.Success && serverId != null && carrier.bindingKey != null && carrier.serverId != serverId) {
             storage.putString("admin_carrier_server_" + carrier.bindingKey, serverId)
             NativeProcessSupervisor.bindAdminCarrier(carrier, serverId)
         }
-        confirmed
+        // The caller verifies the envelope and records reachability even for signed failures.
+        rawResult
     }.getOrElse { AdminOpResult.Failure(it.message ?: "Канал управления не подтвердил запрос") }
 
     fun resolveAdminChannel(channel: AdminChannel, node: ServerNode?): AdminChannel {
@@ -3232,6 +3327,7 @@ class AdminRepository(
 
     /** Failed mutations return to reconciliation without resending through another carrier. */
     private fun executeAdministrativeRequest(request: AdminEnvelope, node: ServerNode?, channel: AdminChannel): AdminOpResult {
+        commandControl.phase(AdminCommandControl.Phase.SENDING)
         if (channel == AdminChannel.AUTO) return executeAdministrativeRequest(request, node, resolveAdminChannel(channel, node))
         if (channel == AdminChannel.ACTIVE_TRANSPORT) return executeCarrierCommand(request, node?.id)
         if (channel != AdminChannel.DOCUMENT) {
@@ -3242,31 +3338,11 @@ class AdminRepository(
     }
 
     /** Reads only the server's confirmed managed profiles. Local VPN profiles are separate. */
-    fun listServerManagedProfiles(serverNode: ServerNode? = null): Result<List<ServerManagedProfile>> = runCatching {
-        if (serverNode == null && _serverNodesFlow.value.size > 1) {
-            error("Выберите сервер для просмотра конфигураций")
+    fun listServerManagedProfiles(serverNode: ServerNode? = null): Result<List<ServerManagedProfile>> =
+        executeAdminApiCommand("{\"op\":\"list\"}", targetServer = serverNode, channel = AdminChannel.AUTO) {
+            json.decodeFromJsonElement<List<ServerManagedProfile>>(it)
         }
-        val adminProfileId = verifiedGrantForServer(serverNode?.id)?.profileId
-            ?: error("Нет действующего допуска администратора для выбранного сервера")
-        val payload = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString("{\"op\":\"list\"}".toByteArray(Charsets.UTF_8))
-        val request = keyManager.signEnvelope(AdminEnvelope(
-            subtype = AdminEnvelope.SUBTYPE_COMMAND,
-            profileId = adminProfileId,
-            sender = keyManager.getFingerprint(),
-            payload = payload
-        ))
-        val result = confirmServerResponse(
-            executeAdministrativeRequest(request, serverNode, AdminChannel.AUTO), request, serverNode?.id
-        )
-        val response = (result as? AdminOpResult.Success)?.envelope
-            ?: error((result as? AdminOpResult.Failure)?.error ?: "Сервер не вернул список")
-        val body = json.parseToJsonElement(
-            String(Base64.getUrlDecoder().decode(response.payload), Charsets.UTF_8)
-        ).jsonObject
-        val data = body["data"] ?: error("Сервер не вернул данные профилей")
-        json.decodeFromJsonElement<List<ServerManagedProfile>>(data)
-    }
+
 
     private fun policyServerForLegacy(serverId: String?, host: SshHostConfig?): ServerNode? =
         serverId?.let { getServerNode(it) } ?: host?.let {
@@ -3275,26 +3351,76 @@ class AdminRepository(
                 passphrase = it.passphrase, password = it.password, hostPublicKey = it.hostPublicKey,
                 allowPasswordAuth = it.allowPasswordAuth)
         }
+    private val readCommandOperations = setOf("list", "list-users", "list-devices", "list-assignments", "list-invitations",
+        "get-cluster-snapshot", "get-protocol-configurations", "list-auth-incidents", "get-auth-session-status",
+        "list-admins", "get-jazz-room-pool", "get-jazz-access-operation")
 
     private val policyMutationOps = setOf(
         "set-jazz-room-policy", "prepare-jazz-access", "drain-jazz-room", "replace-jazz-room",
         "create", "update", "suspend", "resume", "revoke", "rotate-key", "grant", "issue",
-        "create-user", "update-user", "suspend-user", "register-device", "revoke-device",
+        "create-user", "update-user", "suspend-user", "delete-user", "register-device", "revoke-device",
         "assign-profile", "revoke-assignment", "issue-invitation", "issue-enrollment",
         "issue-admin-invite", "approve-admin-request", "confirm-owner-transfer", "complete-owner-transfer", "revoke-admin"
     )
 
-    private fun preparePolicyCommand(payload: String, channel: AdminChannel, server: ServerNode?): String {
+    private fun preparePolicyCommand(payload: String, channel: AdminChannel, server: ServerNode?,
+                                     checkedSnapshot: AdminClusterSnapshot? = null): String {
         val command = json.parseToJsonElement(payload).jsonObject
         val operation = command["op"]?.jsonPrimitive?.content ?: error("Операция не указана")
         require(canPerform(server?.id, operation)) { "Операция $operation не разрешена допуском выбранного сервера" }
-        if (operation !in policyMutationOps) return payload
         // Read immediately before sending; a race afterwards is reported as a conflict.
-        val snapshot = getClusterSnapshot(channel, server).getOrThrow()
+        val snapshot = checkedSnapshot ?: checkCommandAccess(operation, channel, server)
+        commandControl.phase(AdminCommandControl.Phase.FORMING)
+        if (operation !in policyMutationOps) return payload
         return kotlinx.serialization.json.JsonObject(command + mapOf(
             "expected_policy_revision" to kotlinx.serialization.json.JsonPrimitive(snapshot.snapshotRevision)
         )).toString()
     }
+
+    /** A signed, live response is required. Cached snapshots never authorize a command. */
+    private fun checkCommandAccess(operation: String, channel: AdminChannel, server: ServerNode?): AdminClusterSnapshot {
+        val grant = verifiedGrantForServer(server?.id) ?: error("Нет действующего допуска администратора")
+        require(grantAllows(grant, server?.id, operation)) { "Нет прав на операцию $operation" }
+        val snapshot = getClusterSnapshot(channel, server).getOrElse {
+            throw IllegalStateException("Команда отменена локально: доступ к серверу не подтверждён. ${it.message.orEmpty()}", it)
+        }
+        if (operation == "delete-user") require(snapshot.coreInfo?.capabilities?.contains("user-server-delete-v1") == true) {
+            "Обновите ядро управляющего сервера: оно ещё не поддерживает удаление пользователя с выбранного сервера"
+        }
+        // Older servers may omit role_scope. Their signed grant still limits the client;
+        // current servers also report the role in their live snapshot.
+        val liveRole = snapshot.roleScope.takeIf { it.isNotBlank() }?.let {
+            runCatching { AdminRole.valueOf(it.uppercase(java.util.Locale.ROOT)) }.getOrNull()
+                ?: error("Сервер не подтвердил роль администратора")
+        } ?: grant.role
+        require(grantAllows(grant.copy(role = liveRole), server?.id, operation)) {
+            "Команда отменена локально: сервер не подтвердил права на $operation"
+        }
+        return snapshot
+    }
+
+    private fun recordLocalCancellation(id: String, operation: String, server: ServerNode?,
+                                        channel: AdminChannel, error: Throwable) {
+        recordCommand(AdminCommandRecord(id, getActiveGrant(server?.id)?.profileId.orEmpty(), operation,
+            AdminCommandRecord.STATUS_CANCELLED_LOCAL, channel.name.lowercase(), System.currentTimeMillis(),
+            getActiveGrant(server?.id)?.revision ?: 0L, "Отменено до отправки: $operation", error.message))
+        context?.let { InstallationLog.append(it, "admin_cancelled_local",
+            "operation=$operation operation_id=$id server_id=${server?.id.orEmpty()} before_send=true") }
+    }
+
+    private fun <T> controlledLegacy(operation: String, server: ServerNode?, channel: AdminChannel,
+                                     failure: (Throwable) -> T, work: () -> T): T = try {
+        commandControl.run(server?.id, operation, mutation = true,
+            cancelled = { id, error -> recordLocalCancellation(id, operation, server, channel, error) }) {
+            val result = work()
+            val rejected = (result as? AdminOpResult.Failure) ?: ((result as? Pair<*, *>)?.first as? AdminOpResult.Failure)
+            if (rejected != null && commandControl.beforeSubmission()) {
+                recordLocalCancellation(UUID.randomUUID().toString(), operation, server, channel,
+                    rejected.throwable ?: IllegalStateException(rejected.error))
+            }
+            result
+        }
+    } catch (error: Exception) { failure(error) }
 
     private fun <T> executeAdminApiCommand(
         commandPayloadJson: String,
@@ -3316,17 +3442,22 @@ class AdminRepository(
         if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && targetServer == null) {
             error("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды")
         }
-        val activeGrant = verifiedGrantForServer(serverId)
-            ?: error("Нет действующего допуска администратора")
         val operation = json.parseToJsonElement(commandPayloadJson).jsonObject["op"]?.jsonPrimitive?.content
-            ?: error("Операция не указана")
+            ?: error("Missing operation")
         val updateAction = if (operation == "core-update") json.parseToJsonElement(commandPayloadJson).jsonObject["core_update"]?.jsonObject?.string("action") else null
         val updateRead = updateAction in setOf("status", "upload_status")
+        val readOnly = operation in readCommandOperations || updateRead || updateAction == "plan"
+        commandControl.run(serverId, operation, !readOnly,
+            cancelled = { id, error -> if (recordInHistory) recordLocalCancellation(id, operation, server, channel, error) }) {
+        val activeGrant = verifiedGrantForServer(serverId)
+            ?: error("Нет действующего допуска администратора")
         require(if (updateRead) activeGrant.role in setOf(AdminRole.OWNER, AdminRole.OPERATOR, AdminRole.VIEWER) else canPerform(serverId, operation)) {
             "Операция $operation не разрешена допуском выбранного сервера"
         }
-        val readOnly = operation in setOf("list", "list-users", "list-devices", "list-assignments", "list-invitations", "get-cluster-snapshot", "get-protocol-configurations", "list-auth-incidents", "get-auth-session-status", "list-admins", "get-jazz-room-pool", "get-jazz-access-operation") || updateRead || updateAction == "plan"
+        val checkedSnapshot = if (operation == "get-cluster-snapshot") null
+            else checkCommandAccess(if (updateRead) "get-cluster-snapshot" else operation, channel, server)
         if (!readOnly && updateAction == null && serverId != null) serverMutationBlockReason(serverId, channel)?.let { error(it) }
+        commandControl.phase(AdminCommandControl.Phase.FORMING)
         val adminProfileId = targetProfileId ?: activeGrant.profileId
 
 
@@ -3340,7 +3471,7 @@ class AdminRepository(
             context?.let { InstallationLog.append(it, "compact-jazz-command", "format=$sentFormat pending=${pending != null}") }
         }
         val payload = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(preparePolicyCommand(actualCommand, channel, targetServer).toByteArray(Charsets.UTF_8))
+            .encodeToString((if (operation !in policyMutationOps) actualCommand else preparePolicyCommand(actualCommand, channel, server, checkedSnapshot)).toByteArray(Charsets.UTF_8))
         val envelope = AdminEnvelope(
             ver = 1,
             type = AdminEnvelope.TYPE_ADMIN,
@@ -3374,6 +3505,7 @@ class AdminRepository(
         val connectionKey = serverId?.let { adminConnectionKey(it, actualChannel) }
         context?.let { InstallationLog.append(it, "admin_request",
             "operation=$operation operation_id=${signed.opId} server_id=${serverId.orEmpty()} channel=$actualChannel") }
+        commandControl.phase(AdminCommandControl.Phase.SENDING)
         val rawResult = if (updateBootstrap != null && actualChannel in setOf(AdminChannel.DIRECT_SSH, AdminChannel.SSH_VDS, AdminChannel.SSH_NETCRAZE)) {
             require(operation == "core-update" && server != null) { "SSH-мост разрешён только для обновления ядра" }
             sshClient.executeAdminEnvelope(signed, server.toSshHostConfig(), actualChannel, updateBootstrap)
@@ -3384,10 +3516,11 @@ class AdminRepository(
             executeCarrierCommand(signed, serverId, documentOnly = actualChannel == AdminChannel.DOCUMENT, reliableStream = true)
         } else executeAdministrativeRequest(signed, server, actualChannel)
 
-        val result = confirmServerResponse(rawResult, signed, serverId)
+        var authenticatedResponse = false
+        val result = confirmServerResponse(rawResult, signed, serverId) { authenticatedResponse = true }
         context?.let { InstallationLog.append(it, "admin_result",
             "operation=$operation operation_id=${signed.opId} channel=$actualChannel result=${result.javaClass.simpleName} failure_type=${(result as? AdminOpResult.Failure)?.throwable?.javaClass?.simpleName.orEmpty()}") }
-        if (connectionKey != null) adminConnections[connectionKey] = result is AdminOpResult.Success || (result as? AdminOpResult.Failure)?.throwable is ConfirmedAdminRejection
+        if (connectionKey != null) adminConnections[connectionKey] = authenticatedResponse
         if (result is AdminOpResult.Failure) {
             if (durableKey != null && result.throwable is ConfirmedAdminRejection) storage.remove(durableKey)
             if (recordInHistory) updateCommandStatus(signed.opId, if (result.throwable is ConfirmedAdminRejection)
@@ -3403,9 +3536,11 @@ class AdminRepository(
         ).jsonObject
         val data = body["data"] ?: error(body["error"]?.jsonPrimitive?.content ?: "Сервер вернул пустой ответ")
         val decoded = dataDecoder(data)
+        if (!readOnly) sessionSnapshots.remove(managementSessionKey(server))
         if (durableKey != null) storage.remove(durableKey)
         onResponse?.invoke(respEnvelope)
         decoded
+        }
     }
 
     fun listUsers(channel: AdminChannel = AdminChannel.DOCUMENT, serverNode: ServerNode? = null): Result<List<AdminUser>> {
@@ -3503,6 +3638,13 @@ class AdminRepository(
         }
     }
 
+    fun deleteUserFromServer(userId: String, serverId: String, serverNode: ServerNode,
+                             channel: AdminChannel = AdminChannel.AUTO): Result<Unit> {
+        if (userId.isBlank() || serverId.isBlank()) return Result.failure(IllegalArgumentException("Выберите пользователя и сервер"))
+        val payload = json.encodeToString(DeleteUserPayload(userId = userId, serverId = serverId))
+        return executeAdminApiCommand(payload, targetServer = serverNode, channel = channel) { Unit }
+    }
+
     fun listDevices(userId: String? = null, channel: AdminChannel = AdminChannel.DOCUMENT, serverNode: ServerNode? = null): Result<List<AdminDevice>> {
         val payload = buildJsonObject {
             put("op", "list-devices")
@@ -3586,6 +3728,9 @@ class AdminRepository(
         serverNode: ServerNode? = null
     ): Result<AdminClusterSnapshot> {
         val target = serverNode ?: _serverNodesFlow.value.singleOrNull()
+        val accessKey = target?.id ?: "legacy"
+        val sessionKey = managementSessionKey(target)
+        val probeId = startAccessProbe(accessKey)
         val payload = json.encodeToString(GetClusterSnapshotPayload())
         var receipt: AdminEnvelope? = null
         val res = executeAdminApiCommand(payload, targetServer = target, channel = channel, onResponse = { receipt = it }) { data ->
@@ -3609,15 +3754,26 @@ class AdminRepository(
             receipt?.let { storage.putString(KEY_SNAPSHOT_RECEIPT_PREFIX + (target?.id ?: "legacy"), it.toJson()) }
             snapshot
         }.onSuccess { snapshot ->
+            val role = snapshot.roleScope.takeIf { it.isNotBlank() }?.let {
+                runCatching { AdminRole.valueOf(it.uppercase(java.util.Locale.ROOT)) }.getOrDefault(AdminRole.NONE)
+            } ?: verifiedGrantForServer(target?.id)?.role ?: AdminRole.NONE
+            finishAccessProbe(accessKey, AdminLiveAccess(probeId, AdminLiveAccess.State.READY, role))
             target?.id?.let(::getServerNode)?.let { node ->
                 updateServerNode(node.copy(coreObservation = CoreObservation(snapshot.coreInfo, System.currentTimeMillis())))
             }
         }.onFailure { error ->
+            finishAccessProbe(accessKey, AdminLiveAccess(probeId,
+                if (error is ConfirmedAdminAccessRejection || verifiedGrantForServer(target?.id) == null ||
+                    _liveAccessFlow.value[accessKey]?.state == AdminLiveAccess.State.DENIED)
+                    AdminLiveAccess.State.DENIED else AdminLiveAccess.State.UNAVAILABLE,
+                role = if (error is ConfirmedAdminAccessRejection) AdminRole.NONE
+                    else _liveAccessFlow.value[accessKey]?.role ?: AdminRole.NONE,
+                reason = error.message))
             context?.let { InstallationLog.append(it, "cluster-snapshot-failed", error.message.orEmpty()) }
             target?.id?.let(::getServerNode)?.let { node ->
                 updateServerNode(node.copy(coreObservation = node.coreObservation.copy(error = error.message ?: "Проверка ядра не завершена")))
             }
-        }
+        }.also { sessionSnapshots[sessionKey] = it }
     }
 
     fun refreshServerCore(node: ServerNode, channel: AdminChannel = AdminChannel.AUTO): Result<CoreCompatibility?> =
@@ -3843,8 +3999,14 @@ class AdminRepository(
                 approvedPlan["server_public_key"]?.jsonPrimitive?.content == getPinnedServerPublicKey(saved.id)) {
                 "Сначала привяжите SSH-узел к подтверждённой идентичности существующего сервера"
             }
-            val suppliedDocument = documentUrl.ifBlank { approvedPlan["document_url"]?.jsonPrimitive?.content.orEmpty() }
-            val resolvedDocument = if (suppliedDocument.isBlank()) "" else AdminDocumentClaimClient.resolveDocumentUrl(suppliedDocument)
+            // SSH admission preserves the server's existing document identity. It must
+            // neither follow Yandex redirects nor use an obsolete local document URL.
+            val resolvedDocument = if (original.preserveOwners) {
+                approvedPlan["document_url"]?.jsonPrimitive?.content.orEmpty()
+            } else {
+                val suppliedDocument = documentUrl.ifBlank { approvedPlan["document_url"]?.jsonPrimitive?.content.orEmpty() }
+                if (suppliedDocument.isBlank()) "" else AdminDocumentClaimClient.resolveDocumentUrl(suppliedDocument)
+            }
             val join = original.join?.let(AdminEnvelope::fromJson) ?: createJoinRequest(original.profileId, AdminRole.OWNER).first
             val body = json.parseToJsonElement(String(Base64.getUrlDecoder().decode(join.payload), Charsets.UTF_8)).jsonObject
             val pairing = body.getValue("one_time_code").jsonPrimitive.content
@@ -3854,8 +4016,12 @@ class AdminRepository(
                 ownerRecovery = true, documentUrl = resolvedDocument, join = join.toJson(),
                 stage = ServerInstallOperation.SUBMITTING, updatedAt = System.currentTimeMillis())
             saveServerInstallation(submitting)
-            val response = installationClient().recoverOwner(saved, inventory, operationId, resolvedDocument, join, pairing,
-                approvedPlan)
+            val response = if (original.preserveOwners)
+                installationClient().authorizeAdministrator(saved, inventory, operationId, resolvedDocument, join, pairing, approvedPlan)
+            else installationClient().recoverOwner(saved, inventory, operationId, resolvedDocument, join, pairing, approvedPlan)
+            require(!original.preserveOwners || response["preserve_owners"]?.jsonPrimitive?.content == "true") {
+                "Сервер не подтвердил сохранение прав других администраторов"
+            }
             reconcileInstallationReceipt(submitting, response)
         }.getOrElse { e ->
             val operation = loadServerInstallation(operationId) ?: original
@@ -3870,21 +4036,22 @@ class AdminRepository(
         channel: AdminChannel = AdminChannel.DOCUMENT,
         serverNode: ServerNode? = null
     ): Pair<AdminOpResult, String> {
+        return controlledLegacy("issue-invitation", serverNode ?: _serverNodesFlow.value.singleOrNull(), channel, failure = { Pair(AdminOpResult.Failure(it.message ?: "Command cancelled", it), "") }) legacy@ {
         if (!hasManagePermission()) {
-            return Pair(AdminOpResult.Failure("Недостаточно прав для выдачи приглашения. Требуется роль OWNER или OPERATOR."), "")
+            return@legacy Pair(AdminOpResult.Failure("Недостаточно прав для выдачи приглашения. Требуется роль OWNER или OPERATOR."), "")
         }
         if (serverNode == null && _serverNodesFlow.value.size > 1) {
-            return Pair(AdminOpResult.Failure("Выберите целевой сервер для выдачи приглашения"), "")
+            return@legacy Pair(AdminOpResult.Failure("Выберите целевой сервер для выдачи приглашения"), "")
         }
         if (channel !in setOf(AdminChannel.AUTO, AdminChannel.DOCUMENT, AdminChannel.ACTIVE_TRANSPORT) && serverNode == null) {
-            return Pair(AdminOpResult.Failure("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды"), "")
+            return@legacy Pair(AdminOpResult.Failure("Целевой сервер (target_server_id) обязателен для выполнения SSH-команды"), "")
         }
         val activeGrant = verifiedGrantForServer(serverNode?.id)
-            ?: return Pair(AdminOpResult.Failure("Нет действующего допуска администратора для выбранного сервера"), "")
+            ?: return@legacy Pair(AdminOpResult.Failure("Нет действующего допуска администратора для выбранного сервера"), "")
         val adminProfileId = activeGrant.profileId
         val revision = activeGrant.revision
 
-        val payload = runCatching { preparePolicyCommand(json.encodeToString(IssueInvitationPayload(assignmentId = assignmentId)), channel, serverNode) }.getOrElse { return Pair(AdminOpResult.Failure(it.message ?: "Не удалось получить ревизию политики"), "") }
+        val payload = runCatching { preparePolicyCommand(json.encodeToString(IssueInvitationPayload(assignmentId = assignmentId)), channel, serverNode) }.getOrElse { return@legacy Pair(AdminOpResult.Failure(it.message ?: "Не удалось получить ревизию политики"), "") }
         val base64Payload = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(payload.toByteArray(Charsets.UTF_8))
         val envelope = AdminEnvelope(
@@ -3918,15 +4085,16 @@ class AdminRepository(
         if (result is AdminOpResult.Failure) {
             updateCommandStatus(signed.opId, if (result.throwable is ConfirmedAdminRejection)
                 AdminCommandRecord.STATUS_FAILED else AdminCommandRecord.STATUS_UNKNOWN, error = result.error)
-            return Pair(result, "")
+            return@legacy Pair(result, "")
         }
 
         val respEnvelope = (result as AdminOpResult.Success).envelope
-            ?: return Pair(AdminOpResult.Failure("Сервер не вернул конверт ответа выдачи"), "")
+            ?: return@legacy Pair(AdminOpResult.Failure("Сервер не вернул конверт ответа выдачи"), "")
 
         val inviteLink = ServerIssuedInvitation.toLink(respEnvelope)
         updateCommandStatus(signed.opId, AdminCommandRecord.STATUS_APPLIED, respEnvelope.rev)
-        return Pair(AdminOpResult.Success("Приглашение успешно сформировано сервером", respEnvelope), inviteLink)
+        return@legacy Pair(AdminOpResult.Success("Приглашение успешно сформировано сервером", respEnvelope), inviteLink)
+        }
     }
 
     fun redeemInvitation(
@@ -4149,6 +4317,9 @@ class AdminRepository(
 
     /** Creates a separate Jazz identity and returns one compact protocol string. */
     fun issuePortableJazzRoute(userId: String, serverId: String, channel: AdminChannel, server: ServerNode?): Result<String> = runCatching {
+        commandControl.run(server?.id ?: serverId, "issue-portable-jazz", mutation = true,
+            cancelled = { _, _ -> /* Individual signed commands retain their own history. */ }, workflow = true) {
+        commandControl.stage("Проверяем сервер…")
         val compatibility = getClusterSnapshot(channel, server).getOrThrow().coreInfo
         val compactRouteSupported = compatibility?.let {
             it.capabilities.contains("compact-route-v2") ||
@@ -4165,11 +4336,17 @@ class AdminRepository(
         }
         val identity = RecipientInvitationCrypto(identityStore)
         val publicKey = identity.getOrCreatePublicKeyBase64()
+        commandControl.stage("Подготавливаем устройство…")
         val device = listDevices(userId, channel, server).getOrThrow().firstOrNull { it.publicKey == publicKey }
             ?: registerDevice(userId, publicKey, channel, server).getOrThrow()
+        commandControl.stage("Проверяем назначение Jazz…")
         val assignment = listAssignments(userId, device.id, channel, server).getOrThrow().firstOrNull {
             it.serverId == serverId && it.transport == "jazz" && it.status in setOf("ready", "active", "invited")
-        } ?: assignProfile(userId, device.id, serverId, "jazz", channel = channel, serverNode = server).getOrThrow()
+        } ?: run {
+            commandControl.stage("Подключаем Jazz на сервере…")
+            assignProfile(userId, device.id, serverId, "jazz", channel = channel, serverNode = server).getOrThrow()
+        }
+        commandControl.stage("Формируем ссылку…")
         val payload = buildJsonObject {
             put("op", "issue-invitation"); put("assignment_id", assignment.id); put("config_format", "compact-route-v2")
         }.toString()
@@ -4182,6 +4359,7 @@ class AdminRepository(
         CompactRoute.parse(link, currentTimeSeconds()) { getPinnedServerPublicKey(it) }
         storage.putStringCommitted("${key}_last", link)
         link
+        }
     }
 
     private fun importCompactRoute(link: String): Pair<AdminOpResult, Tunnel?> = try {

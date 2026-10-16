@@ -52,142 +52,194 @@ class SocksVpnService : android.net.VpnService() {
     private var startupJob: kotlinx.coroutines.Job? = null
     private var reconnectJob: kotlinx.coroutines.Job? = null
     private var reconnectAttempts = 0
-    private val maxReconnectAttempts = 5
     private val alreadyStopping = java.util.concurrent.atomic.AtomicBoolean(false)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var isNetworkStandby = false
+    private val physicalNetworks = mutableMapOf<Network, PhysicalNetworkCandidate<Network>>()
+    private var underlyingNetwork: Network? = null
+    private var networkGeneration = 0L
+    private val networkSelection = PhysicalNetworkTracker<Network>()
+    @Volatile private var recoveryNetworkRevision = 0L
 
     private fun hasActiveInternet(): Boolean {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val activeNet = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(activeNet) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return cm.allNetworks.any { network ->
+            cm.getNetworkCapabilities(network)?.let {
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            } == true
+        }
     }
 
-    private fun enterNetworkStandby(reason: String = "[I] Связь отсутствует. Вход в энергосберегающий режим ожидания сети...") {
+    private fun enterNetworkStandby(reason: String = "[I] Нет подключения к интернету. Ожидание сети...") {
         if (isNetworkStandby) return
         isNetworkStandby = true
         reconnectJob?.cancel()
         reconnectJob = null
         reconnectAttempts = 0
-        Logx.w(TAG, "Entering power-save network standby: $reason")
-        notifications.stopSpeedUpdates()
-        supervisor.stop()
+        io.github.libreroute.util.ProxyRoutingStatus.tunnelReady = false
+        supervisor.networkUnavailable()
+        Logx.w(TAG, "Waiting for physical network")
+        // Keep local routes and the listener alive. Restart the carrier when
+        // Internet returns, including validation changes on the same Network.
         EventBus.dispatch(AppEvent.WaitingForNetwork)
         EventBus.dispatch(AppEvent.LogMessage(reason))
         notifications.updateStatus(getString(R.string.waiting_for_network))
     }
 
+    private fun scheduleRecovery(networkReturned: Boolean = false) {
+        if (!vpn.isRunning.get() || alreadyStopping.get() ||
+            (isDirectDpi() && supervisor.isRunning) || supervisor.isTransportRejected) return
+        if (!hasActiveInternet()) {
+            enterNetworkStandby()
+            return
+        }
+        if (networkReturned) recoveryNetworkRevision++
+        if (reconnectJob?.isActive == true) return
+        isNetworkStandby = false
+        reconnectJob = serviceScope.launch(Dispatchers.IO) {
+            EventBus.dispatch(AppEvent.Reconnecting(activeTunnelName))
+            // Let native recovery finish first after a brief provider drop.
+            // A physical network return invalidates the old RTC sockets.
+            val initialRevision = recoveryNetworkRevision
+            if (!networkReturned) {
+                repeat(20) {
+                    if (supervisor.isConnected) return@launch
+                    if (recoveryNetworkRevision == initialRevision) kotlinx.coroutines.delay(500)
+                }
+            }
+            while (isActive && !alreadyStopping.get() && vpn.isRunning.get() && !supervisor.isTransportRejected) {
+                if (!hasActiveInternet()) {
+                    withContext(Dispatchers.Main) { enterNetworkStandby() }
+                    return@launch
+                }
+                if (supervisor.isConnected && recoveryNetworkRevision == initialRevision && !networkReturned) return@launch
+                val attemptRevision = recoveryNetworkRevision
+                reconnectAttempts++
+                Logx.i(TAG, "Client recovery: restarting carrier, attempt=$reconnectAttempts")
+                val payload = rotateActivePayloadLanes()?.toList() ?: currentTransportPayload.toList()
+                if (!startCarrier(currentTransportType, payload)) return@launch
+                val rawFd = vpn.fileDescriptor
+                val passed = rawFd != null && supervisor.passTunFd(rawFd)
+                val ready = passed && NativeTransportReadiness(payload).awaitReady(
+                    currentTransportType,
+                    canWait = { isActive && !alreadyStopping.get() && supervisor.isRunning && !supervisor.isTransportRejected && recoveryNetworkRevision == attemptRevision },
+                    connected = { supervisor.isConnected }
+                )
+                if (!isActive || alreadyStopping.get() || supervisor.isTransportRejected) return@launch
+                if (recoveryNetworkRevision != attemptRevision) continue
+                if (ready) {
+                    reconnectAttempts = 0
+                    EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
+                    return@launch
+                }
+                // Transient outages never leave a live VPN permanently stalled
+                // just because a fixed retry count was exhausted.
+                kotlinx.coroutines.delay((reconnectAttempts * 1500L).coerceAtMost(15_000L))
+            }
+        }
+    }
+
+    private fun startCarrier(transport: String, payload: List<String>): Boolean = synchronized(this) {
+        if (alreadyStopping.get()) return@synchronized false
+        supervisor.start(transport, payload, currentTunnelId)
+        !alreadyStopping.get()
+    }
+
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val generation = ++networkGeneration
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                Logx.i(TAG, "Underlying network changed: available $network")
-                runCatching { setUnderlyingNetworks(arrayOf(network)) }
-                if (vpn.isRunning.get() && !alreadyStopping.get()) {
-                    if (isNetworkStandby) {
-                        Logx.i(TAG, "Network restored from offline standby, waking up transport...")
-                        isNetworkStandby = false
-                        notifications.updateStatus(getString(R.string.status_connected_badge))
-                        notifications.startSpeedUpdates()
-                        serviceScope.launch(Dispatchers.IO) {
-                            if (alreadyStopping.get()) return@launch
-                            supervisor.start(currentTransportType, currentTransportPayload.toList(), currentTunnelId)
-                            val rawFd = vpn.fileDescriptor
-                            if (rawFd != null && supervisor.passTunFd(rawFd)) {
-                                val ready = NativeTransportReadiness(currentTransportPayload.toList()).awaitReady(
-                                    currentTransportType,
-                                    canWait = { !alreadyStopping.get() && supervisor.isRunning },
-                                    connected = { supervisor.isConnected }
-                                )
-                                if (alreadyStopping.get()) return@launch
-                                if (ready) {
-                                    reconnectAttempts = 0
-                                    EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
-                                    EventBus.dispatch(AppEvent.LogMessage("[S] Связь с транспортом возобновлена после режима ожидания"))
-                                } else {
-                                    EventBus.dispatch(AppEvent.TransportDisconnected)
-                                }
-                            }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                serviceScope.launch {
+                    if (generation != networkGeneration || alreadyStopping.get()) return@launch
+                    physicalNetworks[network] = PhysicalNetworkCandidate(
+                        network,
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN),
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                        when {
+                            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 3
+                            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 2
+                            else -> 1
                         }
-                    } else {
-                        // Network availability alone does not restore tunnel traffic.
-                        serviceScope.launch(Dispatchers.IO) {
-                            if (isDirectDpi()) {
-                                EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
-                                return@launch
-                            }
-                            val port = lastIntent?.getIntExtra(Constants.INTENT_PORT, 1080) ?: 1080
-                            val pingMs = measureRealEndToEndPing(port)
-                            if (vpn.isRunning.get() && !alreadyStopping.get()) {
-                                if (pingMs >= 0) {
-                                    EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
-                                } else {
-                                    Logx.w(TAG, "Ping failed over newly connected network; restarting transport")
-                                    EventBus.dispatch(AppEvent.TransportDisconnected)
-                                }
-                            }
-                        }
-                    }
+                    )
+                    updateUnderlyingNetwork()
                 }
             }
 
             override fun onLost(network: Network) {
-                Logx.i(TAG, "Underlying network lost: $network")
-                runCatching { setUnderlyingNetworks(null) }
-                if (vpn.isRunning.get()) {
-                    if (!hasActiveInternet()) {
-                        enterNetworkStandby("[I] Связь отсутствует (Wi-Fi и сотовая сеть недоступны). Вход в энергосберегающий режим...")
-                    } else {
-                        val activeNet = cm.activeNetwork
-                        if (activeNet != null) {
-                            runCatching { setUnderlyingNetworks(arrayOf(activeNet)) }
-                            serviceScope.launch(Dispatchers.IO) {
-                                if (isDirectDpi()) return@launch
-                                val port = lastIntent?.getIntExtra(Constants.INTENT_PORT, 1080) ?: 1080
-                                val pingMs = measureRealEndToEndPing(port)
-                                if (vpn.isRunning.get() && !alreadyStopping.get()) {
-                                    if (pingMs < 0) {
-                                        Logx.w(TAG, "Ping failed after network switch; scheduling reconnect")
-                                        EventBus.dispatch(AppEvent.TransportDisconnected)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                    runCatching { setUnderlyingNetworks(arrayOf(network)) }
+                serviceScope.launch {
+                    if (generation != networkGeneration || alreadyStopping.get()) return@launch
+                    physicalNetworks.remove(network)
+                    updateUnderlyingNetwork()
                 }
             }
         }
         networkCallback = callback
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                cm.registerDefaultNetworkCallback(callback)
-            } else {
-                val req = NetworkRequest.Builder()
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    .build()
-                cm.registerNetworkCallback(req, callback)
-            }
-            Logx.i(TAG, "Underlying network callback registered")
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build()
+            cm.registerNetworkCallback(request, callback)
+            Logx.i(TAG, "Physical network callback registered")
+            if (!hasActiveInternet()) enterNetworkStandby()
         }.onFailure {
-            Logx.w(TAG, "Failed to register network callback: ${it.message}")
+            networkCallback = null
+            Logx.w(TAG, "Failed to register physical network callback")
+        }
+    }
+
+    private fun updateUnderlyingNetwork() {
+        val transition = networkSelection.update(physicalNetworks.values)
+        val selected = transition.network
+        val changed = transition.changed
+        val becameValidated = transition.validationRestored
+        if (changed) {
+            underlyingNetwork = selected
+            runCatching { setUnderlyingNetworks(selected?.let { arrayOf(it) } ?: emptyArray()) }
+            Logx.i(TAG, "Physical underlying network changed: $selected")
+        }
+        if (!vpn.isRunning.get() || alreadyStopping.get()) return
+        if (selected == null) {
+            enterNetworkStandby()
+            return
+        }
+        // The callback's initial snapshot is not a network change. Do not
+        // interrupt the provider's first handshake while it is still starting.
+        if (transition.initial && !isNetworkStandby) return
+        if (isDirectDpi()) {
+            if (isNetworkStandby) {
+                isNetworkStandby = false
+                if (supervisor.isRunning) {
+                    supervisor.localNetworkRestored()
+                    EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
+                } else scheduleRecovery(networkReturned = true)
+            }
+            return
+        }
+        val channel = ClientChannel.state.value
+        val recentlyConfirmed = channel.ready && channel.rttMs != null &&
+            android.os.SystemClock.elapsedRealtime() - channel.measuredAt in 0..5_000L
+        val needsRecovery = !supervisor.isConnected || (becameValidated && !recentlyConfirmed)
+        if (isNetworkStandby || ((changed || becameValidated) && needsRecovery)) {
+            val returned = isNetworkStandby || becameValidated
+            scheduleRecovery(networkReturned = returned)
         }
     }
 
     private fun unregisterNetworkCallback() {
+        networkGeneration++
         networkCallback?.let {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             runCatching { cm?.unregisterNetworkCallback(it) }
-            networkCallback = null
-            Logx.i(TAG, "Underlying network callback unregistered")
         }
+        networkCallback = null
+        physicalNetworks.clear()
+        underlyingNetwork = null
+        networkSelection.clear()
         runCatching { setUnderlyingNetworks(null) }
     }
 
@@ -274,6 +326,23 @@ class SocksVpnService : android.net.VpnService() {
         supervisor = NativeProcessSupervisor(applicationContext)
         tun2socks = Tun2SocksLauncher(applicationContext)
         notifications = VpnNotificationManager(this)
+        serviceScope.launch {
+            while (isActive) {
+                if (!alreadyStopping.get() && (vpn.isRunning.get() || startupJob?.isActive == true)) {
+                    val channel = ClientChannel.state.value
+                    val status = when {
+                        supervisor.isTransportRejected -> R.string.jazz_room_rejected
+                        isNetworkStandby -> R.string.waiting_for_network
+                        isDirectDpi() && vpn.isRunning.get() -> R.string.running
+                        channel.ready && vpn.isRunning.get() -> R.string.running
+                        vpn.isRunning.get() -> R.string.reconnecting
+                        else -> R.string.connecting
+                    }
+                    notifications.setConnection(getString(status), channel.freshRtt(android.os.SystemClock.elapsedRealtime()))
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
 
         serviceScope.launch {
             EventBus.events.collect { event ->
@@ -288,73 +357,19 @@ class SocksVpnService : android.net.VpnService() {
                             stopEverything()
                         }
                     }
-                    is AppEvent.TransportDisconnected -> {
+                    is AppEvent.TransportConnected -> {
                         if (vpn.isRunning.get() && !alreadyStopping.get()) {
-                            reconnectJob?.cancel()
-                            if (!hasActiveInternet()) {
-                                enterNetworkStandby("[I] Нет подключения к интернету. Вход в энергосберегающий режим ожидания...")
-                                return@collect
-                            }
-                            if (isNetworkStandby) {
-                                return@collect
-                            }
-                            val rotated = rotateActivePayloadLanes()
-                            val payloadToUse = rotated?.toList() ?: currentTransportPayload.toList()
-                            val connectionWasReady = supervisor.isConnected
-
-                            if (rotated != null || reconnectAttempts < maxReconnectAttempts) {
-                                reconnectAttempts++
-                                val backoffMs = (reconnectAttempts * 1500L).coerceAtMost(6000L)
-                                val modeDesc = if (rotated != null) "ротация каналов" else "авто-переподключение ($reconnectAttempts/$maxReconnectAttempts)"
-                                Logx.w(TAG, "Transport disconnected; scheduling attempt $reconnectAttempts/$maxReconnectAttempts ($modeDesc) in ${backoffMs}ms")
-
-                                reconnectJob = serviceScope.launch(Dispatchers.IO) {
-                                    EventBus.dispatch(AppEvent.Reconnecting(activeTunnelName))
-                                    EventBus.dispatch(AppEvent.LogMessage("[I] [TRANSPORT] $modeDesc через ${backoffMs}мс..."))
-                                    kotlinx.coroutines.delay(backoffMs)
-                                    if (alreadyStopping.get() || !isActive) return@launch
-                                    if (!connectionWasReady && supervisor.isConnected) {
-                                        reconnectAttempts = 0
-                                        EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
-                                        Logx.i(TAG, "Transport recovered before scheduled restart")
-                                        return@launch
-                                    }
-
-                                    supervisor.start(currentTransportType, payloadToUse, currentTunnelId)
-                                    val rawFd = vpn.fileDescriptor
-                                    if (rawFd != null && supervisor.passTunFd(rawFd)) {
-                                        val ready = NativeTransportReadiness(payloadToUse).awaitReady(
-                                            currentTransportType,
-                                            canWait = { !alreadyStopping.get() && supervisor.isRunning },
-                                            connected = { supervisor.isConnected }
-                                        )
-                                        if (alreadyStopping.get() || !isActive) return@launch
-                                        if (ready) {
-                                            reconnectAttempts = 0
-                                            EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
-                                            EventBus.dispatch(AppEvent.LogMessage("[S] Связь с транспортом успешно восстановлена"))
-                                            Logx.i(TAG, "Reconnection successful")
-                                        } else {
-                                            Logx.w(TAG, "Reconnection attempt $reconnectAttempts failed or timed out")
-                                            if (reconnectAttempts >= maxReconnectAttempts) {
-                                                enterNetworkStandby("[W] Лимит попыток переподключения исчерпан. Ожидание восстановления сети...")
-                                            } else {
-                                                EventBus.dispatch(AppEvent.TransportDisconnected)
-                                            }
-                                        }
-                                    } else {
-                                        Logx.e(TAG, "Failed to pass TUN FD during reconnection")
-                                        if (reconnectAttempts >= maxReconnectAttempts) {
-                                            enterNetworkStandby("[W] Ошибка передачи TUN FD. Ожидание восстановления сети...")
-                                        } else {
-                                            EventBus.dispatch(AppEvent.TransportDisconnected)
-                                        }
-                                    }
-                                }
-                            } else {
-                                enterNetworkStandby("[W] Лимит попыток переподключения исчерпан. Ожидание восстановления сети...")
-                            }
+                            reconnectAttempts = 0
+                            isNetworkStandby = false
+                            EventBus.dispatch(AppEvent.VpnConnected(activeTunnelName))
                         }
+                    }
+                    is AppEvent.TransportDisconnected -> {
+                        if (supervisor.isTransportRejected) {
+                            reconnectJob?.cancel()
+                            reconnectJob = null
+                            notifications.updateStatus(getString(R.string.jazz_room_rejected))
+                        } else scheduleRecovery()
                     }
                     is AppEvent.RefreshNotification -> {
                         if (::notifications.isInitialized && vpn.isRunning.get()) {
@@ -433,7 +448,7 @@ class SocksVpnService : android.net.VpnService() {
                 }
 
                 EventBus.dispatch(AppEvent.LogMessage("[I] Starting native transport ($transportType)..."))
-                supervisor.start(transportType, transportPayload.toList(), currentTunnelId)
+                if (!startCarrier(transportType, transportPayload.toList())) return@launch
                 if (!supervisor.isRunning) {
                     EventBus.dispatch(AppEvent.LogMessage("[E] LibreRoute core did not start; VPN remains closed"))
                     stopEverything()
@@ -463,8 +478,9 @@ class SocksVpnService : android.net.VpnService() {
                 // Wait for transport readiness inside the service
                 val ready = NativeTransportReadiness(transportPayload.toList()).awaitReady(
                     transportType,
-                    canWait = { !alreadyStopping.get() && supervisor.isRunning },
-                    connected = { supervisor.isConnected }
+                    canWait = { !alreadyStopping.get() && supervisor.isRunning && !supervisor.isTransportRejected },
+                    connected = { supervisor.isConnected || (supervisor.isLocalProxyReady &&
+                        io.github.libreroute.util.ProxyRoutingStatus.active?.mode == io.github.libreroute.util.ProxyRoutingMode.RULES) }
                 )
 
                 if (alreadyStopping.get() || !isActive) return@launch
@@ -527,35 +543,13 @@ class SocksVpnService : android.net.VpnService() {
 
     private fun handlePingRequest() {
         pingJob?.cancel()
-        notifications.updatePing(-1L)
-        pingJob = serviceScope.launch {
-            val port = lastIntent?.getIntExtra(Constants.INTENT_PORT, 1080) ?: 1080
-            val pingMs = withContext(Dispatchers.IO) {
-                measureRealEndToEndPing(port)
-            }
-
-            if (!isActive) return@launch
-
-            if (pingMs >= 0) {
-                notifications.updatePing(pingMs)
-                Toast.makeText(
-                    applicationContext,
-                    getString(R.string.notify_ping_format, pingMs),
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                notifications.updatePing(-2L)
-                Toast.makeText(
-                    applicationContext,
-                    getString(R.string.notify_ping_timeout),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
+        val channel = ClientChannel.state.value
+        val pingMs = channel.freshRtt(android.os.SystemClock.elapsedRealtime())
+        notifications.updatePing(pingMs ?: -2L)
+        Toast.makeText(applicationContext,
+            if (pingMs != null) getString(R.string.notify_ping_format, pingMs)
+            else getString(R.string.notify_ping_timeout), Toast.LENGTH_SHORT).show()
     }
-
-    private fun measureRealEndToEndPing(port: Int): Long =
-        ProxyConnectivityProbe.measure(LocalSocksSession.getActive().copy(port = port), 4000)
 
     private fun stopEverything() {
         if (alreadyStopping.getAndSet(true)) {
@@ -578,7 +572,7 @@ class SocksVpnService : android.net.VpnService() {
         runCatching { unregisterNetworkCallback() }
         runCatching { HotspotProxyBridge.stop() }
         runCatching { tun2socks.stop() }
-        runCatching { supervisor.stop() }
+        runCatching { synchronized(this) { supervisor.stop() } }
         runCatching { vpn.stop() }
         runCatching { LocalSocksSession.clearAuthenticator() }
         stopForeground(STOP_FOREGROUND_REMOVE)

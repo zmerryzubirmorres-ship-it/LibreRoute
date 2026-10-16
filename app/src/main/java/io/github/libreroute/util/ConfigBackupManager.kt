@@ -40,6 +40,7 @@ object ConfigBackupManager {
         val zapretProfiles: io.github.libreroute.data.ZapretProfileState? = null,
         val siteRouting: io.github.libreroute.data.SiteRoutingState? = null,
         val appRouting: io.github.libreroute.data.AppRoutingState? = null,
+        val proxyRoutingMode: ProxyRoutingMode = ProxyRoutingMode.ALL_TUNNEL,
     )
 
     suspend fun exportBackup(context: Context, uri: Uri, password: String): Result<Int> = withContext(Dispatchers.IO) {
@@ -65,6 +66,7 @@ object ConfigBackupManager {
                 zapretProfiles = ZapretProfilePreferences(context).load(),
                 siteRouting = SiteRoutingPreferences(context).load(),
                 appRouting = AppRoutingPreferences(context).load(),
+                proxyRoutingMode = AppSettings(context).proxyRoutingMode,
             )
 
             val jsonString = BackupEncryption.encrypt(json.encodeToString(backup), password)
@@ -144,6 +146,7 @@ object ConfigBackupManager {
             backup.zapretProfiles?.let { ZapretProfilePreferences(context).store(it) }
             backup.siteRouting?.let { SiteRoutingPreferences(context).store(it, effectiveProfiles) }
             backup.appRouting?.let { AppRoutingPreferences(context).store(it, effectiveProfiles) }
+            AppSettings(context).proxyRoutingMode = backup.proxyRoutingMode
             importedCount
         }
     }

@@ -212,7 +212,7 @@ class AdminSetupActivity : AppCompatActivity() {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 repo.serverNodesFlow.value.filter { repo.getRole(it.id) in setOf(AdminRole.OWNER, AdminRole.OPERATOR, AdminRole.VIEWER) }
-                    .forEach { repo.refreshServerCore(it) }
+                    .forEach { repo.loadAdminSession(serverNode = it) }
             }
             if (page == "home") renderHome()
         }

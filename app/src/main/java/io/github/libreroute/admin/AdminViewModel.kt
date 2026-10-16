@@ -54,20 +54,42 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     val serverNodes: StateFlow<List<ServerNode>> = repository.serverNodesFlow
     val problemReports: StateFlow<List<ProblemReport>> = repository.problemReportsFlow
     val installationOperations: StateFlow<List<ServerInstallOperation>> = repository.installationOperations
+    val liveAccess = repository.liveAccessFlow
+    fun canOpenPeople(): Boolean = repository.canUseManagementUi(currentServerNode()?.id, "list-users")
 
     fun mutationBlockReason(): String? = currentServerNode()?.id?.let { repository.serverMutationBlockReason(it, selectedChannel.value) }
     fun canPerform(operation: String): Boolean {
         val read = operation.startsWith("list") || operation.startsWith("get-") || operation == "sync-routes"
-        return repository.canPerform(currentServerNode()?.id, operation) && (read || mutationBlockReason() == null)
+        return repository.canUseManagementUi(currentServerNode()?.id, operation) && (read || mutationBlockReason() == null)
     }
     fun currentServerAccess(): AdminServerAccess = repository.getServerAccess(currentServerNode()?.id)
+
+    private fun visibleUsers(snapshot: AdminClusterSnapshot): List<AdminUser> = snapshot.users.filter { user ->
+        user.visibleOn(snapshot.distinctServerIds)
+    }
+
+    fun deleteUserFromServer(userId: String, serverId: String, authorityId: String) {
+        val authority = repository.getServerNode(authorityId) ?: return
+        val channel = selectedChannel.value
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.deleteUserFromServer(userId, serverId, authority, channel)
+            }
+            result.onSuccess {
+                _uiEvents.emit(AdminUiEvent.ShowToast("Доступ пользователя к серверу удалён. Остальные серверы сохранены."))
+                if (currentServerNode()?.id == authorityId) refreshClusterSnapshot()
+            }.onFailure {
+                _uiEvents.emit(AdminUiEvent.ShowToast("Не удалось удалить доступ: ${it.message}"))
+            }
+        }
+    }
 
     private val _serverProfiles = MutableStateFlow<List<ServerManagedProfile>>(emptyList())
     val serverProfiles: StateFlow<List<ServerManagedProfile>> = _serverProfiles.asStateFlow()
     private val _serverProfilesStatus = MutableStateFlow("Список сервера ещё не загружен")
     val serverProfilesStatus: StateFlow<String> = _serverProfilesStatus.asStateFlow()
 
-    private val _users = MutableStateFlow(repository.clusterSnapshotFlow.value?.users.orEmpty())
+    private val _users = MutableStateFlow(repository.clusterSnapshotFlow.value?.let(::visibleUsers).orEmpty())
     val users: StateFlow<List<AdminUser>> = _users.asStateFlow()
     private val _usersStatus = MutableStateFlow("Список пользователей ещё не загружен")
     val usersStatus: StateFlow<String> = _usersStatus.asStateFlow()
@@ -94,7 +116,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedServerNodeId = MutableStateFlow<String?>(null)
     val selectedServerNodeId: StateFlow<String?> = _selectedServerNodeId.asStateFlow()
 
-    private val _selectedChannel = MutableStateFlow(AdminChannel.AUTO)
+    private val _selectedChannel = MutableStateFlow(repository.sessionAdminChannel)
     val selectedChannel: StateFlow<AdminChannel> = _selectedChannel.asStateFlow()
 
     private val _uiEvents = MutableSharedFlow<AdminUiEvent>()
@@ -183,8 +205,14 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     fun selectChannel(channel: AdminChannel) {
         clusterRequestGeneration++
         _selectedChannel.value = channel
-        refreshUsers()
+        repository.sessionAdminChannel = channel
         refreshClusterSnapshot()
+    }
+
+    fun useSshSession() {
+        _selectedChannel.value = AdminChannel.DIRECT_SSH
+        repository.sessionAdminChannel = AdminChannel.DIRECT_SSH
+        loadAdminSession()
     }
 
     fun selectServerNode(id: String?) {
@@ -194,7 +222,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
         _selectedServerNodeId.value = id
         val snapshot = repository.cachedClusterSnapshot(id ?: repository.getServerNodes().singleOrNull()?.id)
         _clusterSnapshot.value = snapshot
-        _users.value = snapshot?.users.orEmpty()
+        _users.value = snapshot?.let(::visibleUsers).orEmpty()
         _assignments.value = snapshot?.assignments.orEmpty()
         _devices.value = emptyList()
         _invitations.value = emptyList()
@@ -239,7 +267,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun currentServerNode(): ServerNode? {
+    fun currentServerNode(): ServerNode? {
         return serverForAdminChannel(repository.getServerNodes(), _selectedServerNodeId.value, _selectedChannel.value)
     }
 
@@ -254,7 +282,8 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) { repository.listUsers(channel, server) }
             if (generation != usersRequestGeneration) return@launch
             result.onSuccess { users ->
-                _users.value = users.sortedBy { it.name.lowercase() }
+                val servers = _clusterSnapshot.value?.distinctServerIds ?: setOfNotNull(server?.id)
+                _users.value = users.filter { it.visibleOn(servers) }.sortedBy { it.name.lowercase() }
                 _usersStatus.value = if (users.isEmpty()) "На сервере пока нет пользователей"
                     else "Сервер подтвердил ${users.size} пользователей"
             }.onFailure { error ->
@@ -503,7 +532,10 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) {
                 repository.listUsers(_selectedChannel.value, selectedServerNode())
             }
-            result.onSuccess { _users.value = it }
+            result.onSuccess { users ->
+                val servers = _clusterSnapshot.value?.distinctServerIds ?: setOfNotNull(currentServerNode()?.id)
+                _users.value = users.filter { it.visibleOn(servers) }
+            }
                 .onFailure { _uiEvents.emit(AdminUiEvent.ShowToast("Ошибка загрузки пользователей: ${it.message}")) }
         }
     }
@@ -756,20 +788,12 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun issueAssignmentInvitation(assignmentId: String) {
+        val jazzAssignment = assignments.value.firstOrNull { it.id == assignmentId && it.transport == "jazz" }
+        if (jazzAssignment != null) {
+            issuePortableJazzInvitation(jazzAssignment.userId, jazzAssignment.serverId)
+            return
+        }
         viewModelScope.launch {
-            val jazzAssignment = assignments.value.firstOrNull { it.id == assignmentId }
-            if (jazzAssignment?.transport == "jazz") {
-                val result = withContext(Dispatchers.IO) {
-                    repository.issuePortableJazzRoute(jazzAssignment.userId, jazzAssignment.serverId,
-                        _selectedChannel.value, selectedServerNode())
-                }
-                result.onSuccess { link -> _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog("jazz", link)) }
-                    .onFailure { error ->
-                        Logx.e("AdminViewModel", "Выдача компактной конфигурации Jazz не выполнена: ${error.message}", error)
-                        _uiEvents.emit(AdminUiEvent.ShowToast("Не удалось выдать компактный Jazz: ${error.message ?: "ошибка сервера"}"))
-                    }
-                return@launch
-            }
             val (result, inviteLink) = withContext(Dispatchers.IO) {
                 repository.issueAssignmentInvitation(
                     assignmentId = assignmentId,
@@ -790,16 +814,44 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun issuePortableJazzInvitation(user: AdminUser, serverId: String) {
+        issuePortableJazzInvitation(user.id, serverId)
+    }
+
+    private fun issuePortableJazzInvitation(userId: String, serverId: String) {
+        if (_accessOperation.value?.state == AccessOperationState.SUBMITTING) return
+        val channel = _selectedChannel.value
+        val authority = selectedServerNode()
+        val pending = AccessOperationRecord(UUID.randomUUID().toString(), userId,
+            routes = listOf(AccessRouteResult(serverId, "jazz")))
+        // Publish before any network work, so the user's click has immediate feedback.
+        _accessOperation.value = pending
+        repository.saveAccessOperation(pending)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                repository.issuePortableJazzRoute(user.id, serverId, _selectedChannel.value, selectedServerNode())
+                repository.issuePortableJazzRoute(userId, serverId, channel, authority)
             }
-            result.onSuccess { link -> _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog("jazz", link)) }
+            result.onSuccess { link ->
+                val completed = pending.copy(state = AccessOperationState.CONFIRMED,
+                    routes = pending.routes.map { it.copy(state = "created") }, updatedAt = System.currentTimeMillis())
+                _accessOperation.value = completed
+                repository.saveAccessOperation(completed)
+                _uiEvents.emit(AdminUiEvent.ShowAssignmentInviteDialog("jazz", link))
+            }
                 .onFailure { error ->
                     Logx.e("AdminViewModel", "Выдача компактной конфигурации Jazz не выполнена: ${error.message}", error)
                     InstallationLog.append(getApplication(), "compact-jazz-issue-failed", error.message.orEmpty())
-                    _uiEvents.emit(AdminUiEvent.ShowToast("Не удалось выдать Jazz: ${error.message ?: "ошибка сервера"}"))
+                    val unknown = error is UnknownAdminOperation
+                    val message = error.message ?: "Сервер не сообщил причину ошибки"
+                    val completed = pending.copy(
+                        state = if (unknown) AccessOperationState.UNKNOWN else AccessOperationState.FAILED,
+                        routes = pending.routes.map { it.copy(state = if (unknown) "unknown" else "failed", reason = message) },
+                        error = message, updatedAt = System.currentTimeMillis())
+                    _accessOperation.value = completed
+                    repository.saveAccessOperation(completed)
+                    _uiEvents.emit(AdminUiEvent.ShowAccessOperation(completed))
                 }
+            refreshAssignments()
+            refreshClusterSnapshot()
         }
     }
 
@@ -850,25 +902,33 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun refreshClusterSnapshot() {
+    fun loadAdminSession() = refreshClusterSnapshot(force = false)
+
+    fun refreshClusterSnapshot(force: Boolean = true) {
         val generation = ++clusterRequestGeneration
         val channel = _selectedChannel.value
         val server = currentServerNode()
         viewModelScope.launch {
-            _clusterSnapshotStatus.value = "Запрашиваем снимок кластера…"
+            _clusterSnapshotStatus.value = "Загружаем сведения о сервере…"
             val result = withContext(Dispatchers.IO) {
-                repository.getClusterSnapshot(channel, server)
+                if (force) repository.getClusterSnapshot(channel, server)
+                else repository.loadAdminSession(channel, server)
             }
             if (generation != clusterRequestGeneration) return@launch
             result.onSuccess { snapshot ->
                 _clusterSnapshot.value = snapshot
                 _assignments.value = snapshot.assignments
-                _users.value = snapshot.users
+                _users.value = visibleUsers(snapshot)
+                _devices.value = snapshot.devices
+                _serverProfiles.value = snapshot.profiles
+                _usersStatus.value = "Сохранённые сведения: ${snapshot.users.size} пользователей"
+                _assignmentsStatus.value = "Сохранённые сведения: ${snapshot.assignments.size} назначений"
+                _serverProfilesStatus.value = "Сохранённые сведения: ${snapshot.profiles.size} профилей"
                 val syncStatuses = snapshot.perServerStatus.entries.joinToString(", ") {
                     "${it.key}: рев. ${it.value.appliedRevision} (готов: ${it.value.readiness})"
                 }
                 _clusterSnapshotStatus.value = "Снимок кластера: рев. ${snapshot.revision}, серверов: ${snapshot.servers.size}, назначений: ${snapshot.assignments.size}\nСинхронизация узлов: ${syncStatuses.ifEmpty { "нет данных" }}"
-                _uiEvents.emit(AdminUiEvent.ShowToast("Снимок кластера обновлён (рев. ${snapshot.revision}, серверов: ${snapshot.servers.size}, назначений: ${snapshot.assignments.size})"))
+                if (force) _uiEvents.emit(AdminUiEvent.ShowToast("Снимок кластера обновлён (рев. ${snapshot.revision}, серверов: ${snapshot.servers.size}, назначений: ${snapshot.assignments.size})"))
             }.onFailure { error ->
                 val reason = error.message?.take(240) ?: "нет ответа"
                 _clusterSnapshotStatus.value = if (_clusterSnapshot.value == null) {
@@ -876,7 +936,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     "Не удалось обновить снимок; показаны последние данные: $reason"
                 }
-                _uiEvents.emit(AdminUiEvent.ShowToast("Ошибка получения снимка кластера: ${error.message}"))
+                if (force) _uiEvents.emit(AdminUiEvent.ShowToast("Ошибка получения снимка кластера: ${error.message}"))
             }
         }
     }
